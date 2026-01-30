@@ -12,12 +12,15 @@ interface UserState {
   role: UserRole;
   isLoggedIn: boolean;
   user: UserInfo | null;
+  /** True once AuthProvider has finished initial auth check (token validated or none). */
+  authChecked: boolean;
 }
 
 const initialState: UserState = {
   role: 'community',
   isLoggedIn: false,
   user: null,
+  authChecked: false,
 };
 
 const userSlice = createSlice({
@@ -48,8 +51,11 @@ const userSlice = createSlice({
       state.role = 'community';
       state.user = null;
     },
+    setAuthChecked: (state, action: PayloadAction<boolean>) => {
+      state.authChecked = action.payload;
+    },
   },
 });
 
-export const { setRole, setIsLoggedIn, setUser, login, logout } = userSlice.actions;
+export const { setRole, setIsLoggedIn, setUser, login, logout, setAuthChecked } = userSlice.actions;
 export default userSlice.reducer;

@@ -168,13 +168,18 @@ def smart_search(image_path, location_filter=None, k_results=20):
     query_vector = process_new_image(image_path, vocab)
     if query_vector is None: return []
 
-    dists, idxs = index.search(query_vector, k_results * 5)
+    # When filtering by location, request more candidates so we have enough after filtering
+    search_k = (k_results * 10) if location_filter else (k_results * 5)
+    dists, idxs = index.search(query_vector, search_k)
     results = []
     seen_sites = set()
 
     for i, idx in enumerate(idxs[0]):
         if idx == -1 or idx >= len(metadata): continue
         meta = metadata[idx]
+        # Restrict to given location (sheet/datasheet) when filter is set
+        if location_filter and meta.get('location') != location_filter:
+            continue
         site_id = meta.get('site_id', 'Unknown')
         if site_id not in seen_sites:
             seen_sites.add(site_id)

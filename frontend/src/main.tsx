@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MantineProvider, createTheme } from '@mantine/core';
 import { ColorSchemeScript } from '@mantine/core';
 import './index.css';
+import 'leaflet/dist/leaflet.css';
 import App from './App.tsx';
 
 // Custom theme with turtle conservation color scheme
