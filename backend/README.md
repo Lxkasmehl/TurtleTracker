@@ -186,3 +186,167 @@ If `faiss-cpu` cannot be installed, try:
 ```bash
 pip install faiss-cpu --no-cache-dir
 ```
+
+## Google Sheets API Integration
+
+The backend supports integration with Google Sheets for turtle data management. This allows admins to sync turtle data directly to Google Sheets when approving matches or creating new turtles.
+
+### Prerequisites
+
+1. A Google Cloud Project
+2. A Google Sheets spreadsheet with the turtle data
+3. Service Account credentials
+
+### Setup Instructions
+
+#### Step 1: Create a Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the Google Sheets API:
+   - Go to "APIs & Services" > "Library"
+   - Search for "Google Sheets API"
+   - Click "Enable"
+
+#### Step 2: Create a Service Account
+
+1. Go to "APIs & Services" > "Credentials"
+2. Click "Create Credentials" > "Service Account"
+3. Fill in the service account details:
+   - Name: `turtle-sheets-service` (or any name you prefer)
+   - Description: `Service account for Turtle Project Google Sheets integration`
+4. Click "Create and Continue"
+5. Skip the optional steps and click "Done"
+
+#### Step 3: Create and Download Service Account Key
+
+1. Click on the service account you just created
+2. Go to the "Keys" tab
+3. Click "Add Key" > "Create new key"
+4. Select "JSON" format
+5. Click "Create" - this will download a JSON file
+6. Save this file securely (e.g., `backend/credentials/google-sheets-credentials.json`)
+
+#### Step 4: Share Google Sheet with Service Account
+
+1. Open your Google Sheets spreadsheet
+2. Click the "Share" button
+3. Add the service account email (found in the JSON file as `client_email`)
+4. Give it "Editor" permissions
+5. Click "Send"
+
+#### Step 5: Get Spreadsheet ID
+
+1. Open your Google Sheets spreadsheet
+2. Look at the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+3. Copy the `SPREADSHEET_ID` part
+
+#### Step 6: Configure Environment Variables
+
+Add the following variables to your `backend/.env` file:
+
+```env
+# Google Sheets API Configuration
+GOOGLE_SHEETS_SPREADSHEET_ID=your-spreadsheet-id-here
+GOOGLE_SHEETS_CREDENTIALS_PATH=./credentials/google-sheets-credentials.json
+```
+
+Replace `your-spreadsheet-id-here` with your actual spreadsheet ID and update the credentials path if you saved the JSON file in a different location.
+
+#### Step 7: Install Dependencies
+
+The Google Sheets API dependencies are already included in `requirements.txt`. If you haven't installed them yet:
+
+```bash
+pip install -r requirements.txt
+```
+
+This will install:
+- `google-api-python-client`
+- `google-auth`
+- `google-auth-oauthlib`
+- `google-auth-httplib2`
+
+#### Step 8: Verify Setup
+
+1. Start the backend server:
+   ```bash
+   python app.py
+   ```
+
+2. Check the console output - you should see no errors related to Google Sheets
+3. If there are errors, check:
+   - The credentials file path is correct
+   - The spreadsheet ID is correct
+   - The service account has access to the spreadsheet
+   - The Google Sheets API is enabled
+
+### Google Sheets Structure
+
+The Google Sheets spreadsheet should have:
+
+1. **Multiple sheets (tabs)**: One sheet per region/state
+   - Example: "Kansas", "Nebraska", etc.
+
+2. **Header row (Row 1)**: Contains column headers:
+   - Transmitter ID
+   - ID (Primary ID - this is the key field)
+   - ID2 (random sequence)
+   - Pit?
+   - Pic in 2024 Archive?
+   - Adopted?
+   - iButton?
+   - DNA Extracted?
+   - Date 1st found
+   - Species
+   - Name
+   - Sex
+   - iButton Last set
+   - Dates refound
+   - General Location
+   - Location
+   - Notes
+   - Transmitter put on by
+   - Transmitter On Date
+   - Transmitter type
+   - Transmitter lifespan
+   - Radio Replace Date
+   - OLD Frequencies
+
+3. **Data rows**: Each row represents one turtle
+
+### Important Notes
+
+- **Column headers must match exactly** (case-sensitive)
+- **The "ID" column is the primary key** - it should be unique across all sheets
+- **Sheet names should match state names** (e.g., "Kansas", "Nebraska")
+- The system automatically finds columns by header name, so column order can change
+- New columns can be added - just make sure the header name matches the expected format
+
+### Google Sheets API Endpoints
+
+- `GET /api/sheets/turtle/<primary_id>` - Get turtle data from Google Sheets (Admin only)
+- `POST /api/sheets/turtle` - Create new turtle data in Google Sheets (Admin only)
+- `PUT /api/sheets/turtle/<primary_id>` - Update turtle data in Google Sheets (Admin only)
+- `GET /api/sheets/sheets` - List all available sheets (Admin only)
+
+### Troubleshooting Google Sheets
+
+#### Error: "Google Sheets service not configured"
+- Check that `GOOGLE_SHEETS_SPREADSHEET_ID` and `GOOGLE_SHEETS_CREDENTIALS_PATH` are set in `.env`
+- Verify the credentials file exists at the specified path
+
+#### Error: "Failed to authenticate with Google Sheets"
+- Check that the credentials JSON file is valid
+- Verify the service account email has access to the spreadsheet
+- Make sure the Google Sheets API is enabled in your Google Cloud project
+
+#### Error: "Turtle not found in Google Sheets"
+- Verify the turtle's Primary ID exists in the spreadsheet
+- Check that you're looking in the correct sheet (state/region)
+- Ensure the "ID" column header is exactly "ID" (case-sensitive)
+
+#### Error: "Failed to create/update turtle data"
+- Check that the service account has "Editor" permissions on the spreadsheet
+- Verify the sheet name matches the state name
+- Check that all required columns exist in the header row

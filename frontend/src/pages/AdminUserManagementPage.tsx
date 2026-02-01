@@ -7,10 +7,10 @@ import {
   TextInput,
   Button,
   Alert,
-  Group,
   Loader,
+  Center,
 } from '@mantine/core';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { IconMail, IconShield, IconAlertCircle, IconCheck } from '@tabler/icons-react';
 import { useUser } from '../hooks/useUser';
 import { useNavigate } from 'react-router-dom';
@@ -18,15 +18,27 @@ import { promoteToAdmin } from '../services/api';
 import { notifications } from '@mantine/notifications';
 
 export default function AdminUserManagementPage() {
-  const { role } = useUser();
+  const { role, authChecked } = useUser();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirect if not admin
+  useEffect(() => {
+    if (!authChecked) return;
+    if (role !== 'admin') {
+      navigate('/');
+    }
+  }, [authChecked, role, navigate]);
+
+  if (!authChecked) {
+    return (
+      <Center py='xl'>
+        <Loader size='lg' />
+      </Center>
+    );
+  }
   if (role !== 'admin') {
-    navigate('/');
     return null;
   }
 
@@ -45,7 +57,8 @@ export default function AdminUserManagementPage() {
       });
       setEmail(''); // Clear form
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to promote user to admin';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to promote user to admin';
       setError(errorMessage);
       notifications.show({
         title: 'Error',
@@ -59,14 +72,15 @@ export default function AdminUserManagementPage() {
   };
 
   return (
-    <Container size='sm' py='xl'>
-      <Paper shadow='sm' p='xl' radius='md' withBorder>
+    <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+      <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md' withBorder>
         <Stack gap='lg'>
           <div>
             <Title order={1}>User Management</Title>
             <Text size='sm' c='dimmed' mt='xs'>
-              Promote a user to admin by entering their email address. If the user doesn't have an
-              account yet, they will receive an invitation email with a registration link.
+              Promote a user to admin by entering their email address. If the user doesn't
+              have an account yet, they will receive an invitation email with a
+              registration link.
             </Text>
           </div>
 
@@ -106,13 +120,14 @@ export default function AdminUserManagementPage() {
 
           <Alert icon={<IconAlertCircle size={16} />} title='How it works' color='blue'>
             <Text size='sm'>
-              <strong>Existing users:</strong> If the user already has an account, they will be
-              promoted immediately and receive a notification email.
+              <strong>Existing users:</strong> If the user already has an account, they
+              will be promoted immediately and receive a notification email.
               <br />
               <br />
-              <strong>New users:</strong> If the user doesn't have an account yet, they will
-              receive an invitation email with a registration link. When they register using that
-              link, their account will be created with admin privileges.
+              <strong>New users:</strong> If the user doesn't have an account yet, they
+              will receive an invitation email with a registration link. When they
+              register using that link, their account will be created with admin
+              privileges.
             </Text>
           </Alert>
         </Stack>
@@ -120,4 +135,3 @@ export default function AdminUserManagementPage() {
     </Container>
   );
 }
-

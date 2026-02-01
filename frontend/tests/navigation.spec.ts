@@ -1,52 +1,41 @@
 import { test, expect } from '@playwright/test';
-import { openMobileMenuIfPresent } from './helpers';
+import { openMobileMenu, navClick } from './fixtures';
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('hasSeenInstructions', 'true');
-  });
-});
-
-test.describe('Navigation Tests', () => {
-  test('should navigate between all pages', async ({ page }) => {
+test.describe('Navigation (public)', () => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/');
+  });
 
-    // Test Home page
-    await expect(page.locator('h1')).toContainText(/^(Image|Photo) Upload$/);
+  test('Home page shows Photo Upload', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Photo Upload' })).toBeVisible();
+  });
 
-    // Navigate to About
-    await openMobileMenuIfPresent(page);
-    await page.getByRole('button', { name: 'About' }).click();
+  test('Navigate across all public pages', async ({ page }) => {
+    await navClick(page, 'About');
     await expect(page).toHaveURL('/about');
-    await expect(page.locator('h1')).toContainText('About Turtle Project');
+    await expect(
+      page.getByRole('heading', { name: 'About Turtle Project' }),
+    ).toBeVisible();
 
-    // Navigate to Contact
-    await openMobileMenuIfPresent(page);
-    await page.getByRole('button', { name: 'Contact' }).click();
+    await navClick(page, 'Contact');
     await expect(page).toHaveURL('/contact');
-    await expect(page.locator('h1')).toContainText('Contact Us');
+    await expect(page.getByRole('heading', { name: 'Contact Us' })).toBeVisible();
 
-    // Navigate to Login
-    await openMobileMenuIfPresent(page);
-    await page.getByRole('button', { name: 'Login' }).click();
+    await navClick(page, 'Login');
     await expect(page).toHaveURL('/login');
-    await expect(page.locator('h2')).toContainText('Login');
+    await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
 
-    // Navigate back to Home
-    await openMobileMenuIfPresent(page);
-    await page.getByRole('button', { name: 'Home' }).click();
+    await navClick(page, 'Home');
     await expect(page).toHaveURL('/');
   });
 
-  test('should work on mobile', async ({ page }) => {
+  test('Mobile: burger menu and About', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/');
-
-    // Open mobile menu and navigate
-    await openMobileMenuIfPresent(page);
+    await openMobileMenu(page);
     await page.getByRole('button', { name: 'About' }).click();
-
     await expect(page).toHaveURL('/about');
-    await expect(page.locator('h1')).toContainText('About Turtle Project');
+    await expect(
+      page.getByRole('heading', { name: 'About Turtle Project' }),
+    ).toBeVisible();
   });
 });

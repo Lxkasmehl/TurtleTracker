@@ -16,7 +16,31 @@ TurtleProject/
 
 ## Quick Start
 
-### Prerequisites
+### Option A: Run with Docker (recommended for deployment)
+
+You need **Docker** and **Docker Compose** installed.
+
+1. Copy the example environment file and adjust if needed:
+   ```bash
+   cp .env.docker.example .env
+   ```
+
+2. (Optional) For Google Sheets: place your service account JSON in `backend/credentials/google-sheets-credentials.json` and set `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env`.
+
+3. Build and start all services:
+   ```bash
+   docker compose up --build
+   ```
+
+4. Open **http://localhost** in your browser (frontend). Auth API: **http://localhost:3001**, Turtle API: **http://localhost:5000**.
+
+Data (auth DB, review queue, uploads) is stored in Docker volumes and persists between runs. See `docs/DOCKER.md` for details.
+
+---
+
+### Option B: Run locally (development)
+
+#### Prerequisites
 
 - **Node.js** (v18+) for auth-backend and frontend
 - **Python** (3.8+) for turtle backend

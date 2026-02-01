@@ -96,7 +96,7 @@ export default function LoginPage({
       setError(
         errorParam === 'auth_failed'
           ? 'Google authentication failed. Please try again.'
-          : 'An error occurred. Please try again.'
+          : 'An error occurred. Please try again.',
       );
       // Clean URL
       window.history.replaceState({}, '', '/login');
@@ -203,8 +203,8 @@ export default function LoginPage({
         err instanceof Error
           ? err.message
           : isSignUp
-          ? 'Registration failed'
-          : 'Login failed';
+            ? 'Registration failed'
+            : 'Login failed';
       setError(errorMessage);
       notifications.show({
         title: isSignUp ? 'Registration failed' : 'Login failed',
@@ -222,8 +222,8 @@ export default function LoginPage({
   };
 
   return (
-    <Container size='sm' py='xl'>
-      <Paper shadow='sm' p='xl' radius='md'>
+    <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+      <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md'>
         <Stack gap='md'>
           <Title order={2} ta='center'>
             {isSignUp ? 'Sign Up' : 'Login'}
@@ -298,8 +298,8 @@ export default function LoginPage({
                     ? 'Creating account...'
                     : 'Logging in...'
                   : isSignUp
-                  ? 'Sign Up'
-                  : 'Sign In'}
+                    ? 'Sign Up'
+                    : 'Sign In'}
               </Button>
             </Stack>
           </form>
@@ -317,6 +317,7 @@ export default function LoginPage({
               justifyContent: 'center',
               gap: '12px',
               padding: '12px 24px',
+              minHeight: 44,
               backgroundColor: '#ffffff',
               border: '1px solid #dadce0',
               borderRadius: 'var(--mantine-radius-md)',

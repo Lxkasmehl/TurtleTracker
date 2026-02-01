@@ -93,9 +93,10 @@ export default function Navigation({ children }: NavigationProps) {
     return baseBreakpoint + itemAdjustment + userNameAdjustment;
   }, [role, user?.name, user?.email]);
 
-  // Use dynamic breakpoint to show drawer when there's not enough space
-  // This skips the icon-only step and goes directly to drawer
-  const showDrawer = useMediaQuery(`(max-width: ${dynamicBreakpoint}px)`);
+  // Use dynamic breakpoint; on mobile (< 768px) always show drawer for best touch UX
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const isNarrowViewport = useMediaQuery(`(max-width: ${dynamicBreakpoint}px)`);
+  const showDrawer = isMobile || isNarrowViewport;
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -153,25 +154,31 @@ export default function Navigation({ children }: NavigationProps) {
   );
 
   return (
-    <AppShell header={{ height: 60 }} padding='md'>
+    <AppShell header={{ height: isMobile ? 56 : 60 }} padding={isMobile ? 'xs' : 'md'}>
       <AppShell.Header>
         <Group
           h='100%'
-          px='md'
-          gap='md'
+          px={isMobile ? 'xs' : 'md'}
+          gap={isMobile ? 'xs' : 'md'}
           wrap='nowrap'
           justify='space-between'
           style={{
             overflow: 'hidden',
             width: '100%',
+            minWidth: 0,
           }}
         >
-          {/* Left side - Logo */}
-          <Group gap='sm' style={{ flexShrink: 0 }}>
+          {/* Left side - Logo (truncate on very small screens) */}
+          <Group gap='xs' style={{ flexShrink: 1, minWidth: 0 }}>
             <Text
               size='lg'
               fw={700}
-              style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
               onClick={() => handleNavigation('/')}
             >
               Turtle Project
@@ -268,26 +275,53 @@ export default function Navigation({ children }: NavigationProps) {
               </>
             )}
 
-            {/* Color Scheme Toggle */}
-            <ActionIcon variant='subtle' onClick={() => toggleColorScheme()} size='lg'>
-              {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
-            </ActionIcon>
+            {/* Color Scheme Toggle - hidden in drawer on mobile to save space */}
+            {!showDrawer && (
+              <ActionIcon variant='subtle' onClick={() => toggleColorScheme()} size='lg'>
+                {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+              </ActionIcon>
+            )}
 
-            {/* Burger Menu - shown when drawer should be used */}
+            {/* Mobile: theme toggle + burger */}
             {showDrawer && (
-              <Burger
-                data-testid='mobile-menu-button'
-                opened={opened}
-                onClick={toggle}
-                size='sm'
-              />
+              <>
+                <ActionIcon
+                  variant='subtle'
+                  onClick={() => toggleColorScheme()}
+                  size='lg'
+                  aria-label={
+                    colorScheme === 'dark'
+                      ? 'Switch to light mode'
+                      : 'Switch to dark mode'
+                  }
+                >
+                  {colorScheme === 'dark' ? (
+                    <IconSun size={18} />
+                  ) : (
+                    <IconMoon size={18} />
+                  )}
+                </ActionIcon>
+                <Burger
+                  data-testid='mobile-menu-button'
+                  opened={opened}
+                  onClick={toggle}
+                  size='sm'
+                  aria-label='Open menu'
+                />
+              </>
             )}
           </Group>
         </Group>
       </AppShell.Header>
 
-      {/* Mobile Drawer */}
-      <Drawer opened={opened} onClose={close} position='right' size='xs'>
+      {/* Mobile Drawer - full width on small screens for easier touch */}
+      <Drawer
+        opened={opened}
+        onClose={close}
+        position='right'
+        size={isMobile ? '85%' : 'xs'}
+        padding='md'
+      >
         <Stack gap='xs' h='90vh' justify='space-between'>
           {/* Main navigation links at top */}
           <Stack gap='xs'>

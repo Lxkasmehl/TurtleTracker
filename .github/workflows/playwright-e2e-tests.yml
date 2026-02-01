@@ -13,122 +13,72 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create .env for Docker Compose
+        run: |
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
+          echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env
+          echo "FRONTEND_URL=http://localhost" >> .env
+
+      - name: Build and start services with Docker Compose
+        run: docker compose up -d --build
+
+      - name: Wait for auth backend
+        run: |
+          n=0
+          until [ $n -ge 60 ]; do
+            if curl -sf http://localhost:3001/api/health > /dev/null; then break; fi
+            n=$((n+1)); sleep 1
+          done
+          [ $n -lt 60 ] || (echo "Auth backend did not become ready"; exit 1)
+
+      - name: Wait for Flask backend
+        run: |
+          n=0
+          until [ $n -ge 120 ]; do
+            if curl -sf http://localhost:5000/api/health > /dev/null; then break; fi
+            n=$((n+1)); sleep 1
+          done
+          [ $n -lt 120 ] || (echo "Flask backend did not become ready"; exit 1)
+
+      - name: Wait for frontend
+        run: |
+          n=0
+          until [ $n -ge 30 ]; do
+            if curl -sf http://localhost:80 > /dev/null; then break; fi
+            n=$((n+1)); sleep 1
+          done
+          [ $n -lt 30 ] || (echo "Frontend did not become ready"; exit 1)
+
+      - name: Seed test users in auth backend
+        run: |
+          docker compose exec -T -e E2E_ADMIN_EMAIL=admin@test.com \
+            -e E2E_ADMIN_PASSWORD=testpassword123 \
+            -e E2E_COMMUNITY_EMAIL=community@test.com \
+            -e E2E_COMMUNITY_PASSWORD=testpassword123 \
+            auth-backend node dist/scripts/seed-test-users.js
+
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: backend/requirements.txt
-
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
-
-      - name: Install auth-backend dependencies
-        working-directory: ./auth-backend
-        run: npm ci
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: pip install -r requirements.txt
 
       - name: Install Playwright Browsers
         working-directory: ./frontend
         run: npx playwright install --with-deps
 
-      - name: Setup shared JWT secret
-        id: jwt-secret
-        run: |
-          JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-          echo "jwt_secret=$JWT_SECRET" >> $GITHUB_OUTPUT
-          echo "JWT_SECRET=$JWT_SECRET" >> $GITHUB_ENV
-
-      - name: Setup auth backend environment
-        working-directory: ./auth-backend
-        env:
-          JWT_SECRET: ${{ env.JWT_SECRET }}
-        run: |
-          echo "JWT_SECRET=$JWT_SECRET" >> .env
-          echo "SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> .env
-          echo "PORT=3001" >> .env
-          echo "FRONTEND_URL=http://localhost:5173" >> .env
-          echo "NODE_ENV=test" >> .env
-
-      - name: Setup backend environment
-        working-directory: ./backend
-        env:
-          JWT_SECRET: ${{ env.JWT_SECRET }}
-        run: |
-          echo "JWT_SECRET=$JWT_SECRET" >> .env
-          echo "PORT=5000" >> .env
-
-      - name: Seed test users
-        working-directory: ./auth-backend
-        env:
-          E2E_ADMIN_EMAIL: admin@test.com
-          E2E_ADMIN_PASSWORD: testpassword123
-          E2E_COMMUNITY_EMAIL: community@test.com
-          E2E_COMMUNITY_PASSWORD: testpassword123
-        run: npm run seed-test-users
-
-      - name: Start auth backend server
-        working-directory: ./auth-backend
-        run: npm run dev &
-        env:
-          PORT: 3001
-
-      - name: Wait for auth backend to be ready
-        run: |
-          echo "Waiting for auth backend to start..."
-          n=0
-          until [ $n -ge 30 ]; do
-            if curl -f http://localhost:3001/api/health > /dev/null 2>&1; then
-              echo "✅ Auth backend is ready!"
-              exit 0
-            fi
-            n=$((n+1))
-            echo "Attempt $n/30: Backend not ready yet, waiting..."
-            sleep 1
-          done
-          echo "❌ Timeout waiting for auth backend"
-          exit 1
-
-      - name: Start Flask backend server
-        working-directory: ./backend
-        run: python3 app.py &
-        env:
-          PORT: 5000
-          JWT_SECRET: ${{ env.JWT_SECRET }}
-
-      - name: Wait for Flask backend to be ready
-        run: |
-          echo "Waiting for Flask backend to start..."
-          n=0
-          until [ $n -ge 30 ]; do
-            if curl -f http://localhost:5000/api/health > /dev/null 2>&1; then
-              echo "✅ Flask backend is ready!"
-              exit 0
-            fi
-            n=$((n+1))
-            echo "Attempt $n/30: Backend not ready yet, waiting..."
-            sleep 1
-          done
-          echo "❌ Timeout waiting for Flask backend"
-          exit 1
-
       - name: Run Playwright tests
         working-directory: ./frontend
         env:
+          PLAYWRIGHT_BASE_URL: http://localhost
           E2E_ADMIN_EMAIL: admin@test.com
           E2E_ADMIN_PASSWORD: testpassword123
           E2E_COMMUNITY_EMAIL: community@test.com
           E2E_COMMUNITY_PASSWORD: testpassword123
-          VITE_API_URL: http://localhost:5000/api
         run: npm test
 
       - name: Upload test results

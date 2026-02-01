@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+/** When set (e.g. in CI with Docker), frontend is already running at this URL; no dev server is started. */
+const baseURL =
+  process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
+
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
@@ -18,7 +22,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:5173',
+    baseURL,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -28,7 +32,7 @@ export default defineConfig({
       cookies: [],
       origins: [
         {
-          origin: 'http://localhost:5173',
+          origin: baseURL,
           localStorage: [
             {
               name: 'hasSeenInstructions',
@@ -68,8 +72,10 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: [
+  /* Run your local dev server before starting the tests (skipped when PLAYWRIGHT_BASE_URL is set, e.g. Docker CI) */
+  webServer: process.env.PLAYWRIGHT_BASE_URL
+    ? undefined
+    : [
     // Start auth backend first (with test user seeding)
     {
       command:
