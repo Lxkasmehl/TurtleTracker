@@ -222,6 +222,14 @@ export interface LocationHint {
   source: 'gps' | 'manual';
 }
 
+/** Additional image (microhabitat, condition) in a review packet */
+export interface AdditionalImage {
+  filename: string;
+  type: string;
+  timestamp?: string;
+  image_path: string;
+}
+
 export interface ReviewQueueItem {
   request_id: string;
   uploaded_image: string;
@@ -235,7 +243,14 @@ export interface ReviewQueueItem {
     location_hint_lat?: number;
     location_hint_lon?: number;
     location_hint_source?: 'gps' | 'manual';
+    collected_to_lab?: string;
+    physical_flag?: string;
+    digital_flag_lat?: number;
+    digital_flag_lon?: number;
+    digital_flag_source?: 'gps' | 'manual';
   };
+  /** Microhabitat / condition photos uploaded with this find */
+  additional_images?: AdditionalImage[];
   candidates: Array<{
     rank: number;
     turtle_id: string;
@@ -243,6 +258,17 @@ export interface ReviewQueueItem {
     image_path: string;
   }>;
   status: string;
+}
+
+/** Flag/microhabitat data sent when approving a review (new or matched turtle) */
+export interface FindMetadata {
+  microhabitat_uploaded?: boolean;
+  other_angles_uploaded?: boolean;
+  collected_to_lab?: 'yes' | 'no';
+  physical_flag?: 'yes' | 'no' | 'no_flag';
+  digital_flag_lat?: number;
+  digital_flag_lon?: number;
+  digital_flag_source?: 'gps' | 'manual';
 }
 
 export interface ReviewQueueResponse {
@@ -256,11 +282,24 @@ export interface ApproveReviewRequest {
   new_turtle_id?: string;
   uploaded_image_path?: string;
   sheets_data?: TurtleSheetsData;
+  find_metadata?: FindMetadata;
 }
 
 export interface ApproveReviewResponse {
   success: boolean;
   message: string;
+}
+
+/** Optional flag/collected-to-lab and extra images for upload (community flow) */
+export interface UploadFlagOptions {
+  collectedToLab?: 'yes' | 'no';
+  physicalFlag?: 'yes' | 'no' | 'no_flag';
+  digitalFlag?: LocationHint;
+}
+
+export interface UploadExtraFile {
+  type: 'microhabitat' | 'condition';
+  file: File;
 }
 
 // Upload photo (Admin or Community)
@@ -273,6 +312,10 @@ export const uploadTurtlePhoto = async (
   locationHint?: LocationHint,
   /** Admin only: sheet name (location) to test against; '' or undefined = test against all locations */
   matchSheet?: string,
+  /** Optional: collected to lab / physical flag / digital flag (community upload) */
+  flagOptions?: UploadFlagOptions,
+  /** Optional: microhabitat or condition photos (community upload, same request) */
+  extraFiles?: UploadExtraFile[],
 ): Promise<UploadPhotoResponse> => {
   const formData = new FormData();
   formData.append('file', file);
@@ -291,6 +334,20 @@ export const uploadTurtlePhoto = async (
     formData.append('location_hint_lat', String(locationHint.latitude));
     formData.append('location_hint_lon', String(locationHint.longitude));
     formData.append('location_hint_source', locationHint.source);
+  }
+  if (flagOptions) {
+    if (flagOptions.collectedToLab) formData.append('collected_to_lab', flagOptions.collectedToLab);
+    if (flagOptions.physicalFlag) formData.append('physical_flag', flagOptions.physicalFlag);
+    if (flagOptions.digitalFlag) {
+      formData.append('digital_flag_lat', String(flagOptions.digitalFlag.latitude));
+      formData.append('digital_flag_lon', String(flagOptions.digitalFlag.longitude));
+      formData.append('digital_flag_source', flagOptions.digitalFlag.source);
+    }
+  }
+  if (extraFiles?.length) {
+    extraFiles.forEach((ef, i) => {
+      formData.append(`extra_${ef.type}_${i}`, ef.file);
+    });
   }
 
   const token = getToken();
@@ -348,6 +405,66 @@ export const getReviewQueue = async (): Promise<ReviewQueueResponse> => {
   return await response.json();
 };
 
+// Add additional images (microhabitat, condition) to a review packet (Admin only)
+export const uploadReviewPacketAdditionalImages = async (
+  requestId: string,
+  files: Array<{ type: 'microhabitat' | 'condition'; file: File }>,
+): Promise<{ success: boolean; message?: string }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const formData = new FormData();
+  files.forEach((f, i) => {
+    formData.append(`file_${i}`, f.file);
+    formData.append(`type_${i}`, f.type);
+  });
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}/additional-images`,
+    { method: 'POST', headers, body: formData },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error || 'Failed to add images');
+  }
+  return await response.json();
+};
+
+// Get single review packet (Admin only) – e.g. for Match page to show/update additional_images
+export const getReviewPacket = async (
+  requestId: string,
+): Promise<{ success: boolean; item: ReviewQueueItem }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}`,
+    { method: 'GET', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load packet' }));
+    throw new Error(err.error || 'Failed to load packet');
+  }
+  return await response.json();
+};
+
+// Remove one additional image from a review packet (Admin only)
+export const removeReviewPacketAdditionalImage = async (
+  requestId: string,
+  filename: string,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}/additional-images`,
+    { method: 'DELETE', headers, body: JSON.stringify({ filename }) },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to remove image' }));
+    throw new Error(err.error || 'Failed to remove image');
+  }
+};
+
 // Approve review item (Admin only)
 export const approveReview = async (
   requestId: string,
@@ -399,6 +516,27 @@ export const deleteReviewItem = async (
   return await response.json();
 };
 
+// Get turtles with flag/find metadata (Admin only – for release page)
+export const getTurtlesWithFlags = async (): Promise<{
+  success: boolean;
+  items: Array<{
+    turtle_id: string;
+    location: string;
+    path: string;
+    find_metadata: FindMetadata & Record<string, unknown>;
+  }>;
+}> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/flags`, { method: 'GET', headers });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load flags' }));
+    throw new Error(err.error || 'Failed to load turtles with flags');
+  }
+  return await response.json();
+};
+
 // Get image URL helper
 export const getImageUrl = (imagePath: string): string => {
   // Convert file path to API endpoint
@@ -408,6 +546,40 @@ export const getImageUrl = (imagePath: string): string => {
   // For local paths, encode them as query parameter
   const encodedPath = encodeURIComponent(imagePath);
   return `${TURTLE_API_BASE_URL.replace('/api', '')}/api/images?path=${encodedPath}`;
+};
+
+// Turtle images (Admin only) – primary plastron, additional (microhabitat/condition), loose
+export interface TurtleImageAdditional {
+  path: string;
+  type: string;
+  timestamp?: string | null;
+  uploaded_by?: string | null;
+}
+
+export interface TurtleImagesResponse {
+  primary: string | null;
+  additional: TurtleImageAdditional[];
+  loose: string[];
+}
+
+export const getTurtleImages = async (
+  turtleId: string,
+  sheetName?: string | null,
+): Promise<TurtleImagesResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const params = new URLSearchParams({ turtle_id: turtleId });
+  if (sheetName) params.set('sheet_name', sheetName);
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/turtles/images?${params.toString()}`,
+    { method: 'GET', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load images' }));
+    throw new Error(err.error || 'Failed to load turtle images');
+  }
+  return await response.json();
 };
 
 // --- Google Sheets API ---

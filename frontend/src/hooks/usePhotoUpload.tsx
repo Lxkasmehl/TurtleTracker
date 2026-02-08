@@ -4,7 +4,13 @@ import { notifications } from '@mantine/notifications';
 import { IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { validateFile } from '../utils/fileValidation';
 import { getCurrentLocation } from '../services/geolocation';
-import { uploadTurtlePhoto, type UploadPhotoResponse, type LocationHint } from '../services/api';
+import {
+  uploadTurtlePhoto,
+  type UploadPhotoResponse,
+  type LocationHint,
+  type UploadFlagOptions,
+  type UploadExtraFile,
+} from '../services/api';
 import { useUser } from './useUser';
 import type { FileWithPath } from '../types/file';
 
@@ -34,6 +40,14 @@ interface UsePhotoUploadReturn {
   setLocationHint: (hint: LocationHint | null) => void;
   /** Request current GPS as location hint (community: permission flow) */
   requestLocationHint: () => Promise<void>;
+  /** Flag options (collected to lab, physical flag, digital flag) – community upload */
+  collectedToLab: 'yes' | 'no' | null;
+  setCollectedToLab: (v: 'yes' | 'no' | null) => void;
+  physicalFlag: 'yes' | 'no' | 'no_flag' | null;
+  setPhysicalFlag: (v: 'yes' | 'no' | 'no_flag' | null) => void;
+  /** Optional extra images (microhabitat, condition) – community upload */
+  extraFiles: UploadExtraFile[];
+  setExtraFiles: (files: UploadExtraFile[] | ((prev: UploadExtraFile[]) => UploadExtraFile[])) => void;
   handleDrop: (acceptedFiles: FileWithPath[]) => void;
   handleUpload: () => Promise<void>;
   handleRemove: () => void;
@@ -57,6 +71,9 @@ export function usePhotoUpload({
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationHint, setLocationHint] = useState<LocationHint | null>(null);
+  const [collectedToLab, setCollectedToLab] = useState<'yes' | 'no' | null>(null);
+  const [physicalFlag, setPhysicalFlag] = useState<'yes' | 'no' | 'no_flag' | null>(null);
+  const [extraFiles, setExtraFiles] = useState<UploadExtraFile[]>([]);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup interval on unmount
@@ -92,6 +109,9 @@ export function usePhotoUpload({
       setIsDuplicate(false);
       setPreviousUploadDate(null);
       setLocationHint(null);
+      setCollectedToLab(null);
+      setPhysicalFlag(null);
+      setExtraFiles([]);
       setLocationPermissionDenied(false);
 
       // Create preview
@@ -140,13 +160,26 @@ export function usePhotoUpload({
         'community';
       const userEmail = user?.email || 'anonymous@example.com';
 
+      const flagOptions: UploadFlagOptions | undefined =
+        userRole === 'community' && (collectedToLab || physicalFlag || locationHint)
+          ? {
+              ...(collectedToLab && { collectedToLab }),
+              ...(physicalFlag && { physicalFlag }),
+              ...(locationHint && collectedToLab === 'yes' && {
+                digitalFlag: locationHint,
+              }),
+            }
+          : undefined;
+
       const response: UploadPhotoResponse = await uploadTurtlePhoto(
         file,
         userRole,
         userEmail,
         undefined,
         locationHint ?? undefined,
-        userRole === 'admin' ? (matchSheet ?? '') : undefined
+        userRole === 'admin' ? (matchSheet ?? '') : undefined,
+        flagOptions,
+        extraFiles.length > 0 ? extraFiles : undefined
       );
 
       // Clear interval and set to 100%
@@ -252,6 +285,9 @@ export function usePhotoUpload({
     setIsDuplicate(false);
     setPreviousUploadDate(null);
     setLocationHint(null);
+    setCollectedToLab(null);
+    setPhysicalFlag(null);
+    setExtraFiles([]);
   };
 
   return {
@@ -268,6 +304,12 @@ export function usePhotoUpload({
     locationHint,
     setLocationHint,
     requestLocationHint,
+    collectedToLab,
+    setCollectedToLab,
+    physicalFlag,
+    setPhysicalFlag,
+    extraFiles,
+    setExtraFiles,
     handleDrop,
     handleUpload,
     handleRemove,

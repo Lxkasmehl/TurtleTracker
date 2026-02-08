@@ -268,10 +268,16 @@ class TurtleManager:
         query_save_path = os.path.join(packet_dir, filename)
         shutil.copy2(query_image_path, query_save_path)
 
-        # 3. Save Metadata
+        # 3. Save Metadata (includes optional flag/collected_to_lab/digital_flag from upload)
         if user_info:
             with open(os.path.join(packet_dir, 'metadata.json'), 'w') as f:
                 json.dump(user_info, f)
+
+        # Create additional_images dir for optional microhabitat/condition photos
+        additional_dir = os.path.join(packet_dir, 'additional_images')
+        os.makedirs(additional_dir, exist_ok=True)
+        with open(os.path.join(additional_dir, 'manifest.json'), 'w') as f:
+            json.dump([], f)
 
         print(f"🐢 Analysis: Running Smart Search for {filename}...")
 
@@ -309,6 +315,70 @@ class TurtleManager:
 
         print(f"✅ Review Packet Created: {request_id}")
         return request_id
+
+    def add_additional_images_to_packet(self, request_id, files_with_types):
+        """
+        Add extra images (e.g. microhabitat, condition) to an existing review packet.
+        files_with_types: list of dicts with keys: path (str), type (str, e.g. 'microhabitat' or 'condition'), timestamp (optional ISO str).
+        """
+        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        if not os.path.isdir(packet_dir):
+            return False, "Request not found"
+        additional_dir = os.path.join(packet_dir, 'additional_images')
+        os.makedirs(additional_dir, exist_ok=True)
+        manifest_path = os.path.join(additional_dir, 'manifest.json')
+        manifest = []
+        if os.path.exists(manifest_path):
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+        for item in files_with_types:
+            src = item.get('path')
+            typ = (item.get('type') or 'other').lower()
+            if typ not in ('microhabitat', 'condition', 'other'):
+                typ = 'other'
+            ts = item.get('timestamp') or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            if not src or not os.path.isfile(src):
+                continue
+            ext = os.path.splitext(src)[1] or '.jpg'
+            safe_name = f"{typ}_{int(time.time())}_{os.path.basename(src)}"
+            safe_name = "".join(c for c in safe_name if c.isalnum() or c in '._-')
+            dest = os.path.join(additional_dir, safe_name)
+            shutil.copy2(src, dest)
+            manifest.append({"filename": safe_name, "type": typ, "timestamp": ts})
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+        return True, "OK"
+
+    def remove_additional_image_from_packet(self, request_id, filename):
+        """
+        Remove one image from a packet's additional_images by filename.
+        Returns (True, None) on success, (False, error_message) on failure.
+        """
+        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        if not os.path.isdir(packet_dir):
+            return False, "Request not found"
+        additional_dir = os.path.join(packet_dir, 'additional_images')
+        manifest_path = os.path.join(additional_dir, 'manifest.json')
+        if not os.path.isfile(manifest_path):
+            return False, "No additional images"
+        # Security: filename must not contain path separators
+        if not filename or os.path.basename(filename) != filename:
+            return False, "Invalid filename"
+        file_path = os.path.join(additional_dir, filename)
+        if not os.path.isfile(file_path):
+            return False, "Image not found"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        new_manifest = [e for e in manifest if e.get('filename') != filename]
+        if len(new_manifest) == len(manifest):
+            return False, "Image not in manifest"
+        try:
+            os.remove(file_path)
+        except OSError as e:
+            return False, str(e)
+        with open(manifest_path, 'w') as f:
+            json.dump(new_manifest, f)
+        return True, None
 
     # --- NEW: SEARCH & OBSERVATION LOGIC ---
 
@@ -464,11 +534,25 @@ class TurtleManager:
         except Exception as e:
             return False, str(e)
 
-    def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None, uploaded_image_path=None):
+    def _get_turtle_folder(self, turtle_id, location_hint=None):
+        """Resolve turtle folder path by turtle_id and optional location_hint."""
+        if location_hint and location_hint != "Unknown":
+            possible_path = os.path.join(self.base_dir, location_hint, turtle_id)
+            if os.path.exists(possible_path):
+                return possible_path
+        for root, dirs, files in os.walk(self.base_dir):
+            if os.path.basename(root) == turtle_id:
+                return root
+        return None
+
+    def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None, uploaded_image_path=None, find_metadata=None):
         """
         Called when Admin approves a packet.
         - If match_turtle_id is set: Adds image to that existing turtle's 'loose_images'.
         - If new_location and new_turtle_id are set: Creates a NEW turtle folder there.
+        - find_metadata: optional dict with microhabitat_uploaded, other_angles_uploaded,
+          collected_to_lab, physical_flag, digital_flag_lat, digital_flag_lon, digital_flag_source.
+        - Copies packet's additional_images into turtle folder and writes find_metadata.json.
         
         Args:
             request_id: The request ID (can be from review queue or admin upload)
@@ -476,6 +560,7 @@ class TurtleManager:
             new_location: Location for new turtle (format: "State/Location")
             new_turtle_id: ID for new turtle (e.g., "T101")
             uploaded_image_path: Direct path to uploaded image (for admin uploads not in queue)
+            find_metadata: Optional dict for flag/microhabitat confirmation and digital flag coords
         """
         # Try to find image in review queue first
         query_image = None
@@ -529,6 +614,38 @@ class TurtleManager:
         else:
             return False, "Either match_turtle_id or both new_location and new_turtle_id must be provided"
 
+        # Resolve turtle folder and persist find_metadata + additional_images
+        target_turtle_id = match_turtle_id if match_turtle_id else new_turtle_id
+        location_hint = (new_location or "").split("/")[0].strip() if new_location else None
+        target_dir = self._get_turtle_folder(target_turtle_id, location_hint)
+        if target_dir:
+            # Write find_metadata.json (flag, microhabitat, collected_to_lab, digital flag)
+            if find_metadata is not None and isinstance(find_metadata, dict):
+                meta_path = os.path.join(target_dir, 'find_metadata.json')
+                with open(meta_path, 'w') as f:
+                    json.dump(find_metadata, f)
+            # Copy additional_images from packet to turtle's additional_images folder
+            packet_dir = os.path.join(self.review_queue_dir, request_id)
+            if os.path.isdir(packet_dir):
+                src_additional = os.path.join(packet_dir, 'additional_images')
+                if os.path.isdir(src_additional):
+                    dest_additional = os.path.join(target_dir, 'additional_images')
+                    os.makedirs(dest_additional, exist_ok=True)
+                    manifest_path = os.path.join(src_additional, 'manifest.json')
+                    if os.path.isfile(manifest_path):
+                        with open(manifest_path, 'r') as f:
+                            manifest = json.load(f)
+                        for entry in manifest:
+                            fn = entry.get('filename')
+                            if fn and os.path.isfile(os.path.join(src_additional, fn)):
+                                shutil.copy2(
+                                    os.path.join(src_additional, fn),
+                                    os.path.join(dest_additional, fn)
+                                )
+                        dest_manifest = os.path.join(dest_additional, 'manifest.json')
+                        with open(dest_manifest, 'w') as f:
+                            json.dump(manifest, f)
+
         # Clean up the review packet (only if it exists in review queue)
         if os.path.exists(packet_dir):
             try:
@@ -550,6 +667,50 @@ class TurtleManager:
                     print(f"⚠️ Error deleting temp file: {e}")
         
         return True, "Processed successfully"
+
+    def _add_turtle_flag_if_present(self, results, turtle_path, turtle_id, location_label):
+        """If turtle_path has find_metadata.json, append to results."""
+        meta_path = os.path.join(turtle_path, 'find_metadata.json')
+        if not os.path.isfile(meta_path):
+            return
+        try:
+            with open(meta_path, 'r') as f:
+                find_metadata = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return
+        results.append({
+            'turtle_id': turtle_id,
+            'location': location_label,
+            'path': turtle_path,
+            'find_metadata': find_metadata,
+        })
+
+    def get_turtles_with_flags(self):
+        """
+        Scan data dir for turtles that have find_metadata.json (e.g. with digital_flag or collected_to_lab).
+        Handles both structures: data/State/TurtleID and data/State/Location/TurtleID.
+        Returns list of dicts: turtle_id, location (State or State/Location), path, find_metadata.
+        """
+        results = []
+        for state in sorted(os.listdir(self.base_dir)):
+            state_path = os.path.join(self.base_dir, state)
+            if not os.path.isdir(state_path) or state.startswith('.'):
+                continue
+            if state in ["Review_Queue", "Community_Uploads", "Incidental_Finds"]:
+                continue
+            for name in sorted(os.listdir(state_path)):
+                sub_path = os.path.join(state_path, name)
+                if not os.path.isdir(sub_path) or name.startswith('.'):
+                    continue
+                # Case 1: state/name is a turtle folder (e.g. data/Kansas/T101)
+                self._add_turtle_flag_if_present(results, sub_path, name, state)
+                # Case 2: state/name is a location folder; look for turtle folders inside
+                for turtle_id in sorted(os.listdir(sub_path)):
+                    turtle_path = os.path.join(sub_path, turtle_id)
+                    if not os.path.isdir(turtle_path) or turtle_id.startswith('.'):
+                        continue
+                    self._add_turtle_flag_if_present(results, turtle_path, turtle_id, f"{state}/{name}")
+        return results
 
     def reject_review_packet(self, request_id):
         """
