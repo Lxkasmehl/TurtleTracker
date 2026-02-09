@@ -93,3 +93,28 @@ def register_turtle_routes(app):
             'additional': additional,
             'loose': loose,
         })
+
+    @app.route('/api/turtles/images/additional', methods=['DELETE'])
+    @require_admin
+    def delete_turtle_additional_image():
+        """
+        Delete one additional image from a turtle's folder (Admin only).
+        Query: turtle_id (required), filename (required), sheet_name (optional).
+        """
+        if not manager_service.manager_ready.wait(timeout=5):
+            return jsonify({'error': 'TurtleManager is still initializing'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager not available'}), 500
+        turtle_id = (request.args.get('turtle_id') or '').strip()
+        filename = (request.args.get('filename') or '').strip()
+        sheet_name = (request.args.get('sheet_name') or '').strip() or None
+        if not turtle_id:
+            return jsonify({'error': 'turtle_id required'}), 400
+        if not filename:
+            return jsonify({'error': 'filename required'}), 400
+        success, err = manager_service.manager.remove_additional_image_from_turtle(
+            turtle_id, filename, sheet_name
+        )
+        if not success:
+            return jsonify({'error': err or 'Failed to delete image'}), 400
+        return jsonify({'success': True})

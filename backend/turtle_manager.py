@@ -380,6 +380,43 @@ class TurtleManager:
             json.dump(new_manifest, f)
         return True, None
 
+    def remove_additional_image_from_turtle(self, turtle_id, filename, sheet_name=None):
+        """
+        Remove one image from a turtle's additional_images folder by filename.
+        Returns (True, None) on success, (False, error_message) on failure.
+        """
+        turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
+        if not turtle_dir or not os.path.isdir(turtle_dir):
+            return False, "Turtle folder not found"
+        additional_dir = os.path.join(turtle_dir, 'additional_images')
+        if not os.path.isdir(additional_dir):
+            return False, "No additional images folder"
+        # Security: filename must not contain path separators
+        if not filename or os.path.basename(filename) != filename:
+            return False, "Invalid filename"
+        file_path = os.path.join(additional_dir, filename)
+        if not os.path.isfile(file_path):
+            return False, "Image not found"
+        manifest_path = os.path.join(additional_dir, 'manifest.json')
+        if not os.path.isfile(manifest_path):
+            try:
+                os.remove(file_path)
+                return True, None
+            except OSError as e:
+                return False, str(e)
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        new_manifest = [e for e in manifest if e.get('filename') != filename]
+        if len(new_manifest) == len(manifest):
+            return False, "Image not in manifest"
+        try:
+            os.remove(file_path)
+        except OSError as e:
+            return False, str(e)
+        with open(manifest_path, 'w') as f:
+            json.dump(new_manifest, f)
+        return True, None
+
     # --- NEW: SEARCH & OBSERVATION LOGIC ---
 
     def search_for_matches(self, query_image_path, sheet_name=None):

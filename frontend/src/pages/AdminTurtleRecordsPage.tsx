@@ -44,6 +44,7 @@ import {
   removeReviewPacketAdditionalImage,
   getTurtleSheetsData,
   getTurtleImages,
+  deleteTurtleAdditionalImage,
   type ReviewQueueItem,
   type TurtleImagesResponse,
   updateTurtleSheetsData,
@@ -125,6 +126,7 @@ export default function AdminTurtleRecordsPage() {
     timestamp?: string | null;
     uploaded_by?: string | null;
   } | null>(null);
+  const [queuePreviewImageUrl, setQueuePreviewImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -894,7 +896,7 @@ export default function AdminTurtleRecordsPage() {
                                   <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t}</Text>
                                   <Flex gap='sm' wrap='wrap'>
                                     {ofType.map((img) => (
-                                      <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder style={{ width: 140 }}>
+                                      <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder style={{ width: 140, cursor: 'pointer' }} onClick={() => setQueuePreviewImageUrl(getImageUrl(img.image_path))}>
                                         <Image
                                           src={getImageUrl(img.image_path)}
                                           alt={img.type}
@@ -910,7 +912,8 @@ export default function AdminTurtleRecordsPage() {
                                             variant='subtle'
                                             color='red'
                                             p={4}
-                                            onClick={async () => {
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
                                               if (!selectedItem) return;
                                               try {
                                                 await removeReviewPacketAdditionalImage(selectedItem.request_id, img.filename);
@@ -1442,28 +1445,51 @@ export default function AdminTurtleRecordsPage() {
                             <Stack gap={4}>
                               <Text size='xs' c='dimmed'>Microhabitat / condition</Text>
                               <Group gap='xs'>
-                                {turtleImages.additional.map((a, i) => (
-                                  <Box
-                                    key={`${a.path}-${i}`}
-                                    style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden' }}
-                                    onClick={() => setTurtleImageDetail({
+                                {turtleImages.additional.map((a, i) => {
+                                  const turtleId = selectedTurtle.primary_id || selectedTurtle.id;
+                                  const filename = a.path.replace(/^.*[/\\]/, '');
+                                  return (
+                                    <Card key={`${a.path}-${i}`} shadow='xs' padding='xs' radius='md' withBorder w={140} style={{ cursor: 'pointer' }} onClick={() => setTurtleImageDetail({
                                       path: a.path,
                                       type: a.type === 'microhabitat' ? 'Microhabitat' : a.type === 'condition' ? 'Condition' : a.type,
                                       timestamp: a.timestamp ?? undefined,
                                       uploaded_by: a.uploaded_by ?? undefined,
-                                    })}
-                                  >
-                                    <Image
-                                      src={getImageUrl(a.path)}
-                                      alt={a.type}
-                                      fit='cover'
-                                      w={120}
-                                      h={120}
-                                      radius='sm'
-                                      fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
-                                    />
-                                  </Box>
-                                ))}
+                                    })}>
+                                      <Image
+                                        src={getImageUrl(a.path)}
+                                        alt={a.type}
+                                        fit='cover'
+                                        w={120}
+                                        h={120}
+                                        radius='sm'
+                                        fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+                                      />
+                                      <Group justify='space-between' mt={4} gap={4}>
+                                        <Text size='xs' c='dimmed' lineClamp={1}>{a.timestamp ? a.timestamp.slice(0, 10) : ''}</Text>
+                                        <Button
+                                          size='xs'
+                                          variant='subtle'
+                                          color='red'
+                                          p={4}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!turtleId) return;
+                                            try {
+                                              await deleteTurtleAdditionalImage(turtleId, filename, selectedTurtle.sheet_name || undefined);
+                                              const data = await getTurtleImages(turtleId, selectedTurtle.sheet_name || undefined);
+                                              setTurtleImages(data);
+                                              notifications.show({ title: 'Deleted', message: 'Photo removed from turtle.', color: 'green' });
+                                            } catch (err) {
+                                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed', color: 'red' });
+                                            }
+                                          }}
+                                        >
+                                          <IconTrash size={14} />
+                                        </Button>
+                                      </Group>
+                                    </Card>
+                                  );
+                                })}
                               </Group>
                             </Stack>
                           )}
@@ -1572,6 +1598,27 @@ export default function AdminTurtleRecordsPage() {
           </Tabs.Panel>
         </Tabs>
       </Stack>
+
+      {/* Queue additional photo preview – click to view large */}
+      <Modal
+        opened={queuePreviewImageUrl != null}
+        onClose={() => setQueuePreviewImageUrl(null)}
+        title='Photo'
+        size='lg'
+        centered
+      >
+        {queuePreviewImageUrl && (
+          <Image
+            src={queuePreviewImageUrl}
+            alt='Preview'
+            fit='contain'
+            maw='100%'
+            mah={400}
+            radius='sm'
+            fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+          />
+        )}
+      </Modal>
 
       {/* Create New Turtle Modal (Review Queue) - full width on mobile */}
       <Modal

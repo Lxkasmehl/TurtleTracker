@@ -582,6 +582,27 @@ export const getTurtleImages = async (
   return await response.json();
 };
 
+/** Delete one additional image from a turtle's folder (Admin only). */
+export const deleteTurtleAdditionalImage = async (
+  turtleId: string,
+  filename: string,
+  sheetName?: string | null,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const params = new URLSearchParams({ turtle_id: turtleId, filename });
+  if (sheetName) params.set('sheet_name', sheetName);
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/turtles/images/additional?${params.toString()}`,
+    { method: 'DELETE', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to delete image' }));
+    throw new Error(err.error || 'Failed to delete image');
+  }
+};
+
 // --- Google Sheets API ---
 
 export interface TurtleSheetsData {

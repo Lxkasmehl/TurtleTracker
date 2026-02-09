@@ -28,12 +28,15 @@ import {
   uploadReviewPacketAdditionalImages,
   removeReviewPacketAdditionalImage,
   getReviewPacket,
+  getTurtleImages,
+  deleteTurtleAdditionalImage,
   updateTurtleSheetsData,
   createTurtleSheetsData,
   generatePrimaryId,
   getTurtleSheetsData,
   type TurtleSheetsData,
   type AdditionalImage,
+  type TurtleImageAdditional,
 } from '../services/api';
 import { notifications } from '@mantine/notifications';
 import {
@@ -70,6 +73,8 @@ export default function AdminTurtleMatchPage() {
   const [findMetadata, setFindMetadata] = useState<FindMetadata | null>(null);
   const [additionalImagesUploading, setAdditionalImagesUploading] = useState(false);
   const [packetAdditionalImages, setPacketAdditionalImages] = useState<AdditionalImage[]>([]);
+  const [turtleAdditionalImages, setTurtleAdditionalImages] = useState<TurtleImageAdditional[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
 
@@ -109,6 +114,18 @@ export default function AdminTurtleMatchPage() {
       .then((res) => setPacketAdditionalImages(res.item.additional_images || []))
       .catch(() => setPacketAdditionalImages([]));
   }, [imageId]);
+
+  // When a match is selected, load that turtle's existing additional images (from disk)
+  useEffect(() => {
+    if (!selectedMatch) {
+      setTurtleAdditionalImages([]);
+      return;
+    }
+    const sheetName = sheetsData?.sheet_name || undefined;
+    getTurtleImages(selectedMatch, sheetName)
+      .then((res) => setTurtleAdditionalImages(res.additional || []))
+      .catch(() => setTurtleAdditionalImages([]));
+  }, [selectedMatch, sheetsData?.sheet_name]);
 
   const handleSelectMatch = async (turtleId: string) => {
     setSelectedMatch(turtleId);
@@ -697,25 +714,70 @@ export default function AdminTurtleMatchPage() {
                     </ScrollArea>
                   </Paper>
 
-                  {/* Additional photos: list by type with remove, add via file select (no extra button) */}
+                  {/* Additional photos: already on file for this turtle + new from this upload */}
                   <Paper shadow='sm' p='md' radius='md' withBorder>
                     <Stack gap='sm'>
                       <Text size='sm' fw={500}>Additional photos (microhabitat / condition)</Text>
-                      {packetAdditionalImages.length > 0 ? (
+                      {/* Already on file for this turtle (from previous uploads) */}
+                      {turtleAdditionalImages.length > 0 && (
                         <Stack gap='md'>
+                          <Text size='xs' c='dimmed'>Already on file for this turtle ({turtleAdditionalImages.length}) – avoid adding duplicates:</Text>
+                          {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                            const ofType = turtleAdditionalImages.filter((img) => img.type === t);
+                            if (ofType.length === 0) return null;
+                            return (
+                              <Stack key={t} gap={4}>
+                                <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
+                                <Group gap='xs' wrap='wrap'>
+                                  {ofType.map((img) => {
+                                    const filename = img.path.replace(/^.*[/\\]/, '');
+                                    return (
+                                      <Card key={img.path} shadow='xs' padding='xs' radius='md' withBorder w={120} style={{ cursor: 'pointer' }} onClick={() => setPreviewImageUrl(getImageUrl(img.path))}>
+                                        <Image src={getImageUrl(img.path)} alt={img.type} radius='sm' h={80} style={{ objectFit: 'cover' }} />
+                                        <Group justify='space-between' mt={4} gap={4}>
+                                          <Text size='xs' c='dimmed' lineClamp={1}>{img.timestamp?.slice(0, 10) ?? ''}</Text>
+                                          <Button size='xs' variant='subtle' color='red' p={4} onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!selectedMatch) return;
+                                            try {
+                                              await deleteTurtleAdditionalImage(selectedMatch, filename, sheetsData?.sheet_name);
+                                              const res = await getTurtleImages(selectedMatch, sheetsData?.sheet_name);
+                                              setTurtleAdditionalImages(res.additional || []);
+                                              notifications.show({ title: 'Deleted', message: 'Photo removed from turtle.', color: 'green' });
+                                            } catch (err) {
+                                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed', color: 'red' });
+                                            }
+                                          }}>
+                                            <IconTrash size={14} />
+                                          </Button>
+                                        </Group>
+                                      </Card>
+                                    );
+                                  })}
+                                </Group>
+                              </Stack>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                      {/* New from this upload (can remove before saving) */}
+                      {packetAdditionalImages.length > 0 && (
+                        <Stack gap='md'>
+                          <Text size='xs' c='dimmed'>New from this upload ({packetAdditionalImages.length}):</Text>
                           {(['microhabitat', 'condition', 'other'] as const).map((t) => {
                             const ofType = packetAdditionalImages.filter((img) => img.type === t);
                             if (ofType.length === 0) return null;
                             return (
                               <Stack key={t} gap={4}>
-                                <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t}</Text>
+                                <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
                                 <Group gap='xs' wrap='wrap'>
                                   {ofType.map((img) => (
-                                    <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder w={120}>
+                                    <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder w={120} style={{ cursor: 'pointer' }} onClick={() => setPreviewImageUrl(getImageUrl(img.image_path))}>
                                       <Image src={getImageUrl(img.image_path)} alt={img.type} radius='sm' h={80} style={{ objectFit: 'cover' }} />
                                       <Group justify='space-between' mt={4} gap={4}>
                                         <Text size='xs' c='dimmed' lineClamp={1}>{img.timestamp?.slice(0, 10) ?? ''}</Text>
-                                        <Button size='xs' variant='subtle' color='red' p={4} onClick={async () => {
+                                        <Button size='xs' variant='subtle' color='red' p={4} onClick={async (e) => {
+                                          e.stopPropagation();
                                           if (!imageId) return;
                                           try {
                                             await removeReviewPacketAdditionalImage(imageId, img.filename);
@@ -735,10 +797,13 @@ export default function AdminTurtleMatchPage() {
                             );
                           })}
                         </Stack>
-                      ) : (
-                        <Text size='xs' c='dimmed'>No additional photos yet. Choose Microhabitat or Condition below to add (as many as you like).</Text>
                       )}
-                      <Group gap='xs' mt='xs'>
+                      {turtleAdditionalImages.length === 0 && packetAdditionalImages.length === 0 && (
+                        <Text size='xs' c='dimmed'>No additional photos for this turtle yet. Add microhabitat or condition photos below (as many as you like).</Text>
+                      )}
+                      <Divider label='Add more' labelPosition='left' />
+                      <Text size='xs' c='dimmed'>Add more photos (will be saved with this turtle):</Text>
+                      <Group gap='xs'>
                         <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
                           Microhabitat
                           <input type='file' accept='image/*' multiple hidden onChange={async (e) => {
@@ -849,6 +914,26 @@ export default function AdminTurtleMatchPage() {
         )}
       </Stack>
 
+      {/* Image preview modal – click any additional photo to view large */}
+      <Modal
+        opened={previewImageUrl != null}
+        onClose={() => setPreviewImageUrl(null)}
+        title='Photo'
+        size='lg'
+        centered
+      >
+        {previewImageUrl && (
+          <Image
+            src={previewImageUrl}
+            alt='Preview'
+            fit='contain'
+            maw='100%'
+            mah={70 * 8}
+            radius='sm'
+          />
+        )}
+      </Modal>
+
       {/* New Turtle Creation Modal - full width on mobile */}
       <Modal
         opened={showNewTurtleModal}
@@ -876,16 +961,17 @@ export default function AdminTurtleMatchPage() {
           <Paper shadow='sm' p='sm' radius='md' withBorder>
             <Stack gap='xs'>
               <Text size='sm' fw={500}>Additional photos (microhabitat / condition)</Text>
-              <Text size='xs' c='dimmed'>Optional: add as many as you like. Select files below; they are added immediately.</Text>
-              {packetAdditionalImages.length > 0 && (
-                <Stack gap={4}>
-                  {(['microhabitat', 'condition', 'other'] as const).map((t) => {
-                    const ofType = packetAdditionalImages.filter((img) => img.type === t);
-                    if (ofType.length === 0) return null;
-                    return (
-                      <Stack key={t} gap={4}>
-                        <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t}</Text>
-                        <Group gap='xs' wrap='wrap'>
+              {packetAdditionalImages.length > 0 ? (
+                <>
+                  <Text size='xs' c='dimmed'>Already uploaded ({packetAdditionalImages.length}) – avoid adding duplicates:</Text>
+                  <Stack gap={4}>
+                    {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                      const ofType = packetAdditionalImages.filter((img) => img.type === t);
+                      if (ofType.length === 0) return null;
+                      return (
+                        <Stack key={t} gap={4}>
+                          <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
+                          <Group gap='xs' wrap='wrap'>
                           {ofType.map((img) => (
                             <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder w={100}>
                               <Image src={getImageUrl(img.image_path)} alt={img.type} radius='sm' h={60} style={{ objectFit: 'cover' }} />
@@ -908,7 +994,12 @@ export default function AdminTurtleMatchPage() {
                     );
                   })}
                 </Stack>
+                </>
+              ) : (
+                <Text size='xs' c='dimmed'>No additional photos yet. Add microhabitat or condition photos below.</Text>
               )}
+              <Divider label='Add more' labelPosition='left' />
+              <Text size='xs' c='dimmed'>Add more photos (optional):</Text>
               <Group gap='xs'>
                 <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
                   Microhabitat
