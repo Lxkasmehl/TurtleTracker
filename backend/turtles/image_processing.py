@@ -163,18 +163,38 @@ def smart_search(image_path, location_filter=None, k_results=20):
     index = GLOBAL_RESOURCES['faiss_index']
     metadata = GLOBAL_RESOURCES['metadata']
 
-    if not vocab or not index: return []
+    # Require valid vocab and index; skip search if vocab is not fitted (stale/corrupt file)
+    if not vocab or not index:
+        return []
+    centers = getattr(vocab, 'cluster_centers_', None)
+    if centers is None or (hasattr(centers, 'size') and centers.size == 0):
+        return []
+    # Empty index (e.g. no turtles yet): avoid FAISS search and return no matches
+    if hasattr(index, 'ntotal') and index.ntotal == 0:
+        return []
 
     query_vector = process_new_image(image_path, vocab)
-    if query_vector is None: return []
+    if query_vector is None:
+        return []
 
-    dists, idxs = index.search(query_vector, k_results * 5)
+    # When filtering by location, request more candidates so we have enough after filtering
+    search_k = (k_results * 10) if location_filter else (k_results * 5)
+    dists, idxs = index.search(query_vector, search_k)
     results = []
     seen_sites = set()
 
     for i, idx in enumerate(idxs[0]):
-        if idx == -1 or idx >= len(metadata): continue
-        meta = metadata[idx]
+        # Use int() so we never use numpy scalar in list index; -1 means no match from FAISS
+        idx_int = int(idx)
+        if idx_int < 0 or idx_int >= len(metadata):
+            continue
+        meta = metadata[idx_int]
+        # Restrict to given sheet (tab name) when filter is set. Match only against sheet name = state or folder name from backend path, never the "Location" column from the sheet.
+        if location_filter:
+            state_val = str(meta.get('state') or '')
+            loc_val = str(meta.get('location') or '')
+            if state_val != str(location_filter) and loc_val != str(location_filter):
+                continue
         site_id = meta.get('site_id', 'Unknown')
         if site_id not in seen_sites:
             seen_sites.add(site_id)
@@ -212,7 +232,14 @@ def rerank_results_with_spatial_verification(query_image_path, initial_results):
 
         try:
             _, kp_candidate, des_candidate, _ = SIFT_from_file(candidate_path)
-            if des_candidate is None: continue
+            if des_candidate is None:
+                continue
+            # knnMatch with k=2 requires at least 2 train descriptors (e.g. single-turtle edge case)
+            n_train = des_candidate.shape[0] if hasattr(des_candidate, 'shape') else len(des_candidate)
+            if n_train < 2:
+                res['spatial_score'] = 0
+                verified_results.append(res)
+                continue
 
             matches = bf.knnMatch(des_query, des_candidate, k=2)
             good = [m for m, n in matches if m.distance < 0.75 * n.distance]
@@ -227,7 +254,8 @@ def rerank_results_with_spatial_verification(query_image_path, initial_results):
                 except AttributeError:
                     M, mask = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 8.0)  # Fallback
 
-                if mask is not None: inliers = np.sum(mask)
+                if mask is not None:
+                    inliers = int(np.sum(mask))
 
             res['spatial_score'] = int(inliers)
             verified_results.append(res)
@@ -259,6 +287,19 @@ def load_or_generate_persistent_data(data_directory):
     GLOBAL_RESOURCES['faiss_index'] = load_faiss_index(DEFAULT_INDEX_PATH)
     GLOBAL_RESOURCES['metadata'] = load_metadata(DEFAULT_METADATA_PATH)
     return True
+
+
+def rebuild_index_and_reload(data_directory):
+    """
+    Rebuild FAISS index and vocab from data_directory and reload GLOBAL_RESOURCES.
+    Call this after adding new reference data (e.g. new turtle) so the next search sees it.
+    """
+    global GLOBAL_RESOURCES
+    rebuild_faiss_index_from_folders(data_directory)
+    GLOBAL_RESOURCES['vocab'] = load_vocabulary(DEFAULT_VOCAB_PATH)
+    GLOBAL_RESOURCES['faiss_index'] = load_faiss_index(DEFAULT_INDEX_PATH)
+    GLOBAL_RESOURCES['metadata'] = load_metadata(DEFAULT_METADATA_PATH)
+    GLOBAL_RESOURCES['vlad_array'] = load_vlad_array(DEFAULT_VLAD_ARRAY_PATH)
 
 
 # Helper loaders
@@ -308,6 +349,7 @@ def rebuild_faiss_index_from_folders(data_directory, vocab_save_path=DEFAULT_VOC
                 if f.endswith(".npz"): all_npz.append(os.path.join(root, f))
 
         batch = []
+        vocab_was_fitted = False
         for i, fpath in enumerate(all_npz):
             try:
                 d = np.load(fpath, allow_pickle=True)
@@ -317,17 +359,27 @@ def rebuild_faiss_index_from_folders(data_directory, vocab_save_path=DEFAULT_VOC
                         indices = np.random.choice(len(des), 10000, replace=False)
                         des = des[indices]
                     batch.append(des)
-            except:
+            except Exception:
                 pass
 
             if len(batch) >= 100 or i == len(all_npz) - 1:
                 if batch:
                     kmeans_vocab.partial_fit(np.vstack(batch).astype('float32'))
+                    vocab_was_fitted = True
                     print(f"   Processed batch... ({i + 1}/{len(all_npz)})")
                     batch = []
-        joblib.dump(kmeans_vocab, vocab_save_path)
+        # Only save vocab if it was actually fitted. Otherwise an unfitted KMeans would
+        # cause 500 on first upload when predict() is called (e.g. empty data folder).
+        if vocab_was_fitted:
+            joblib.dump(kmeans_vocab, vocab_save_path)
+        else:
+            print("   No NPZ data in data/ - skipping vocab save. Add turtle reference data for matching.")
+            kmeans_vocab = None
 
-    # 3. Build Index
+    # 3. Build Index (only if we have a fitted vocab)
+    if kmeans_vocab is None:
+        print("   No vocabulary available - skipping index build. Add turtle reference data under data/ and restart.")
+        return None
     print("   Generating Index...")
     all_vlad = []
     final_meta = []
@@ -339,9 +391,11 @@ def rebuild_faiss_index_from_folders(data_directory, vocab_save_path=DEFAULT_VOC
                     parts = path.split(os.sep)
                     if 'ref_data' in parts:
                         idx = parts.index('ref_data')
-                        tid, loc = parts[idx - 1], parts[idx - 2]
+                        tid = parts[idx - 1]
+                        loc = parts[idx - 2]   # folder name (Location in State/Location)
+                        state = parts[idx - 3] if idx >= 3 else loc  # state name (sheet name in UI)
                     else:
-                        tid, loc = "Unknown", "Unknown"
+                        tid, loc, state = "Unknown", "Unknown", "Unknown"
 
                     d = np.load(path, allow_pickle=True)
                     des = d.get('descriptors')
@@ -352,7 +406,8 @@ def rebuild_faiss_index_from_folders(data_directory, vocab_save_path=DEFAULT_VOC
                     if des is not None and len(des) > 0:
                         vlad = compute_vlad(des, kmeans_vocab)
                         all_vlad.append(vlad)
-                        final_meta.append({'filename': f, 'file_path': path, 'site_id': tid, 'location': loc})
+                        # sheet_name_filter: value to match UI sheet (tab) name; use state (matches backend folders), never the "Location" column from the sheet
+                        final_meta.append({'filename': f, 'file_path': path, 'site_id': tid, 'location': loc, 'state': state})
                 except:
                     pass
 

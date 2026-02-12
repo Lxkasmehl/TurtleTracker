@@ -1,16 +1,36 @@
 import { useMemo } from 'react';
-import { getDuplicatePhotosByImageId, type UploadedPhoto } from '../services/mockBackend';
+import type { UploadedPhoto } from '../types/photo';
+import { generateFileHash } from '../utils/fileValidation';
 
 export interface PhotoGroup {
-  representative: UploadedPhoto; // The first/oldest photo in the group
-  photos: UploadedPhoto[]; // All photos in this group
-  isDuplicate: boolean; // Whether this group has duplicates
+  representative: UploadedPhoto;
+  photos: UploadedPhoto[];
+  isDuplicate: boolean;
+}
+
+function getDuplicatePhotosByImageId(
+  photos: UploadedPhoto[],
+  imageId: string
+): UploadedPhoto[] {
+  const photo = photos.find((p) => p.imageId === imageId);
+  if (!photo) return [];
+  const fileHash = generateFileHash({
+    name: photo.fileName,
+    size: photo.fileSize,
+    type: photo.fileType,
+  });
+  return photos.filter((p) => {
+    const h = generateFileHash({
+      name: p.fileName,
+      size: p.fileSize,
+      type: p.fileType,
+    });
+    return h === fileHash;
+  });
 }
 
 /**
- * Hook to group photos by duplicate hash
- * @param photos - Array of all photos
- * @returns Array of photo groups
+ * Groups photos by duplicate file hash (same file name/size/type).
  */
 export function usePhotoGroups(photos: UploadedPhoto[]): PhotoGroup[] {
   return useMemo<PhotoGroup[]>(() => {
@@ -19,34 +39,23 @@ export function usePhotoGroups(photos: UploadedPhoto[]): PhotoGroup[] {
 
     photos.forEach((photo) => {
       if (processed.has(photo.imageId)) return;
-
-      // Get all duplicates for this photo
-      const duplicates = getDuplicatePhotosByImageId(photo.imageId);
-
-      // Sort by timestamp (oldest first)
-      duplicates.sort((a, b) => {
-        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-      });
-
-      // Mark all as processed
+      const duplicates = getDuplicatePhotosByImageId(photos, photo.imageId);
+      duplicates.sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
       duplicates.forEach((p) => processed.add(p.imageId));
-
       groups.push({
-        representative: duplicates[0], // Oldest photo is representative
+        representative: duplicates[0],
         photos: duplicates,
         isDuplicate: duplicates.length > 1,
       });
     });
 
-    // Sort groups by representative's timestamp (newest first)
-    groups.sort((a, b) => {
-      return (
+    groups.sort(
+      (a, b) =>
         new Date(b.representative.timestamp).getTime() -
         new Date(a.representative.timestamp).getTime()
-      );
-    });
-
+    );
     return groups;
   }, [photos]);
 }
-

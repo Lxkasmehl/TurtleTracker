@@ -33,8 +33,8 @@ export default function ContactPage() {
   };
 
   return (
-    <Container size='sm' py='xl'>
-      <Paper shadow='sm' p='xl' radius='md'>
+    <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+      <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md'>
         <Stack gap='lg'>
           <Center>
             <Title order={1}>Contact Us</Title>

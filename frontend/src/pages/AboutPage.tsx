@@ -13,11 +13,13 @@ import { IconCheck, IconCode, IconPalette, IconRocket } from '@tabler/icons-reac
 
 export default function AboutPage() {
   return (
-    <Container size='md' py='xl'>
-      <Paper shadow='sm' p='xl' radius='md'>
+    <Container size='md' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+      <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md'>
         <Stack gap='lg'>
           <Center>
-            <Title order={1}>About Turtle Project</Title>
+            <Title order={1} ta='center'>
+              About Turtle Project
+            </Title>
           </Center>
 
           <Text size='lg' c='dimmed' ta='center'>
@@ -47,7 +49,7 @@ export default function AboutPage() {
 
           <Stack gap='md'>
             <Title order={3}>Technologies Used</Title>
-            <Group justify='center' gap='xl'>
+            <Group justify='center' gap='xl' wrap='wrap'>
               <Stack align='center' gap='xs'>
                 <ThemeIcon size='xl' radius='xl' color='green'>
                   <IconCode size={24} />

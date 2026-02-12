@@ -4,12 +4,13 @@ import { type UserRole } from '../types/User';
 
 export function useUser() {
   const dispatch = useAppDispatch();
-  const { role, isLoggedIn, user } = useAppSelector((state) => state.user);
+  const { role, isLoggedIn, user, authChecked } = useAppSelector((state) => state.user);
 
   return {
     role,
     isLoggedIn,
     user,
+    authChecked,
     setRole: (newRole: UserRole) => dispatch(setRole(newRole)),
     setIsLoggedIn: (loggedIn: boolean) => dispatch(setIsLoggedIn(loggedIn)),
     setUser: (userInfo: UserInfo) => dispatch(setUser(userInfo)),

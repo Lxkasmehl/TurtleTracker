@@ -29,7 +29,7 @@ function App(): React.JSX.Element {
     <Provider store={store}>
       <AuthProvider>
         <ThemeProvider>
-          <Notifications position='bottom-right' zIndex={1000} />
+          <Notifications position='bottom-center' zIndex={1000} />
           <Router>
             <Navigation>
               <Routes>

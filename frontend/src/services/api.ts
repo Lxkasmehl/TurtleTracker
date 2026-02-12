@@ -52,7 +52,7 @@ export const removeToken = (): void => {
 // Make authenticated API request to Auth Backend
 export const apiRequest = async (
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<Response> => {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -215,6 +215,13 @@ export interface UploadPhotoResponse {
   message: string;
 }
 
+/** Location hint from community (never stored in sheets, queue/display only) */
+export interface LocationHint {
+  latitude: number;
+  longitude: number;
+  source: 'gps' | 'manual';
+}
+
 export interface ReviewQueueItem {
   request_id: string;
   uploaded_image: string;
@@ -224,6 +231,10 @@ export interface ReviewQueueItem {
     uploaded_at?: number;
     state?: string;
     location?: string;
+    /** Hint only – never stored in sheets */
+    location_hint_lat?: number;
+    location_hint_lon?: number;
+    location_hint_source?: 'gps' | 'manual';
   };
   candidates: Array<{
     rank: number;
@@ -244,6 +255,7 @@ export interface ApproveReviewRequest {
   new_location?: string;
   new_turtle_id?: string;
   uploaded_image_path?: string;
+  sheets_data?: TurtleSheetsData;
 }
 
 export interface ApproveReviewResponse {
@@ -256,7 +268,11 @@ export const uploadTurtlePhoto = async (
   file: File,
   _role: 'admin' | 'community', // Used by frontend for navigation logic, not sent to backend
   _email: string, // Used by frontend, not sent to backend
-  location?: { state: string; location: string }
+  location?: { state: string; location: string },
+  /** Optional: coordinates as hint only (never stored in sheets) */
+  locationHint?: LocationHint,
+  /** Admin only: sheet name (location) to test against; '' or undefined = test against all locations */
+  matchSheet?: string,
 ): Promise<UploadPhotoResponse> => {
   const formData = new FormData();
   formData.append('file', file);
@@ -266,6 +282,15 @@ export const uploadTurtlePhoto = async (
   if (location) {
     formData.append('state', location.state);
     formData.append('location', location.location);
+  }
+  // Admin: which location/datasheet to match against (empty = all)
+  if (matchSheet !== undefined) {
+    formData.append('match_sheet', matchSheet);
+  }
+  if (locationHint) {
+    formData.append('location_hint_lat', String(locationHint.latitude));
+    formData.append('location_hint_lon', String(locationHint.longitude));
+    formData.append('location_hint_source', locationHint.source);
   }
 
   const token = getToken();
@@ -289,7 +314,13 @@ export const uploadTurtlePhoto = async (
       throw new Error('Authentication failed. Please try again.');
     }
     const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(error.error || 'Upload failed');
+    const message = error.error || 'Upload failed';
+    // Include backend details in dev for debugging (e.g. 500 traceback)
+    const details = error.details as string | undefined;
+    if (details && import.meta.env.DEV) {
+      console.error('Upload error details:', details);
+    }
+    throw new Error(message);
   }
 
   return await response.json();
@@ -320,7 +351,7 @@ export const getReviewQueue = async (): Promise<ReviewQueueResponse> => {
 // Approve review item (Admin only)
 export const approveReview = async (
   requestId: string,
-  data: ApproveReviewRequest
+  data: ApproveReviewRequest,
 ): Promise<ApproveReviewResponse> => {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -345,6 +376,29 @@ export const approveReview = async (
   return await response.json();
 };
 
+// Delete review queue item (Admin only) – no processing, removes packet
+export const deleteReviewItem = async (
+  requestId: string,
+): Promise<{ success: boolean; message: string }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review/${encodeURIComponent(requestId)}`,
+    {
+      method: 'DELETE',
+      headers,
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to delete' }));
+    throw new Error(error.error || 'Failed to delete review item');
+  }
+  return await response.json();
+};
+
 // Get image URL helper
 export const getImageUrl = (imagePath: string): string => {
   // Convert file path to API endpoint
@@ -354,4 +408,342 @@ export const getImageUrl = (imagePath: string): string => {
   // For local paths, encode them as query parameter
   const encodedPath = encodeURIComponent(imagePath);
   return `${TURTLE_API_BASE_URL.replace('/api', '')}/api/images?path=${encodedPath}`;
+};
+
+// --- Google Sheets API ---
+
+export interface TurtleSheetsData {
+  primary_id?: string;
+  sheet_name?: string; // Which Google Sheets tab this turtle belongs to
+  transmitter_id?: string;
+  id?: string;
+  id2?: string;
+  pit?: string;
+  pic_in_2024_archive?: string;
+  adopted?: string;
+  ibutton?: string;
+  dna_extracted?: string;
+  date_1st_found?: string;
+  species?: string;
+  name?: string;
+  sex?: string;
+  ibutton_last_set?: string;
+  last_assay_date?: string;
+  dates_refound?: string;
+  general_location?: string;
+  location?: string;
+  notes?: string;
+  transmitter_put_on_by?: string;
+  transmitter_on_date?: string;
+  transmitter_type?: string;
+  transmitter_lifespan?: string;
+  radio_replace_date?: string;
+  old_frequencies?: string;
+}
+
+export interface GetTurtleSheetsDataResponse {
+  success: boolean;
+  data?: TurtleSheetsData;
+  message?: string;
+  exists?: boolean; // Whether the turtle exists in Google Sheets
+}
+
+export interface ListSheetsResponse {
+  success: boolean;
+  sheets?: string[];
+  error?: string;
+}
+
+export interface GeneratePrimaryIdRequest {
+  state: string;
+  location?: string;
+}
+
+export interface GeneratePrimaryIdResponse {
+  success: boolean;
+  primary_id?: string;
+  error?: string;
+}
+
+export interface CreateTurtleSheetsDataRequest {
+  sheet_name: string;
+  state?: string;
+  location?: string;
+  turtle_data: TurtleSheetsData;
+}
+
+export interface CreateTurtleSheetsDataResponse {
+  success: boolean;
+  primary_id?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface UpdateTurtleSheetsDataRequest {
+  sheet_name: string;
+  state?: string;
+  location?: string;
+  turtle_data: Partial<TurtleSheetsData>;
+}
+
+export interface UpdateTurtleSheetsDataResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+// Get turtle data from Google Sheets
+// sheetName is optional - if not provided, the backend will automatically find the sheet containing the turtle
+export const getTurtleSheetsData = async (
+  primaryId: string,
+  sheetName?: string,
+  state?: string,
+  location?: string,
+): Promise<GetTurtleSheetsDataResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const params = new URLSearchParams();
+  if (sheetName) {
+    params.append('sheet_name', sheetName);
+  }
+  if (state) {
+    params.append('state', state);
+  }
+  if (location) {
+    params.append('location', location);
+  }
+
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/sheets/turtle/${primaryId}${params.toString() ? `?${params.toString()}` : ''}`,
+    {
+      method: 'GET',
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get turtle data from sheets');
+  }
+
+  return await response.json();
+};
+
+// Create turtle data in Google Sheets
+export const createTurtleSheetsData = async (
+  data: CreateTurtleSheetsDataRequest,
+): Promise<CreateTurtleSheetsDataResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/turtle`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create turtle data in sheets');
+  }
+
+  return await response.json();
+};
+
+// Update turtle data in Google Sheets
+export const updateTurtleSheetsData = async (
+  primaryId: string,
+  data: UpdateTurtleSheetsDataRequest,
+): Promise<UpdateTurtleSheetsDataResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/turtle/${primaryId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update turtle data in sheets');
+  }
+
+  return await response.json();
+};
+
+// Generate a new primary ID
+export const generatePrimaryId = async (
+  data: GeneratePrimaryIdRequest,
+  timeoutMs: number = 15000,
+): Promise<GeneratePrimaryIdResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Create an AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/generate-primary-id`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate primary ID');
+    }
+
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
+// List all available sheets (longer timeout: backend may retry Google API on first timeout)
+export const listSheets = async (
+  timeoutMs: number = 25000,
+): Promise<ListSheetsResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Create an AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/sheets`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to list sheets');
+    }
+
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
+// Create a new sheet with headers
+export interface CreateSheetRequest {
+  sheet_name: string;
+}
+
+export interface CreateSheetResponse {
+  success: boolean;
+  message?: string;
+  sheets?: string[];
+  error?: string;
+}
+
+export const createSheet = async (
+  data: CreateSheetRequest,
+): Promise<CreateSheetResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/sheets`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create sheet');
+  }
+
+  return await response.json();
+};
+
+// List all turtles from Google Sheets
+export interface ListTurtlesResponse {
+  success: boolean;
+  turtles: TurtleSheetsData[];
+  count: number;
+  error?: string;
+}
+
+export const listAllTurtlesFromSheets = async (
+  sheetName?: string,
+): Promise<ListTurtlesResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const params = new URLSearchParams();
+  if (sheetName) {
+    params.append('sheet', sheetName);
+  }
+
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/sheets/turtles?${params.toString()}`,
+    {
+      method: 'GET',
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to list turtles from sheets');
+  }
+
+  return await response.json();
 };

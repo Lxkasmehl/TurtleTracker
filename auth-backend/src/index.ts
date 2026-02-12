@@ -33,6 +33,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+// Allow both localhost and 127.0.0.1 so CORS works regardless of how the user opens the app
+const allowedOrigins = [
+  FRONTEND_URL,
+  FRONTEND_URL.replace(/localhost/, '127.0.0.1'),
+  FRONTEND_URL.replace(/127\.0\.0\.1/, 'localhost'),
+].filter((v, i, a) => a.indexOf(v) === i);
+
 // Health check - must be before CORS to allow Playwright to check readiness
 // This endpoint is used by Playwright to verify the server is ready
 app.get('/api/health', (req, res) => {
@@ -48,7 +55,7 @@ app.get('/', (req, res) => {
 // Middleware
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: allowedOrigins,
     credentials: true,
   })
 );

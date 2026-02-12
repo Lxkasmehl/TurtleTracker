@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAppDispatch } from '../store/hooks';
-import { setUser } from '../store/slices/userSlice';
+import { setUser, setAuthChecked } from '../store/slices/userSlice';
 import { getToken, getCurrentUser, removeToken } from '../services/api';
 
 interface AuthProviderProps {
@@ -15,26 +15,45 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
+    let cancelled = false;
+
+    const markAuthChecked = () => {
+      if (!cancelled) {
+        dispatch(setAuthChecked(true));
+      }
+    };
+
+    // Fallback: if auth backend is slow/unreachable, still allow UI to proceed after a short delay
+    const fallbackId = setTimeout(markAuthChecked, 4000);
+
     const checkAuth = async () => {
       const token = getToken();
       if (token) {
         try {
           const user = await getCurrentUser();
-          if (user) {
-            dispatch(setUser(user));
-          } else {
-            // Token is invalid or expired, remove it silently
-            removeToken();
+          if (!cancelled) {
+            if (user) {
+              dispatch(setUser(user));
+            } else {
+              removeToken();
+            }
           }
         } catch (error) {
-          // Only log unexpected errors (not authentication errors)
-          console.error('Unexpected error during auth check:', error);
-          removeToken();
+          if (!cancelled) {
+            console.error('Unexpected error during auth check:', error);
+            removeToken();
+          }
         }
       }
+      clearTimeout(fallbackId);
+      markAuthChecked();
     };
 
     checkAuth();
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackId);
+    };
   }, [dispatch]);
 
   return <>{children}</>;

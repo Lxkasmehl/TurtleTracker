@@ -312,23 +312,36 @@ class TurtleManager:
 
     # --- NEW: SEARCH & OBSERVATION LOGIC ---
 
-    def search_for_matches(self, query_image_path):
+    def search_for_matches(self, query_image_path, sheet_name=None):
         """
         Smart Search with "Auto-Mirror" fallback.
         1. Search Normal.
         2. If scores are low, flip image horizontal and search again.
         3. Return the best set of results.
+
+        sheet_name: If set, only compare against turtles from this location (Google Sheet tab name).
+                    None or empty = search across all locations.
         """
         total_search_start = time.time()
+        location_filter = (sheet_name or '').strip() or None
 
         MATCH_CONFIDENCE_THRESHOLD = 15
 
         filename = os.path.basename(query_image_path)
-        print(f"🔍 Analyzing {filename} (Normal Orientation)...")
+        scope = f" (Location: {location_filter})" if location_filter else " (all locations)"
+        print(f"🔍 Analyzing {filename} (Normal Orientation){scope}...")
 
         # 1. First Pass (Normal)
-        # Use existing smart_search
-        candidates_normal = image_processing.smart_search(query_image_path, k_results=20)
+        # Use existing smart_search; optionally restrict to one location
+        candidates_normal = image_processing.smart_search(
+            query_image_path, location_filter=location_filter, k_results=20
+        )
+        # If location filter was used and we got no candidates, the filter may not match
+        # our index (index uses folder names, UI may send sheet tab names). Fall back to all.
+        if location_filter and not candidates_normal:
+            candidates_normal = image_processing.smart_search(
+                query_image_path, location_filter=None, k_results=20
+            )
         results_normal = []
 
         # Rerank with RANSAC
@@ -360,7 +373,13 @@ class TurtleManager:
         cv.imwrite(mirror_path, img_mirrored)
 
         try:
-            candidates_mirror = image_processing.smart_search(mirror_path, k_results=20)
+            candidates_mirror = image_processing.smart_search(
+                mirror_path, location_filter=location_filter, k_results=20
+            )
+            if location_filter and not candidates_mirror:
+                candidates_mirror = image_processing.smart_search(
+                    mirror_path, location_filter=None, k_results=20
+                )
             results_mirror = []
             if candidates_mirror:
                 results_mirror = image_processing.rerank_results_with_spatial_verification(mirror_path, candidates_mirror)
@@ -487,18 +506,11 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
-            # Create new turtle
+            # Create new turtle. new_location is the sheet name (one folder level); never use form location/general_location for path.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
-            
-            # Parse location (format: "State/Location")
-            if "/" in new_location:
-                state, loc = new_location.split("/", 1)
-                location_dir = os.path.join(self.base_dir, state, loc)
-            else:
-                # Handle roots like "Incidental_Finds"
-                location_dir = os.path.join(self.base_dir, new_location)
-            
-            # Ensure location directory exists
+            # Use only the first path segment (sheet name) so path is always data/<sheet_name>/<turtle_id>/ref_data
+            sheet_name = new_location.split("/")[0].strip() or new_location
+            location_dir = os.path.join(self.base_dir, sheet_name)
             os.makedirs(location_dir, exist_ok=True)
             
             # Process the new turtle (this will create the turtle folder and process the image)
@@ -506,6 +518,10 @@ class TurtleManager:
             
             if status == "created":
                 print(f"✅ New turtle {new_turtle_id} created successfully at {new_location}")
+                # Rebuild search index so the new turtle is findable on the next upload
+                print("♻️  Rebuilding search index to include new turtle...")
+                image_processing.rebuild_index_and_reload(self.base_dir)
+                print("✅ Search index updated.")
             elif status == "skipped":
                 return False, f"Turtle {new_turtle_id} already exists at {new_location}"
             else:
@@ -534,6 +550,26 @@ class TurtleManager:
                     print(f"⚠️ Error deleting temp file: {e}")
         
         return True, "Processed successfully"
+
+    def reject_review_packet(self, request_id):
+        """
+        Delete a review queue packet without processing (e.g. junk/spam).
+        Removes the packet folder from Review_Queue. Admin only.
+        """
+        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        if not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
+            return False, "Request not found"
+        # Security: ensure we only delete inside review_queue_dir (no path traversal)
+        real_packet = os.path.realpath(packet_dir)
+        real_base = os.path.realpath(self.review_queue_dir)
+        if not real_packet.startswith(real_base):
+            return False, "Invalid request path"
+        try:
+            shutil.rmtree(packet_dir)
+            print(f"🗑️ Queue Item {request_id} deleted (Rejected/Discarded).")
+            return True, "Deleted"
+        except Exception as e:
+            return False, str(e)
 
 # --- TEST BLOCK ---
 if __name__ == "__main__":
