@@ -97,6 +97,14 @@ export default function AdminTurtleRecordsPage() {
   const [selectedSheetFilter, setSelectedSheetFilter] = useState<string>('');
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [sheetsListLoading, setSheetsListLoading] = useState(false);
+  /** Only show full loading state on first queue load; 30s poll updates in background */
+  const queueInitialLoadDone = useRef(false);
+
+  // Load available sheets once when admin lands on this page (used by queue form + sheets tab)
+  useEffect(() => {
+    if (!authChecked || role !== 'admin') return;
+    loadAvailableSheets();
+  }, [authChecked, role]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -106,21 +114,23 @@ export default function AdminTurtleRecordsPage() {
     }
 
     if (activeTab === 'queue') {
+      queueInitialLoadDone.current = false;
       loadQueue();
       const interval = setInterval(loadQueue, 30000);
       return () => clearInterval(interval);
     } else if (activeTab === 'sheets') {
-      loadAvailableSheets();
       loadAllTurtles(selectedSheetFilter || undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when tab changes; filter changes trigger load from Select onChange
   }, [authChecked, role, navigate, activeTab]);
 
   const loadQueue = async () => {
-    setQueueLoading(true);
+    const isInitial = !queueInitialLoadDone.current;
+    if (isInitial) setQueueLoading(true);
     try {
       const response = await getReviewQueue();
       setQueueItems(response.items);
+      queueInitialLoadDone.current = true;
     } catch (error) {
       console.error('Error loading review queue:', error);
       notifications.show({
@@ -129,7 +139,7 @@ export default function AdminTurtleRecordsPage() {
         color: 'red',
       });
     } finally {
-      setQueueLoading(false);
+      if (isInitial) setQueueLoading(false);
     }
   };
 
@@ -859,6 +869,7 @@ export default function AdminTurtleRecordsPage() {
                               ref={sheetsFormRef}
                               initialData={sheetsData || undefined}
                               sheetName={sheetsData?.sheet_name}
+                              initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
                               state={state}
                               location={location}
                               hintLocationFromCommunity={
@@ -1202,6 +1213,7 @@ export default function AdminTurtleRecordsPage() {
                       <TurtleSheetsDataForm
                         initialData={selectedTurtle}
                         sheetName={selectedTurtle.sheet_name}
+                        initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
                         state={selectedTurtle.general_location || ''}
                         location={selectedTurtle.location || ''}
                         primaryId={
@@ -1260,6 +1272,7 @@ export default function AdminTurtleRecordsPage() {
           <TurtleSheetsDataForm
             initialData={newTurtleSheetsData || undefined}
             sheetName={newTurtleSheetName}
+            initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
             hintLocationFromCommunity={
               selectedItem?.metadata?.state && selectedItem?.metadata?.location
                 ? `${selectedItem.metadata.state} / ${selectedItem.metadata.location}`
