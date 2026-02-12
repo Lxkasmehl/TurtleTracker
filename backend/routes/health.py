@@ -3,7 +3,7 @@ Health check endpoints
 """
 
 from flask import jsonify
-from services.manager_service import manager
+from services import manager_service
 
 
 def register_health_routes(app):
@@ -11,8 +11,8 @@ def register_health_routes(app):
     
     @app.route('/api/health', methods=['GET'])
     def health_check():
-        """Health check endpoint - available immediately"""
-        manager_status = 'ready' if manager is not None else 'loading'
+        """Health check endpoint - available immediately (use module ref so we see current value after background init)"""
+        manager_status = 'ready' if manager_service.manager is not None else 'loading'
         response = jsonify({
             'status': 'ok', 
             'message': 'Turtle API is running',

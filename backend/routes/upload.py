@@ -9,7 +9,7 @@ from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 from auth import optional_auth
-from services.manager_service import manager, manager_ready
+from services import manager_service
 
 
 def convert_npz_to_image_path(npz_path):
@@ -47,11 +47,11 @@ def register_upload_routes(app):
         
         Authentication is optional. If no token is provided, upload is treated as anonymous.
         """
-        # Wait for manager to be ready (with timeout)
-        if not manager_ready.wait(timeout=30):
+        # Wait for manager to be ready (with timeout); use module ref so we see current value after background init
+        if not manager_service.manager_ready.wait(timeout=30):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
         
-        if manager is None:
+        if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         
         try:
@@ -102,7 +102,7 @@ def register_upload_routes(app):
                 # Admin: Process immediately; optionally restrict to one location (sheet/datasheet)
                 # match_sheet: sheet name from Google Sheets (e.g. "Location A"); empty = test against all
                 match_sheet = (request.form.get('match_sheet') or '').strip() or None
-                matches = manager.search_for_matches(temp_path, sheet_name=match_sheet)
+                matches = manager_service.manager.search_for_matches(temp_path, sheet_name=match_sheet)
                 if matches is None:
                     matches = []
                 # Format matches for frontend
@@ -160,7 +160,7 @@ def register_upload_routes(app):
                     if location_hint_source in ('gps', 'manual'):
                         user_info['location_hint_source'] = location_hint_source
                 
-                request_id = manager.create_review_packet(
+                request_id = manager_service.manager.create_review_packet(
                     temp_path,
                     user_info=user_info
                 )

@@ -21,8 +21,6 @@ assignees: ''
 - [ ] Documentation updated (if applicable)
 - [ ] Code review requested
 
----
-
 ## Checklist for Reviewer
 
 <!-- To be completed by the person reviewing this issue/PR -->

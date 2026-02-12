@@ -1,6 +1,7 @@
 # IDE and Editor files
 .idea/
 .vscode/
+.cursor/debug.log
 *.swp
 *.swo
 *~

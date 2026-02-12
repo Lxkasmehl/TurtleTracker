@@ -40,6 +40,8 @@ interface PreviewCardProps {
   isDuplicate: boolean;
   previousUploadDate: string | null;
   isGettingLocation: boolean;
+  /** True when the user has denied location permission (show allow-in-settings message). */
+  locationPermissionDenied?: boolean;
   role?: string;
   /** Optional location hint (coords) – only in queue, never in sheets */
   locationHint?: LocationHint | null;
@@ -59,6 +61,7 @@ export function PreviewCard({
   isDuplicate,
   previousUploadDate,
   isGettingLocation,
+  locationPermissionDenied = false,
   role,
   locationHint,
   setLocationHint,
@@ -83,6 +86,15 @@ export function PreviewCard({
     }
     prevStillAtLocation.current = stillAtLocation;
   }, [stillAtLocation, requestLocationHint]);
+
+  // Default to "Skip" location when starting a new upload so multiple turtles don't share the same pin
+  const fileKey = files.length ? files[0]?.name ?? '' : '';
+  useEffect(() => {
+    setStillAtLocation(null);
+    setManualLat('');
+    setManualLon('');
+    if (setLocationHint) setLocationHint(null);
+  }, [fileKey, setLocationHint]);
 
   if (!preview) return null;
 
@@ -182,6 +194,12 @@ export function PreviewCard({
                             Clear
                           </Button>
                         </>
+                      ) : locationPermissionDenied ? (
+                        <Text size='xs' c='dimmed'>
+                          Please allow location access in your browser settings first, then
+                          try again or choose &quot;I&apos;m not there anymore&quot; to pick a
+                          spot on the map.
+                        </Text>
                       ) : (
                         <Text size='xs' c='dimmed'>
                           Location not available (check browser permission or try again).
