@@ -30,6 +30,7 @@ import django
 django.setup()
 
 from django.db import connection
+from django.db.utils import OperationalError
 from identification.models import Turtle, TurtleImage
 
 
@@ -39,14 +40,26 @@ def clear_database():
     
     try:
         # Delete all images first (due to foreign key constraint)
-        image_count = TurtleImage.objects.count()
-        TurtleImage.objects.all().delete()
-        print(f"   ✅ Deleted {image_count} TurtleImage records")
+        try:
+            image_count = TurtleImage.objects.count()
+            TurtleImage.objects.all().delete()
+            print(f"   ✅ Deleted {image_count} TurtleImage records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  TurtleImage table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         
         # Delete all turtles
-        turtle_count = Turtle.objects.count()
-        Turtle.objects.all().delete()
-        print(f"   ✅ Deleted {turtle_count} Turtle records")
+        try:
+            turtle_count = Turtle.objects.count()
+            Turtle.objects.all().delete()
+            print(f"   ✅ Deleted {turtle_count} Turtle records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  Turtle table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         
         # Also clear any Django media files if they exist
         # Django stores uploaded images in media/ directory (default location)
