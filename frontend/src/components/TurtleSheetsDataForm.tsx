@@ -49,6 +49,8 @@ interface TurtleSheetsDataFormProps {
   onCombinedSubmit?: (data: TurtleSheetsData, sheetName: string) => Promise<void>; // Combined action handler
   /** When true (e.g. field use), only allow adding data; existing values are read-only unless user unlocks per field */
   addOnlyMode?: boolean;
+  /** When provided, form uses this list and does not call listSheets() on mount (avoids duplicate API calls) */
+  initialAvailableSheets?: string[];
 }
 
 export interface TurtleSheetsDataFormRef {
@@ -72,6 +74,7 @@ export const TurtleSheetsDataForm = forwardRef<
       hideSubmitButton = false,
       onCombinedSubmit,
       addOnlyMode = false,
+      initialAvailableSheets,
       // state/location accepted for API compatibility but not used as form values – use hintLocationFromCommunity for display
     },
     ref,
@@ -79,7 +82,9 @@ export const TurtleSheetsDataForm = forwardRef<
     const [formData, setFormData] = useState<TurtleSheetsData>(initialData || {});
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
-    const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+    const [availableSheets, setAvailableSheets] = useState<string[]>(
+      initialAvailableSheets ?? [],
+    );
     const [selectedSheetName, setSelectedSheetName] = useState<string>(
       initialSheetName || '',
     );
@@ -158,15 +163,21 @@ export const TurtleSheetsDataForm = forwardRef<
     }, [mode, formData.sex, selectedSheetName]);
 
     useEffect(() => {
-      // Load available sheets on mount with timeout
+      // If parent provided sheets, skip API call to avoid duplicate requests
+      if (initialAvailableSheets != null && initialAvailableSheets.length > 0) {
+        setAvailableSheets(initialAvailableSheets);
+        setLoadingSheets(false);
+        return;
+      }
+
       let cancelled = false;
 
       const loadSheets = async () => {
         setLoadingSheets(true);
 
         try {
-          // listSheets() now has built-in timeout (10 seconds)
-          const response = await listSheets(10000);
+          // listSheets() uses a 25s timeout so backend retries (e.g. Google API timeout) can complete
+          const response = await listSheets();
 
           // Check if component was unmounted
           if (cancelled) {
@@ -207,7 +218,7 @@ export const TurtleSheetsDataForm = forwardRef<
       return () => {
         cancelled = true;
       };
-    }, [initialSheetName]);
+    }, [initialSheetName, initialAvailableSheets]);
 
     // Load existing turtle names for duplicate-name validation (create mode or when name is editable)
     useEffect(() => {

@@ -685,9 +685,9 @@ export const generateTurtleId = async (
   }
 };
 
-// List all available sheets
+// List all available sheets (longer timeout: backend may retry Google API on first timeout)
 export const listSheets = async (
-  timeoutMs: number = 10000,
+  timeoutMs: number = 25000,
 ): Promise<ListSheetsResponse> => {
   const token = getToken();
   const headers: Record<string, string> = {};

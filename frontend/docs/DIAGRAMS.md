@@ -387,7 +387,7 @@ graph TB
     
     subgraph "Services"
         P[API Service]
-        Q[Mock Backend]
+        Q[Geolocation]
     end
     
     A --> B

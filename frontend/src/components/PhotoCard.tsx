@@ -11,7 +11,7 @@ import {
 } from '@mantine/core';
 import { IconFile, IconClock, IconMapPin } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import type { UploadedPhoto } from '../services/mockBackend';
+import type { UploadedPhoto } from '../types/photo';
 import { formatFileSize, formatLocation, getGoogleMapsUrl } from '../utils/photoHelpers';
 
 interface PhotoCardProps {

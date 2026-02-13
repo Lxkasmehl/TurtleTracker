@@ -23,7 +23,7 @@ import {
   IconInfoCircle,
 } from '@tabler/icons-react';
 import { useRef, useState, useEffect } from 'react';
-import { validateFile } from '../services/mockBackend';
+import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
 import { PreviewCard } from '../components/PreviewCard';
@@ -87,6 +87,7 @@ export default function HomePage() {
     isDuplicate,
     previousUploadDate,
     isGettingLocation,
+    locationPermissionDenied,
     locationHint,
     setLocationHint,
     requestLocationHint,
@@ -343,6 +344,7 @@ export default function HomePage() {
             isDuplicate={isDuplicate}
             previousUploadDate={previousUploadDate}
             isGettingLocation={isGettingLocation}
+            locationPermissionDenied={locationPermissionDenied}
             role={role}
             locationHint={locationHint}
             setLocationHint={setLocationHint}

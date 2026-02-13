@@ -4,7 +4,7 @@ Image serving endpoint
 
 import os
 from flask import request, jsonify, send_file
-from services.manager_service import manager, manager_ready
+from services import manager_service
 from config import UPLOAD_FOLDER
 
 
@@ -33,13 +33,13 @@ def register_image_routes(app):
         safe_path = os.path.normpath(decoded_path)
         
         # Check if path is within data directory or temp directory
-        # Wait for manager to be ready
-        if not manager_ready.wait(timeout=5):
+        # Wait for manager to be ready (use module ref so we see current value after background init)
+        if not manager_service.manager_ready.wait(timeout=5):
             return jsonify({'error': 'TurtleManager is still initializing'}), 503
-        if manager is None:
+        if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         
-        data_dir = os.path.abspath(os.path.normpath(manager.base_dir))
+        data_dir = os.path.abspath(os.path.normpath(manager_service.manager.base_dir))
         temp_dir = os.path.abspath(os.path.normpath(UPLOAD_FOLDER))
         
         def is_path_within_base(file_path, base_dir):

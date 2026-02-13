@@ -336,6 +336,12 @@ class TurtleManager:
         candidates_normal = image_processing.smart_search(
             query_image_path, location_filter=location_filter, k_results=20
         )
+        # If location filter was used and we got no candidates, the filter may not match
+        # our index (index uses folder names, UI may send sheet tab names). Fall back to all.
+        if location_filter and not candidates_normal:
+            candidates_normal = image_processing.smart_search(
+                query_image_path, location_filter=None, k_results=20
+            )
         results_normal = []
 
         # Rerank with RANSAC
@@ -370,6 +376,10 @@ class TurtleManager:
             candidates_mirror = image_processing.smart_search(
                 mirror_path, location_filter=location_filter, k_results=20
             )
+            if location_filter and not candidates_mirror:
+                candidates_mirror = image_processing.smart_search(
+                    mirror_path, location_filter=None, k_results=20
+                )
             results_mirror = []
             if candidates_mirror:
                 results_mirror = image_processing.rerank_results_with_spatial_verification(mirror_path, candidates_mirror)
@@ -496,18 +506,11 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
-            # Create new turtle
+            # Create new turtle. new_location is the sheet name (one folder level); never use form location/general_location for path.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
-            
-            # Parse location (format: "State/Location")
-            if "/" in new_location:
-                state, loc = new_location.split("/", 1)
-                location_dir = os.path.join(self.base_dir, state, loc)
-            else:
-                # Handle roots like "Incidental_Finds"
-                location_dir = os.path.join(self.base_dir, new_location)
-            
-            # Ensure location directory exists
+            # Use only the first path segment (sheet name) so path is always data/<sheet_name>/<turtle_id>/ref_data
+            sheet_name = new_location.split("/")[0].strip() or new_location
+            location_dir = os.path.join(self.base_dir, sheet_name)
             os.makedirs(location_dir, exist_ok=True)
             
             # Process the new turtle (this will create the turtle folder and process the image)
@@ -515,6 +518,10 @@ class TurtleManager:
             
             if status == "created":
                 print(f"✅ New turtle {new_turtle_id} created successfully at {new_location}")
+                # Rebuild search index so the new turtle is findable on the next upload
+                print("♻️  Rebuilding search index to include new turtle...")
+                image_processing.rebuild_index_and_reload(self.base_dir)
+                print("✅ Search index updated.")
             elif status == "skipped":
                 return False, f"Turtle {new_turtle_id} already exists at {new_location}"
             else:

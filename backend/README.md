@@ -187,6 +187,41 @@ If `faiss-cpu` cannot be installed, try:
 pip install faiss-cpu --no-cache-dir
 ```
 
+### 500 Error on Photo Upload (POST /api/upload)
+
+If the server returns **500** when uploading a photo from the frontend, the cause is often a **missing or empty `data/` folder** or an **inconsistent state** of the search index files. The `data/` folder and generated index files are not in Git, so every developer machine needs them.
+
+**Root cause (fixed in current code):**  
+The crash happened when the backend had an **unfitted vocabulary** (`vlad_vocab.pkl`) but still an **existing search index** (`turtles.index`, `metadata.pkl`). That can occur if: (1) you had data and index before, (2) you cleared only `backend/data/` (no NPZ files left), (3) you deleted or overwrote only `vlad_vocab.pkl`. On restart, the rebuild finds no NPZ data, writes an **unfitted** vocab to disk, and does not overwrite the index (no data → index not rebuilt). The first upload then calls `predict()` on the unfitted model → 500. The code now prevents this by not saving an unfitted vocab when there is no NPZ data, and by treating an unfitted vocab at runtime as "no search" (return no matches instead of crashing).
+
+**Typical causes:**
+
+1. **No or empty `backend/data/`**  
+   The backend expects either:
+   - Pre-built index files in `backend/turtles/` (`vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`), or  
+   - Turtle reference data under `backend/data/` in the structure `data/<State>/<Location>/<TurtleID>/ref_data/` with `.jpg` and `.npz` files.  
+   If both are missing, the first upload can trigger an internal error (e.g. unfitted model) and result in 500.
+
+2. **Different or missing index files**  
+   Files like `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl` in `backend/turtles/` are in `.gitignore`.    If your colleague has no copy (e.g. fresh clone, different branch), the backend tries to rebuild from `data/`. If `data/` is empty, that used to leave the system in an invalid state and cause 500 on first upload.
+
+3. **Unfitted vocab + old index**  
+   If `data/` was cleared but only `vlad_vocab.pkl` was removed (and `turtles.index` / `metadata.pkl` were left in place), a restart could produce a new unfitted vocab while the old index remained, leading to 500 on first upload. With the current code this state is avoided; if you see it, remove **all** of `vlad_vocab.pkl`, `turtles.index`, and `metadata.pkl` (and optionally `global_vlad_array.npy`, `trained_kmeans_vocabulary.pkl`) so the next startup either rebuilds from data or runs with no index (uploads then return no matches, no 500).
+
+**What to do:**
+
+- **Option A – Use the same data as you:**  
+  Copy your `backend/data/` (and optionally the generated files in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`) to your colleague’s machine in the same relative paths. Then restart the backend.
+
+- **Option B – Empty setup (no matches):**  
+  Ensure `backend/data/` exists (e.g. `backend/data/Review_Queue`, `backend/data/Community_Uploads`, `backend/data/Incidental_Finds` are created on first run). With the current code, an empty `data/` no longer causes 500; uploads succeed and return **no matches** until reference data (and index) are added. If you had a 500 before, delete **all** index/vocab files in `backend/turtles/` (see Option C) so no stale unfitted vocab remains.
+
+- **Option C – Clear index/vocab together:**  
+  If you clear or replace `backend/data/`, also remove **all** of these in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`, `trained_kmeans_vocabulary.pkl`. That avoids the "unfitted vocab + old index" state. You can use `python reset_complete_backend.py` to reset everything (data + index + vocab) in one go.
+
+- **See the real error:**  
+  In the backend terminal, the exception and traceback are printed when a 500 occurs. The API response body may also include an `error` (and in debug mode `details`) field with the message. Check both to confirm the cause.
+
 ## Google Sheets API Integration
 
 The backend supports integration with Google Sheets for turtle data management. This allows admins to sync turtle data directly to Google Sheets when approving matches or creating new turtles.

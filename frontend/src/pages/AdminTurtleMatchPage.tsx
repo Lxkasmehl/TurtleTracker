@@ -29,6 +29,7 @@ import {
   createTurtleSheetsData,
   generatePrimaryId,
   getTurtleSheetsData,
+  listSheets,
   type TurtleSheetsData,
 } from '../services/api';
 import { notifications } from '@mantine/notifications';
@@ -60,8 +61,19 @@ export default function AdminTurtleMatchPage() {
   );
   const [newTurtleSheetName, setNewTurtleSheetName] = useState('');
   const [loadingTurtleData, setLoadingTurtleData] = useState(false);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
+
+  // Load sheets once when admin (avoids each TurtleSheetsDataForm calling listSheets)
+  useEffect(() => {
+    if (!authChecked || role !== 'admin') return;
+    listSheets()
+      .then((res) => {
+        if (res.success && res.sheets?.length) setAvailableSheets(res.sheets);
+      })
+      .catch(() => setAvailableSheets([]));
+  }, [authChecked, role]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -316,15 +328,14 @@ export default function AdminTurtleMatchPage() {
 
     setProcessing(true);
     try {
-      // Extract state and location from form data
+      // Backend path: always use sheet name only (never general_location/location from form).
+      // general_location and location are only for the Google Sheet row data.
+      const backendPathLocation = effectiveSheetName;
+
       const formState = effectiveSheetsData?.general_location || '';
       const formLocation = effectiveSheetsData?.location || '';
-      const finalLocation =
-        formState && formLocation ? `${formState}/${formLocation}` : effectiveSheetName;
-
-      const locationParts = finalLocation.split('/');
-      const turtleState = locationParts[0] || '';
-      const turtleLocation = locationParts.slice(1).join('/') || '';
+      const turtleState = formState || '';
+      const turtleLocation = formLocation || '';
 
       // Generate primary ID if not already generated
       let finalPrimaryId = newTurtlePrimaryId;
@@ -383,7 +394,7 @@ export default function AdminTurtleMatchPage() {
       const turtleIdForReview = finalPrimaryId || `T${Date.now()}`;
 
       await approveReview(imageId, {
-        new_location: finalLocation,
+        new_location: backendPathLocation,
         new_turtle_id: turtleIdForReview,
         uploaded_image_path: matchData.uploaded_image_path,
         sheets_data: effectiveSheetsData
@@ -672,6 +683,7 @@ export default function AdminTurtleMatchPage() {
                         hideSubmitButton={true}
                         onCombinedSubmit={handleSaveAndConfirm}
                         addOnlyMode={true}
+                        initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
                       />
                     </ScrollArea>
                   </Paper>
@@ -773,6 +785,7 @@ export default function AdminTurtleMatchPage() {
             mode='create'
             onSave={handleSaveNewTurtleSheetsData}
             onCancel={() => setShowNewTurtleModal(false)}
+            initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
           />
         </Stack>
       </Modal>
