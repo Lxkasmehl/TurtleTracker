@@ -77,6 +77,32 @@ test.describe('Admin Turtle Match', () => {
     await expect(page.getByRole('dialog').getByLabel('Sheet / Location')).toBeVisible();
   });
 
+  test('Match page shows Additional photos (microhabitat / condition) section and add buttons', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await loginAsAdmin(page);
+
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'microhabitat-e2e.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await clickUploadPhotoButton(page);
+    await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: /Turtle Match Review/ })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await expect(
+      page.getByText('Additional photos (microhabitat / condition)', { exact: false }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Microhabitat' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Condition' })).toBeVisible();
+  });
+
   test('Community cannot access match page', async ({ page }) => {
     await loginAsCommunity(page);
     await page.goto('/admin/turtle-match/any-id');

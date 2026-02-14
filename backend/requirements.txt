@@ -13,3 +13,7 @@ google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
+
+# Test dependencies for TurtleTracker backend (run: pip install -r requirements.txt -r requirements-test.txt)
+pytest>=7.0.0
+pytest-flask>=1.3.0

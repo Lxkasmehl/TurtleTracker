@@ -178,6 +178,12 @@ echo "VITE_API_URL=http://localhost:5000/api" >> .env
 - Redux for state management
 - React Router for navigation
 
+## Testing
+
+- **Integration tests (Backend):** Ordner `backend/tests/` (bzw. `backend/tests/integration/`). Ausführen: `cd backend && pip install -r requirements.txt -r requirements-test.txt && python -m pytest tests/ -v`.
+- **E2E tests (Frontend):** Ordner `frontend/tests/e2e/` (Playwright). Ausführen: `cd frontend && npm run test`.
+- Details und Strategie: [docs/TESTING.md](docs/TESTING.md). Unter Windows `python -m pytest` verwenden, falls `pytest` nicht im PATH liegt.
+
 ## Further Information
 
 - See `auth-backend/README.md` for detailed auth backend documentation
