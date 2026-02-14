@@ -34,6 +34,7 @@ import {
   createTurtleSheetsData,
   generatePrimaryId,
   getTurtleSheetsData,
+  listSheets,
   type TurtleSheetsData,
   type AdditionalImage,
   type TurtleImageAdditional,
@@ -72,6 +73,7 @@ export default function AdminTurtleMatchPage() {
   );
   const [newTurtleSheetName, setNewTurtleSheetName] = useState('');
   const [loadingTurtleData, setLoadingTurtleData] = useState(false);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [findMetadata, setFindMetadata] = useState<FindMetadata | null>(null);
   const [additionalImagesUploading, setAdditionalImagesUploading] = useState(false);
   const [packetAdditionalImages, setPacketAdditionalImages] = useState<AdditionalImage[]>([]);
@@ -79,6 +81,16 @@ export default function AdminTurtleMatchPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
+
+  // Load sheets once when admin (avoids each TurtleSheetsDataForm calling listSheets)
+  useEffect(() => {
+    if (!authChecked || role !== 'admin') return;
+    listSheets()
+      .then((res) => {
+        if (res.success && res.sheets?.length) setAvailableSheets(res.sheets);
+      })
+      .catch(() => setAvailableSheets([]));
+  }, [authChecked, role]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -719,6 +731,7 @@ export default function AdminTurtleMatchPage() {
                         hideSubmitButton={true}
                         onCombinedSubmit={handleSaveAndConfirm}
                         addOnlyMode={true}
+                        initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
                       />
                     </ScrollArea>
                   </Paper>
@@ -1070,6 +1083,7 @@ export default function AdminTurtleMatchPage() {
             mode='create'
             onSave={handleSaveNewTurtleSheetsData}
             onCancel={() => setShowNewTurtleModal(false)}
+            initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
           />
         </Stack>
       </Modal>

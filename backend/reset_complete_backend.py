@@ -30,6 +30,7 @@ import django
 django.setup()
 
 from django.db import connection
+from django.db.utils import OperationalError
 from identification.models import Turtle, TurtleImage
 
 
@@ -79,18 +80,30 @@ def clear_database():
 
     try:
         # Delete all images first (due to foreign key constraint)
-        if _table_exists(image_table):
+        try:
+            if _table_exists(image_table):
             image_count = TurtleImage.objects.count()
-            TurtleImage.objects.all().delete()
-            print(f"   ✅ Deleted {image_count} TurtleImage records")
+                TurtleImage.objects.all().delete()
+                print(f"   ✅ Deleted {image_count} TurtleImage records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  TurtleImage table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         else:
             print("   ℹ️  TurtleImage table does not exist. Skipping.")
 
         # Delete all turtles
-        if _table_exists(turtle_table):
+        try:
+            if _table_exists(turtle_table):
             turtle_count = Turtle.objects.count()
-            Turtle.objects.all().delete()
-            print(f"   ✅ Deleted {turtle_count} Turtle records")
+                Turtle.objects.all().delete()
+                print(f"   ✅ Deleted {turtle_count} Turtle records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  Turtle table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         else:
             print("   ℹ️  Turtle table does not exist. Skipping.")
 
