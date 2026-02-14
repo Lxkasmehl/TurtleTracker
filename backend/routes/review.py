@@ -190,6 +190,24 @@ def register_review_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/flags/release', methods=['POST'])
+    @require_admin
+    def clear_release_flag():
+        """Mark turtle as released back to nature: clear digital flag, set released_at (Admin only)."""
+        if not manager_service.manager_ready.wait(timeout=5):
+            return jsonify({'error': 'TurtleManager is still initializing'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager not available'}), 500
+        data = request.json or {}
+        turtle_id = (data.get('turtle_id') or '').strip()
+        location = (data.get('location') or '').strip() or None
+        if not turtle_id:
+            return jsonify({'error': 'turtle_id required'}), 400
+        success, err = manager_service.manager.clear_release_flag(turtle_id, location)
+        if not success:
+            return jsonify({'error': err or 'Failed to clear release flag'}), 400
+        return jsonify({'success': True})
+
     @app.route('/api/review/<request_id>', methods=['DELETE'])
     @require_admin
     def delete_review(request_id):

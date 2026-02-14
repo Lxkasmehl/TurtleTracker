@@ -537,6 +537,25 @@ export const getTurtlesWithFlags = async (): Promise<{
   return await response.json();
 };
 
+/** Mark turtle as released back to nature (clear digital flag, set released_at). Admin only. */
+export const clearReleaseFlag = async (
+  turtleId: string,
+  location?: string | null,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/flags/release`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ turtle_id: turtleId, location: location || undefined }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to clear release flag' }));
+    throw new Error(err.error || 'Failed to clear release flag');
+  }
+};
+
 // Get image URL helper
 export const getImageUrl = (imagePath: string): string => {
   // Convert file path to API endpoint

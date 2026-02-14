@@ -15,14 +15,15 @@ import {
   Badge,
   Card,
   ScrollArea,
-  Button
+  Button,
 } from '@mantine/core';
-import { IconMapPin, IconFlag, IconArrowLeft } from '@tabler/icons-react';
+import { IconMapPin, IconFlag, IconArrowLeft, IconCircleCheck } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../hooks/useUser';
-import { getTurtlesWithFlags } from '../services/api';
+import { getTurtlesWithFlags, clearReleaseFlag } from '../services/api';
 import { MapWithMarkers } from '../components/MapWithMarkers.tsx';
+import { notifications } from '@mantine/notifications';
 
 interface FlagItem {
   turtle_id: string;
@@ -42,13 +43,9 @@ export default function AdminReleasePage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<FlagItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!authChecked) return;
-    if (role !== 'admin') {
-      navigate('/');
-      return;
-    }
+  const loadFlags = () => {
     getTurtlesWithFlags()
       .then((res) => {
         if (res.success && res.items) setItems(res.items);
@@ -56,6 +53,15 @@ export default function AdminReleasePage() {
       })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!authChecked) return;
+    if (role !== 'admin') {
+      navigate('/');
+      return;
+    }
+    loadFlags();
   }, [authChecked, role, navigate]);
 
   if (!authChecked || role !== 'admin') {
@@ -145,11 +151,43 @@ export default function AdminReleasePage() {
                             {item.location}
                           </Badge>
                         </Group>
-                        {item.find_metadata?.physical_flag && (
-                          <Badge size="sm" variant="outline">
-                            Flag: {item.find_metadata.physical_flag}
-                          </Badge>
-                        )}
+                        <Group gap="xs">
+                          {item.find_metadata?.physical_flag && (
+                            <Badge size="sm" variant="outline">
+                              Flag: {item.find_metadata.physical_flag}
+                            </Badge>
+                          )}
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="green"
+                            leftSection={<IconCircleCheck size={14} />}
+                            loading={releasingId === item.turtle_id}
+                            onClick={async () => {
+                              setReleasingId(item.turtle_id);
+                              try {
+                                await clearReleaseFlag(item.turtle_id, item.location);
+                                loadFlags();
+                                notifications.show({
+                                  title: 'Released back to nature',
+                                  message: 'Digital flag cleared. Don\'t forget to take the physical flag with you!',
+                                  color: 'green',
+                                  autoClose: 8000,
+                                });
+                              } catch (e) {
+                                notifications.show({
+                                  title: 'Error',
+                                  message: e instanceof Error ? e.message : 'Failed to clear release flag',
+                                  color: 'red',
+                                });
+                              } finally {
+                                setReleasingId(null);
+                              }
+                            }}
+                          >
+                            Released back to nature
+                          </Button>
+                        </Group>
                       </Group>
                       {(item.find_metadata?.digital_flag_lat != null &&
                         item.find_metadata?.digital_flag_lon != null) && (

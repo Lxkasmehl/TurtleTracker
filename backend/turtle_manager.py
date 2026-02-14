@@ -706,7 +706,7 @@ class TurtleManager:
         return True, "Processed successfully"
 
     def _add_turtle_flag_if_present(self, results, turtle_path, turtle_id, location_label):
-        """If turtle_path has find_metadata.json, append to results."""
+        """If turtle_path has find_metadata.json, append to results (skip if already released)."""
         meta_path = os.path.join(turtle_path, 'find_metadata.json')
         if not os.path.isfile(meta_path):
             return
@@ -715,12 +715,44 @@ class TurtleManager:
                 find_metadata = json.load(f)
         except (json.JSONDecodeError, OSError):
             return
+        # Exclude turtles already marked as released back to nature
+        if find_metadata.get('released_at'):
+            return
         results.append({
             'turtle_id': turtle_id,
             'location': location_label,
             'path': turtle_path,
             'find_metadata': find_metadata,
         })
+
+    def clear_release_flag(self, turtle_id, location_hint=None):
+        """
+        Mark turtle as released back to nature: clear digital flag and set released_at.
+        Updates find_metadata.json so the turtle no longer appears on the release list.
+        Returns (True, None) on success, (False, error_message) on failure.
+        """
+        turtle_dir = self._get_turtle_folder(turtle_id, location_hint)
+        if not turtle_dir or not os.path.isdir(turtle_dir):
+            return False, "Turtle folder not found"
+        meta_path = os.path.join(turtle_dir, 'find_metadata.json')
+        if not os.path.isfile(meta_path):
+            return False, "No find metadata"
+        try:
+            with open(meta_path, 'r') as f:
+                find_metadata = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            return False, str(e)
+        # Remove digital flag so it is no longer used for release
+        for key in ('digital_flag_lat', 'digital_flag_lon', 'digital_flag_source'):
+            find_metadata.pop(key, None)
+        # Mark as released (ISO timestamp)
+        find_metadata['released_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        try:
+            with open(meta_path, 'w') as f:
+                json.dump(find_metadata, f)
+        except OSError as e:
+            return False, str(e)
+        return True, None
 
     def get_turtles_with_flags(self):
         """
