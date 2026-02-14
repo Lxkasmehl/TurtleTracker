@@ -22,7 +22,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: ./backend
-        run: pip install -r requirements.txt -r requirements-test.txt
+        run: pip install -r requirements.txt
 
       - name: Run integration tests
         working-directory: ./backend
