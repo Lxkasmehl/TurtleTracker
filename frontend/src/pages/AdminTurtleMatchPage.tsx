@@ -51,6 +51,8 @@ interface MatchData {
   request_id: string;
   uploaded_image_path: string;
   matches: TurtleMatch[];
+  /** Flag/metadata from upload page – match page uses this so we don't ask again for physical/digital flag */
+  find_metadata_from_upload?: FindMetadata;
 }
 
 export default function AdminTurtleMatchPage() {
@@ -104,6 +106,13 @@ export default function AdminTurtleMatchPage() {
 
     loadMatchData();
   }, [imageId, authChecked, role, navigate]);
+
+  // Pre-fill find metadata from upload (physical/digital flag set on upload page – don't ask again)
+  useEffect(() => {
+    if (matchData?.find_metadata_from_upload != null) {
+      setFindMetadata((prev) => (prev == null ? matchData.find_metadata_from_upload ?? null : prev));
+    }
+  }, [matchData]);
 
   useEffect(() => {
     if (!imageId) {
@@ -850,6 +859,7 @@ export default function AdminTurtleMatchPage() {
                       const res = await getCurrentLocation();
                       return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
                     }}
+                    hideFlagFields
                   />
 
                   {/* Action Buttons */}
@@ -1046,6 +1056,7 @@ export default function AdminTurtleMatchPage() {
               const res = await getCurrentLocation();
               return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
             }}
+            hideFlagFields
           />
 
           <Divider label='Google Sheets Data' labelPosition='center' />

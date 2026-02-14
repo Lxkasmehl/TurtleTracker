@@ -30,6 +30,8 @@ export interface FindMetadataFormProps {
   };
   /** Callback to get current location (GPS) for digital flag – e.g. from getCurrentLocation() */
   onRequestLocation?: () => Promise<{ latitude: number; longitude: number } | null>;
+  /** If true, hide physical flag and digital flag fields (already set on upload page). */
+  hideFlagFields?: boolean;
 }
 
 export function FindMetadataForm({
@@ -37,6 +39,7 @@ export function FindMetadataForm({
   onChange,
   digitalFlagFromUpload,
   onRequestLocation,
+  hideFlagFields = false,
 }: FindMetadataFormProps) {
   const [gpsLoading, setGpsLoading] = useState(false);
   const isMobile = useMediaQuery('(max-width: 576px)');
@@ -96,19 +99,22 @@ export function FindMetadataForm({
             checked={otherAngles}
             onChange={(e) => update({ other_angles_uploaded: e.currentTarget.checked })}
           />
-          <Select
-            label="Physical flag at position? (Turtle returned to exact spot - flag helps.)"
-            placeholder={'Select...'}
-            leftSection={<IconFlag size={16} />}
-            data={PHYSICAL_FLAG_OPTIONS}
-            value={physicalFlag || null}
-            onChange={(v) => update({ physical_flag: (v as FindMetadata['physical_flag']) || undefined })}
-            clearable
-            allowDeselect
-          />
+          {!hideFlagFields && (
+            <Select
+              label="Physical flag at position? (Turtle returned to exact spot - flag helps.)"
+              placeholder={'Select...'}
+              leftSection={<IconFlag size={16} />}
+              data={PHYSICAL_FLAG_OPTIONS}
+              value={physicalFlag || null}
+              onChange={(v) => update({ physical_flag: (v as FindMetadata['physical_flag']) || undefined })}
+              clearable
+              allowDeselect
+            />
+          )}
         </Stack>
       </Paper>
 
+      {!hideFlagFields && (
       <Paper p="sm" withBorder radius="md">
         <Group gap="xs" mb="xs">
           <IconMapPin size={18} />
@@ -163,6 +169,7 @@ export function FindMetadataForm({
           </Text>
         )}
       </Paper>
+      )}
     </Stack>
   );
 }

@@ -10,6 +10,7 @@ import {
   type LocationHint,
   type UploadFlagOptions,
   type UploadExtraFile,
+  type FindMetadata,
 } from '../services/api';
 import { useUser } from './useUser';
 import type { FileWithPath } from '../types/file';
@@ -160,8 +161,10 @@ export function usePhotoUpload({
         'community';
       const userEmail = user?.email || 'anonymous@example.com';
 
+      const hasFlagData =
+        collectedToLab || physicalFlag || (locationHint && collectedToLab === 'yes');
       const flagOptions: UploadFlagOptions | undefined =
-        userRole === 'community' && (collectedToLab || physicalFlag || locationHint)
+        hasFlagData && (userRole === 'community' || userRole === 'admin')
           ? {
               ...(collectedToLab && { collectedToLab }),
               ...(physicalFlag && { physicalFlag }),
@@ -192,11 +195,26 @@ export function usePhotoUpload({
       if (response.success) {
         // Admin: Always navigate to match page (even if no matches found)
         if (userRole === 'admin' && response.request_id) {
-          // Save match data to localStorage for the match page
+          // Build find_metadata from upload so match page doesn't ask again for physical/digital flag
+          const find_metadata_from_upload: FindMetadata | undefined = hasFlagData
+            ? {
+                ...(collectedToLab && { collected_to_lab: collectedToLab }),
+                ...(physicalFlag && { physical_flag: physicalFlag }),
+                ...(locationHint &&
+                  collectedToLab === 'yes' && {
+                    digital_flag_lat: locationHint.latitude,
+                    digital_flag_lon: locationHint.longitude,
+                    digital_flag_source: locationHint.source,
+                  }),
+              }
+            : undefined;
           const matchData = {
             request_id: response.request_id,
             uploaded_image_path: response.uploaded_image_path || '',
             matches: response.matches || [], // Empty array if no matches
+            ...(find_metadata_from_upload && Object.keys(find_metadata_from_upload).length > 0 && {
+              find_metadata_from_upload,
+            }),
           };
           localStorage.setItem(`match_${response.request_id}`, JSON.stringify(matchData));
 

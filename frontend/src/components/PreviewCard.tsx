@@ -53,10 +53,10 @@ interface PreviewCardProps {
   locationHint?: LocationHint | null;
   setLocationHint?: (hint: LocationHint | null) => void;
   requestLocationHint?: () => Promise<void>;
-  /** Community: will this turtle be collected and brought inside? */
+  /** Admin: will this turtle be taken to the lab? (community cannot take turtles to lab) */
   collectedToLab?: 'yes' | 'no' | null;
   setCollectedToLab?: (v: 'yes' | 'no' | null) => void;
-  /** Community: physical flag at position (when collected to lab) */
+  /** Admin: physical flag at position (when taken to lab) */
   physicalFlag?: 'yes' | 'no' | 'no_flag' | null;
   setPhysicalFlag?: (v: 'yes' | 'no' | 'no_flag' | null) => void;
   /** Optional extra images (microhabitat, condition) */
@@ -236,11 +236,11 @@ export function PreviewCard({
               </Paper>
             )}
 
-            {/* Collected to lab + physical flag (community only) */}
-            {role === 'community' && uploadState === 'idle' && setCollectedToLab && setPhysicalFlag && (
+            {/* Collected to lab + physical flag (admin only): first ask if taking to lab, then flag questions */}
+            {role === 'admin' && uploadState === 'idle' && setCollectedToLab && setPhysicalFlag && (
               <Stack gap='sm'>
                 <Text size='sm' fw={500}>
-                  Will this turtle be collected and brought inside?
+                  Will you take this turtle to the lab?
                 </Text>
                 <SegmentedControl
                   value={collectedToLab ?? ''}
@@ -289,8 +289,8 @@ export function PreviewCard({
               </Stack>
             )}
 
-            {/* Digital flag (when collected to lab) or location hint (optional) – community only */}
-            {role === 'community' && uploadState === 'idle' && (
+            {/* Digital flag (when collected to lab) or location hint (optional): community always; admin only when taking to lab */}
+            {(role === 'community' || (role === 'admin' && collectedToLab === 'yes')) && uploadState === 'idle' && (
               <Stack gap='sm'>
                 {collectedToLab === 'yes' ? (
                   <Alert color='orange' radius='md'>
