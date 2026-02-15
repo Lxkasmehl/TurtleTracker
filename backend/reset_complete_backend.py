@@ -82,7 +82,7 @@ def clear_database():
         # Delete all images first (due to foreign key constraint)
         try:
             if _table_exists(image_table):
-            image_count = TurtleImage.objects.count()
+                image_count = TurtleImage.objects.count()
                 TurtleImage.objects.all().delete()
                 print(f"   ✅ Deleted {image_count} TurtleImage records")
         except OperationalError as e:
@@ -96,7 +96,7 @@ def clear_database():
         # Delete all turtles
         try:
             if _table_exists(turtle_table):
-            turtle_count = Turtle.objects.count()
+                turtle_count = Turtle.objects.count()
                 Turtle.objects.all().delete()
                 print(f"   ✅ Deleted {turtle_count} Turtle records")
         except OperationalError as e:
