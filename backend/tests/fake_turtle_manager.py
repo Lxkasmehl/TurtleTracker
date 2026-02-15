@@ -16,6 +16,7 @@ import json
 import shutil
 import time
 import tempfile
+import uuid
 
 
 class FakeTurtleManager:
@@ -131,6 +132,56 @@ class FakeTurtleManager:
         with open(manifest_path, "w") as f:
             json.dump(new_manifest, f)
         return True, None
+
+    def reject_review_packet(self, request_id):
+        """Remove a review packet (e.g. reject/spam). Used by E2E and integration tests."""
+        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        if not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
+            return False, "Request not found"
+        real_packet = os.path.realpath(packet_dir)
+        real_base = os.path.realpath(self.review_queue_dir)
+        if not real_packet.startswith(real_base):
+            return False, "Invalid request path"
+        try:
+            shutil.rmtree(packet_dir)
+            return True, "Deleted"
+        except Exception as e:
+            return False, str(e)
+
+    def approve_review_packet(
+        self,
+        request_id,
+        match_turtle_id=None,
+        new_location=None,
+        new_turtle_id=None,
+        uploaded_image_path=None,
+        find_metadata=None,
+    ):
+        """Stub: remove packet from queue. No real turtle creation for E2E/fake."""
+        return self.reject_review_packet(request_id)
+
+    def create_review_packet(self, query_image_path, user_info=None):
+        """Create a minimal review packet dir and return request_id. For E2E/fake."""
+        request_id = f"Req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        candidates_dir = os.path.join(packet_dir, "candidate_matches")
+        os.makedirs(packet_dir, exist_ok=True)
+        os.makedirs(candidates_dir, exist_ok=True)
+        if query_image_path and os.path.isfile(query_image_path):
+            dest = os.path.join(packet_dir, os.path.basename(query_image_path))
+            shutil.copy2(query_image_path, dest)
+        if user_info:
+            with open(os.path.join(packet_dir, "metadata.json"), "w") as f:
+                json.dump(user_info, f)
+        additional_dir = os.path.join(packet_dir, "additional_images")
+        os.makedirs(additional_dir, exist_ok=True)
+        with open(os.path.join(additional_dir, "manifest.json"), "w") as f:
+            json.dump([], f)
+        return request_id
+
+    def search_for_matches(self, query_image_path, sheet_name=None):
+        """Stub: no real search. Returns empty list for E2E/fake."""
+        return []
 
     def get_turtles_with_flags(self):
         results = []

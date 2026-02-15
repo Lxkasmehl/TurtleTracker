@@ -2,15 +2,30 @@
 Turtle Manager and Google Sheets Service initialization
 """
 
+import os
 import threading
 import time
-from turtle_manager import TurtleManager
+import tempfile
 from google_sheets_service import GoogleSheetsService
 
 # Initialize Turtle Manager in background thread to avoid blocking server start
 # This allows the server to start immediately and respond to health checks
 manager = None
 manager_ready = threading.Event()
+
+# E2E tests: use FakeTurtleManager with a temp dir so the real backend/data is never touched
+def _maybe_use_e2e_fake_manager():
+    if os.environ.get("E2E_USE_FAKE_MANAGER"):
+        from tests.fake_turtle_manager import FakeTurtleManager
+        global manager, manager_ready
+        manager = FakeTurtleManager(base_dir=tempfile.mkdtemp(prefix="turtle_e2e_"))
+        manager_ready.set()
+        try:
+            print("✅ E2E mode: FakeTurtleManager initialized (no real data)")
+        except UnicodeEncodeError:
+            print("[OK] E2E mode: FakeTurtleManager initialized (no real data)")
+        return True
+    return False
 
 # Initialize Google Sheets Service (lazy initialization)
 sheets_service = None
@@ -84,8 +99,9 @@ def check_and_run_migration():
 
 
 def initialize_manager():
-    """Initialize Turtle Manager in background thread"""
+    """Initialize Turtle Manager in background thread (real TurtleManager only)."""
     global manager
+    from turtle_manager import TurtleManager
     try:
         manager = TurtleManager()
         manager_ready.set()
@@ -115,9 +131,10 @@ def initialize_sheets_migration():
         pass
 
 
-# Start manager initialization in background
-manager_thread = threading.Thread(target=initialize_manager, daemon=True)
-manager_thread.start()
+# Start manager: E2E uses FakeTurtleManager (no real data); otherwise background thread
+if not _maybe_use_e2e_fake_manager():
+    manager_thread = threading.Thread(target=initialize_manager, daemon=True)
+    manager_thread.start()
 
 # Start sheets migration check in background
 sheets_migration_thread = threading.Thread(target=initialize_sheets_migration, daemon=True)
