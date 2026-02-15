@@ -96,11 +96,17 @@ test.describe('Admin Turtle Match', () => {
       timeout: 15_000,
     });
 
+    // When there are 0 matches, the section lives in the Create New Turtle modal; when there are matches, it's in the right column after selecting one. Open the modal so the section is visible regardless of match count.
+    await page.getByRole('button', { name: 'Create New Turtle' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
     await expect(
-      page.getByText('Additional photos (microhabitat / condition)', { exact: false }),
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('button', { name: 'Microhabitat' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Condition' })).toBeVisible();
+      dialog.getByText('Additional photos (microhabitat / condition)', { exact: false }),
+    ).toBeVisible();
+    // Add controls are <Button component="label"> (render as <label>), so target by visible text
+    await expect(dialog.getByText('Microhabitat', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Condition', { exact: true })).toBeVisible();
   });
 
   test('Community cannot access match page', async ({ page }) => {

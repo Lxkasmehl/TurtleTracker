@@ -15,6 +15,14 @@ _manager_service_stub = type(sys)("manager_service")
 _manager_service_stub.manager = None
 _manager_service_stub.manager_ready = threading.Event()
 _manager_service_stub.manager_ready.set()
+
+
+def _stub_get_sheets_service():
+    """Stub for get_sheets_service so routes can import it; returns None so Sheets code paths are no-ops."""
+    return None
+
+
+_manager_service_stub.get_sheets_service = _stub_get_sheets_service
 # Install before any test or app code imports manager_service (conftest loads first).
 sys.modules["services.manager_service"] = _manager_service_stub
 
