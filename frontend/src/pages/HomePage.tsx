@@ -26,21 +26,20 @@ import { useRef, useState, useEffect } from 'react';
 import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
+import { useAvailableSheets } from '../hooks/useAvailableSheets';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
-import { listSheets } from '../services/api';
 
 const MATCH_ALL_VALUE = '__all__';
 
 export default function HomePage() {
   const { role } = useUser();
+  const { sheets: availableSheets, loading: sheetsLoading } =
+    useAvailableSheets(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [instructionsOpened, setInstructionsOpened] = useState(false);
-  // Admin: locations/datasheets from Google Sheets for match scope
-  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
-  const [sheetsLoading, setSheetsLoading] = useState(false);
   const [selectedMatchSheet, setSelectedMatchSheet] = useState<string>(MATCH_ALL_VALUE);
 
   // Auto-open instructions on first visit
@@ -51,24 +50,14 @@ export default function HomePage() {
     }
   }, []);
 
-  // Admin: load available sheets (locations) for match dropdown
+  // Admin: default to first location when sheets load
   useEffect(() => {
-    if (role !== 'admin') return;
-    setSheetsLoading(true);
-    listSheets()
-      .then((res) => {
-        const sheets = res.sheets ?? [];
-        if (res.success && sheets.length) {
-          setAvailableSheets(sheets);
-          // Default to first location (testing against one location is the norm)
-          setSelectedMatchSheet((prev) => (prev === MATCH_ALL_VALUE ? sheets[0] : prev));
-        } else {
-          setAvailableSheets([]);
-        }
-      })
-      .catch(() => setAvailableSheets([]))
-      .finally(() => setSheetsLoading(false));
-  }, [role]);
+    if (role === 'admin' && availableSheets.length > 0) {
+      setSelectedMatchSheet((prev) =>
+        prev === MATCH_ALL_VALUE ? availableSheets[0] : prev,
+      );
+    }
+  }, [role, availableSheets]);
 
   const matchSheetForUpload =
     role === 'admin'
