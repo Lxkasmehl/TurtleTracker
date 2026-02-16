@@ -63,7 +63,7 @@ router.get(
       }
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
+        { id: user.id, email: user.email, role: user.role, email_verified: true },
         jwtSecret,
         { expiresIn: '7d' }
       );
@@ -83,14 +83,14 @@ router.get(
 
 // OAuth error handler
 router.get('/google/error', (req: Request, res: Response) => {
-  const error = req.query.error || 'unknown_error';
-  const errorDescription = req.query.error_description || 'An error occurred during Google OAuth';
-  
+  const error = String(req.query.error ?? 'unknown_error');
+  const errorDescription = String(req.query.error_description ?? 'An error occurred during Google OAuth');
+
   console.error('❌ Google OAuth Error:');
   console.error(`   Error: ${error}`);
   console.error(`   Description: ${errorDescription}`);
   console.error(`   Query params:`, req.query);
-  
+
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   res.redirect(`${frontendUrl}/login?error=auth_failed&message=${encodeURIComponent(errorDescription)}`);
 });

@@ -177,7 +177,9 @@ export default function LoginPage({
             : 'Account created successfully!';
         notifications.show({
           title: roleMessage,
-          message: `Welcome, ${response.user.name || response.user.email}!`,
+          message: response.user.email_verified
+            ? `Welcome, ${response.user.name || response.user.email}!`
+            : 'Please check your email to verify your account.',
           color: 'green',
           icon: <IconCheck size={18} />,
         });
@@ -185,18 +187,21 @@ export default function LoginPage({
         if (invitationToken) {
           window.history.replaceState({}, '', '/login');
         }
-        navigate('/');
+        navigate(response.user.email_verified !== false ? '/' : '/verify-email');
       } else {
         // Login
         const response = await apiLogin({ email, password });
         setUserLogin(response.user);
+        const needsVerification = response.user.email_verified === false;
         notifications.show({
           title: 'Successfully logged in!',
-          message: `Welcome back, ${response.user.name || response.user.email}!`,
+          message: needsVerification
+            ? 'Please verify your email to access all features.'
+            : `Welcome back, ${response.user.name || response.user.email}!`,
           color: 'green',
           icon: <IconCheck size={18} />,
         });
-        navigate('/');
+        navigate(needsVerification ? '/verify-email' : '/');
       }
     } catch (err) {
       const errorMessage =
@@ -284,6 +289,11 @@ export default function LoginPage({
                 onChange={(event) => setPassword(event.currentTarget.value)}
                 required
                 disabled={loading}
+                description={
+                  isSignUp
+                    ? 'At least 10 characters, with uppercase, lowercase, number and special character'
+                    : undefined
+                }
               />
 
               <Button
