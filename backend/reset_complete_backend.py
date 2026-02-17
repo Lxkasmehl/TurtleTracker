@@ -6,6 +6,10 @@ Clears ALL data from the backend:
 - Uploaded data (Review Queue, Community Uploads)
 - Training data (.npz files)
 - Model files (vocabulary, indexes)
+
+Important: All index/vocab files in backend/turtles/ are removed together. That avoids
+the "unfitted vocab + old index" state which used to cause 500 on photo upload when
+data/ was cleared but only vlad_vocab.pkl was deleted (old turtles.index remained).
 """
 
 import os
@@ -26,6 +30,7 @@ import django
 django.setup()
 
 from django.db import connection
+from django.db.utils import OperationalError
 from identification.models import Turtle, TurtleImage
 
 
@@ -35,14 +40,26 @@ def clear_database():
     
     try:
         # Delete all images first (due to foreign key constraint)
-        image_count = TurtleImage.objects.count()
-        TurtleImage.objects.all().delete()
-        print(f"   ✅ Deleted {image_count} TurtleImage records")
+        try:
+            image_count = TurtleImage.objects.count()
+            TurtleImage.objects.all().delete()
+            print(f"   ✅ Deleted {image_count} TurtleImage records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  TurtleImage table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         
         # Delete all turtles
-        turtle_count = Turtle.objects.count()
-        Turtle.objects.all().delete()
-        print(f"   ✅ Deleted {turtle_count} Turtle records")
+        try:
+            turtle_count = Turtle.objects.count()
+            Turtle.objects.all().delete()
+            print(f"   ✅ Deleted {turtle_count} Turtle records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  Turtle table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
         
         # Also clear any Django media files if they exist
         # Django stores uploaded images in media/ directory (default location)
@@ -166,12 +183,13 @@ def clear_training_data():
     
     print(f"   ✅ Deleted {npz_count} .npz files")
     
-    # Delete model files
+    # Delete all index/vocab files together (avoids "unfitted vocab + old index" → 500 on upload)
     model_files = [
         os.path.join(turtles_dir_path, 'vlad_vocab.pkl'),
         os.path.join(turtles_dir_path, 'turtles.index'),
         os.path.join(turtles_dir_path, 'global_vlad_array.npy'),
-        os.path.join(turtles_dir_path, 'metadata.pkl')
+        os.path.join(turtles_dir_path, 'metadata.pkl'),
+        os.path.join(turtles_dir_path, 'trained_kmeans_vocabulary.pkl'),
     ]
     
     model_count = 0

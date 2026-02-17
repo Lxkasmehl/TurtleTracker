@@ -7,7 +7,8 @@ import json
 import traceback
 from flask import request, jsonify
 from auth import require_admin
-from services.manager_service import manager, manager_ready, get_sheets_service
+from services import manager_service
+from services.manager_service import get_sheets_service
 
 
 def register_review_routes(app):
@@ -20,14 +21,14 @@ def register_review_routes(app):
         Get all pending review queue items (Admin only)
         Returns list of community uploads waiting for review
         """
-        # Wait for manager to be ready
-        if not manager_ready.wait(timeout=30):
+        # Wait for manager to be ready (use module ref so we see current value after background init)
+        if not manager_service.manager_ready.wait(timeout=30):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-        if manager is None:
+        if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         
         try:
-            queue_items = manager.get_review_queue()
+            queue_items = manager_service.manager.get_review_queue()
             
             # Load metadata and candidate matches for each item
             formatted_items = []
@@ -99,12 +100,12 @@ def register_review_routes(app):
         Delete a review queue item without processing (Admin only).
         Use for junk/spam. Requires confirmation in the frontend.
         """
-        if not manager_ready.wait(timeout=30):
+        if not manager_service.manager_ready.wait(timeout=30):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-        if manager is None:
+        if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         try:
-            success, message = manager.reject_review_packet(request_id)
+            success, message = manager_service.manager.reject_review_packet(request_id)
             if success:
                 return jsonify({'success': True, 'message': message})
             return jsonify({'error': message}), 400
@@ -119,9 +120,9 @@ def register_review_routes(app):
         Admin selects which of the 5 matches is the correct one, OR creates a new turtle
         """
         # Wait for manager to be ready
-        if not manager_ready.wait(timeout=30):
+        if not manager_service.manager_ready.wait(timeout=30):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-        if manager is None:
+        if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         
         data = request.json
@@ -132,7 +133,7 @@ def register_review_routes(app):
         sheets_data = data.get('sheets_data')  # Optional: Google Sheets data to create/update
         
         try:
-            success, message = manager.approve_review_packet(
+            success, message = manager_service.manager.approve_review_packet(
                 request_id,
                 match_turtle_id=match_turtle_id,
                 new_location=new_location,
@@ -147,14 +148,11 @@ def register_review_routes(app):
                     try:
                         if new_location and new_turtle_id:
                             # New turtle created - create Sheets entry
-                            location_parts = new_location.split('/')
-                            if len(location_parts) >= 2:
-                                state = location_parts[0]
-                                location = location_parts[1]
-                            else:
-                                state = location_parts[0] if location_parts else ''
-                                location = ''
-                                
+                            # new_location is the sheet name (backend path); row content uses sheets_data
+                            sheet_name = (isinstance(sheets_data, dict) and sheets_data.get('sheet_name')) or new_location
+                            state = (isinstance(sheets_data, dict) and sheets_data.get('general_location')) or ''
+                            location = (isinstance(sheets_data, dict) and sheets_data.get('location')) or ''
+
                             # Check if frontend already created the entry (indicated by primary_id and sheet_name in sheets_data)
                             # IMPORTANT: Only skip if primary_id is present - if createTurtleSheetsData failed,
                             # primary_id won't be set, and we should create it in fallback mode
@@ -189,11 +187,7 @@ def register_review_routes(app):
                                     turtle_data['id'] = primary_id
                                 # Do not set general_location or location from state/location – leave empty if admin did not fill them; community location is for display only
                                 
-                                # Determine sheet_name from the turtle data or use a default
-                                sheet_name = sheets_data.get('sheet_name') if isinstance(sheets_data, dict) else 'Location A'
-                                
-                                # Debug: Log what data we're creating
-                                
+                                # sheet_name already set above (sheet tab name)
                                 service.create_turtle_data(turtle_data, sheet_name, state, location)
                                 print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
                         elif match_turtle_id:

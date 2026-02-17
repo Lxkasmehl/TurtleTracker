@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconAlertCircle } from '@tabler/icons-react';
-import { validateFile, getCurrentLocation } from '../services/mockBackend';
+import { validateFile } from '../utils/fileValidation';
+import { getCurrentLocation } from '../services/geolocation';
 import { uploadTurtlePhoto, type UploadPhotoResponse, type LocationHint } from '../services/api';
 import { useUser } from './useUser';
 import type { FileWithPath } from '../types/file';
@@ -26,6 +27,8 @@ interface UsePhotoUploadReturn {
   isDuplicate: boolean;
   previousUploadDate: string | null;
   isGettingLocation: boolean;
+  /** True when the user has denied location permission (show "allow in settings" message). */
+  locationPermissionDenied: boolean;
   /** Optional location hint (coords) – only in queue, never in sheets */
   locationHint: LocationHint | null;
   setLocationHint: (hint: LocationHint | null) => void;
@@ -52,6 +55,7 @@ export function usePhotoUpload({
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [previousUploadDate, setPreviousUploadDate] = useState<string | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationHint, setLocationHint] = useState<LocationHint | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -87,6 +91,8 @@ export function usePhotoUpload({
       setImageId(null);
       setIsDuplicate(false);
       setPreviousUploadDate(null);
+      setLocationHint(null);
+      setLocationPermissionDenied(false);
 
       // Create preview
       const reader = new FileReader();
@@ -213,11 +219,19 @@ export function usePhotoUpload({
   };
 
   const requestLocationHint = async (): Promise<void> => {
+    setLocationPermissionDenied(false);
     setIsGettingLocation(true);
     try {
-      const loc = await getCurrentLocation();
-      if (loc) {
-        setLocationHint({ latitude: loc.latitude, longitude: loc.longitude, source: 'gps' });
+      const result = await getCurrentLocation();
+      if (result.permissionDenied) {
+        setLocationPermissionDenied(true);
+        setLocationHint(null);
+      } else if (result.location) {
+        setLocationHint({
+          latitude: result.location.latitude,
+          longitude: result.location.longitude,
+          source: 'gps',
+        });
       } else {
         setLocationHint(null);
       }
@@ -250,6 +264,7 @@ export function usePhotoUpload({
     isDuplicate,
     previousUploadDate,
     isGettingLocation,
+    locationPermissionDenied,
     locationHint,
     setLocationHint,
     requestLocationHint,

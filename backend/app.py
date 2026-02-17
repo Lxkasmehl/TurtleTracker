@@ -14,7 +14,7 @@ from flask import Flask
 from flask_cors import CORS
 
 # Import services
-from services.manager_service import manager
+from services import manager_service
 
 # Import routes
 from routes.health import register_health_routes
@@ -66,14 +66,14 @@ if __name__ == '__main__':
     try:
         print("🐢 Starting Turtle API Server...", flush=True)
         print(f"🌐 Server will be available at http://localhost:{port}", flush=True)
-        if manager is not None:
-            print(f"📁 Data directory: {manager.base_dir}", flush=True)
+        if manager_service.manager is not None:
+            print(f"📁 Data directory: {manager_service.manager.base_dir}", flush=True)
         sys.stdout.flush()
     except UnicodeEncodeError:
         print("[TURTLE] Starting Turtle API Server...", flush=True)
         print(f"[NET] Server will be available at http://localhost:{port}", flush=True)
-        if manager is not None:
-            print(f"[DIR] Data directory: {manager.base_dir}", flush=True)
+        if manager_service.manager is not None:
+            print(f"[DIR] Data directory: {manager_service.manager.base_dir}", flush=True)
         sys.stdout.flush()
     
     try:
