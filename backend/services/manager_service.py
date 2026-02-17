@@ -34,6 +34,10 @@ def get_sheets_service():
                     print(f"⚠️ Warning: Migration check failed (non-critical): {migration_error}")
         except Exception as e:
             print(f"⚠️ Warning: Google Sheets Service not available: {e}")
+            err_str = str(e).lower()
+            if "credentials" in err_str and "not found" in err_str:
+                print("   For Docker: place your Service Account JSON in backend/credentials/ on the host.")
+                print("   Name it google-sheets-credentials.json or set GOOGLE_SHEETS_CREDENTIALS_PATH in .env to /app/credentials/YourFilename.json")
             print("   Google Sheets features will be disabled.")
             # Don't raise - return None so endpoints can handle gracefully
     return sheets_service

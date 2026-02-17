@@ -26,7 +26,7 @@ You need **Docker** and **Docker Compose** installed.
    cp .env.docker.example .env
    ```
 
-2. (Optional) For Google Sheets: place your service account JSON in `backend/credentials/google-sheets-credentials.json` and set `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env`.
+2. (Optional) For Google Sheets: create `backend/credentials/`, place your **Google Service Account** JSON there (e.g. `google-sheets-credentials.json`), and set `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env`. If the file has another name, set `GOOGLE_SHEETS_CREDENTIALS_PATH=/app/credentials/your-filename.json` in `.env` (path is inside the container; the folder `backend/credentials/` is mounted into the container).
 
 3. Build and start all services:
 
