@@ -107,11 +107,16 @@ def create_turtle_data(service, spreadsheet_id: str, turtle_data: Dict[str, Any]
     sheet_name = get_sheet_name_for_region(sheet_name=sheet_name, state=state, location=location)
     
     try:
-        # Ensure Primary ID column exists
-        ensure_primary_id_column_func(sheet_name)
+        # Ensure Primary ID column exists (do not insert when headers unreadable to avoid duplicate columns)
+        if not ensure_primary_id_column_func(sheet_name):
+            print(f"ERROR in create_turtle_data: Could not ensure Primary ID column for sheet '{sheet_name}'")
+            return None
         
         # Get column indices
         column_indices = get_all_column_indices_func(sheet_name)
+        if not column_indices:
+            print(f"ERROR in create_turtle_data: No column headers for sheet '{sheet_name}'")
+            return None
         
         # Get the next available row (find last row with data)
         escaped_sheet = escape_sheet_name(sheet_name)

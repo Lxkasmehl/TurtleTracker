@@ -187,7 +187,7 @@ def register_review_routes(app):
                                 # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
                                 if not turtle_data.get('id'):
                                     sex = (turtle_data.get('sex') or '').strip().upper()
-                                    gender = sex if sex in ('M', 'F') else ('U' if sex in ('J', 'U', '') else 'U')
+                                    gender = sex if sex in ('M', 'F', 'J') else 'U'
                                     turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
                                 # Do not set general_location or location from state/location – leave empty if admin did not fill them; community location is for display only
                                 
