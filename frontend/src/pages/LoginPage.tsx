@@ -31,6 +31,8 @@ import {
   getInvitationDetails,
 } from '../services/api';
 import { useUser } from '../hooks/useUser';
+import { PasswordStrengthIndicator } from '../components/PasswordStrengthIndicator';
+import { meetsAllRequirements } from '../utils/passwordStrength';
 
 interface LoginPageProps {
   initialMode?: 'login' | 'signup';
@@ -289,18 +291,21 @@ export default function LoginPage({
                 onChange={(event) => setPassword(event.currentTarget.value)}
                 required
                 disabled={loading}
-                description={
-                  isSignUp
-                    ? 'At least 10 characters, with uppercase, lowercase, number and special character'
-                    : undefined
-                }
               />
+              {isSignUp && (
+                <PasswordStrengthIndicator password={password} />
+              )}
 
               <Button
                 fullWidth
                 size='md'
                 type='submit'
-                disabled={!email || !password || loading}
+                disabled={
+                  !email ||
+                  !password ||
+                  loading ||
+                  (isSignUp && !meetsAllRequirements(password))
+                }
                 leftSection={loading ? <Loader size={16} /> : undefined}
               >
                 {loading
