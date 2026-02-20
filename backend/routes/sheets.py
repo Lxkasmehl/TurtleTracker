@@ -141,17 +141,17 @@ def register_sheets_routes(app):
     @require_admin
     def generate_turtle_id():
         """
-        Generate the next biology ID (ID column) for the given sheet: M/F/U + next sequence number (Admin only).
-        Body: { "sex": "M", "sheet_name": "Kansas" }. Sequence is scoped to that sheet only.
+        Generate the next biology ID (ID column) for the given sheet: M/F/J/U + next sequence number (Admin only).
+        Body: { "sex": "M"|"F"|"J"|"U", "sheet_name": "Kansas" }. Sequence is scoped to that sheet only.
         """
         try:
             data = request.json or {}
             sex = (data.get('sex') or data.get('gender') or '').strip().upper()
             sheet_name = (data.get('sheet_name') or '').strip()
-            # Normalize: M, F, J->U, U; anything else -> U
-            if sex in ('M', 'F'):
+            # Normalize: M, F, J, U; anything else -> U
+            if sex in ('M', 'F', 'J'):
                 gender = sex
-            elif sex in ('J', 'U', ''):
+            elif sex in ('U', ''):
                 gender = 'U'
             else:
                 gender = 'U'
@@ -205,9 +205,9 @@ def register_sheets_routes(app):
                 primary_id = service.generate_primary_id(state, location)
                 turtle_data['primary_id'] = primary_id
 
-            # Always auto-generate biology ID (ID column) on create: M/F/U + next sequence number (scoped to this sheet)
+            # Always auto-generate biology ID (ID column) on create: M/F/J/U + next sequence number (scoped to this sheet)
             sex = (turtle_data.get('sex') or '').strip().upper()
-            gender = sex if sex in ('M', 'F') else ('U' if sex in ('J', 'U', '') else 'U')
+            gender = sex if sex in ('M', 'F', 'J') else 'U'
             turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
 
             created_id = service.create_turtle_data(turtle_data, sheet_name, state, location)
@@ -314,7 +314,7 @@ def register_sheets_routes(app):
                 # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
                 if not turtle_data_clean.get('id'):
                     sex = (turtle_data_clean.get('sex') or '').strip().upper()
-                    gender = sex if sex in ('M', 'F') else ('U' if sex in ('J', 'U', '') else 'U')
+                    gender = sex if sex in ('M', 'F', 'J') else 'U'
                     turtle_data_clean['id'] = service.generate_biology_id(gender, sheet_name)
                 created_id = service.create_turtle_data(turtle_data_clean, sheet_name, state, location)
                 if created_id:

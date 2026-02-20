@@ -643,7 +643,7 @@ export const generatePrimaryId = async (
   }
 };
 
-// Generate the next biology ID (ID column) based on sex: M/F/U + sequence number
+// Generate the next biology ID (ID column) based on sex: M/F/J/U + sequence number
 export const generateTurtleId = async (
   data: GenerateTurtleIdRequest,
   timeoutMs: number = 10000,

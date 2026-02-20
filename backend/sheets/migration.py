@@ -119,7 +119,7 @@ def get_max_biology_id_number(service, spreadsheet_id: str, sheet_name: str,
 def generate_biology_id(service, spreadsheet_id: str, sheet_name: str,
                        get_all_column_indices_func=None, gender: str = 'U') -> str:
     """
-    Generate the next biology ID: one letter (M/F/U) + next sequence number.
+    Generate the next biology ID: one letter (M/F/J/U) + next sequence number.
     The number is one higher than the current maximum in the ID column of the given sheet only.
 
     Args:
@@ -127,13 +127,13 @@ def generate_biology_id(service, spreadsheet_id: str, sheet_name: str,
         spreadsheet_id: Google Sheets spreadsheet ID
         sheet_name: Name of the sheet (tab) the turtle belongs to
         get_all_column_indices_func: Function(sheet_name) -> dict of header -> col index
-        gender: One of 'M', 'F', 'U' (Male, Female, Unknown/Juvenile). Default 'U'.
+        gender: One of 'M', 'F', 'J', 'U' (Male, Female, Juvenile, Unknown). Default 'U'.
 
     Returns:
-        New ID string (e.g. 'M1', 'F2', 'U3').
+        New ID string (e.g. 'M1', 'F2', 'J3', 'U4').
     """
     prefix = (gender or 'U').upper()
-    if prefix not in ('M', 'F', 'U'):
+    if prefix not in ('M', 'F', 'J', 'U'):
         prefix = 'U'
     max_num = get_max_biology_id_number(
         service, spreadsheet_id, sheet_name, get_all_column_indices_func
