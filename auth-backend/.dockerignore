@@ -1,0 +1,17 @@
+# Git and IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Dependencies and build
+node_modules
+dist
+npm-debug.log
+
+# Data (mounted as volume)
+data/
+
+# Env (set via docker-compose or runtime)
+.env
+.env.*
