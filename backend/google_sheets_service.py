@@ -59,7 +59,10 @@ class GoogleSheetsService:
         # Cache for list_sheets to reduce concurrent API calls and SSL issues
         self._list_sheets_cache = None
         self._list_sheets_cache_time = 0.0
-        
+        # Cache for column indices (header row) to avoid duplicate reads in same create flow
+        self._column_indices_cache = {}  # sheet_name -> (indices_dict, timestamp)
+        self.COLUMN_INDICES_CACHE_TTL_SEC = 15
+
         # Authenticate
         try:
             credentials = service_account.Credentials.from_service_account_file(
@@ -83,10 +86,29 @@ class GoogleSheetsService:
         """Find the column index for a given header in a sheet."""
         return helpers.find_column_index(self.service, self.spreadsheet_id, sheet_name, column_header)
     
+    def _invalidate_column_indices_cache(self, sheet_name: Optional[str] = None):
+        """Invalidate cached column indices (e.g. after inserting a column)."""
+        if sheet_name is None:
+            self._column_indices_cache.clear()
+        else:
+            self._column_indices_cache.pop(sheet_name, None)
+
     def _get_all_column_indices(self, sheet_name: str) -> Dict[str, int]:
-        """Get all column indices for a sheet by reading the header row."""
-        return helpers.get_all_column_indices(self.service, self.spreadsheet_id, sheet_name, self.list_sheets)
-    
+        """Get all column indices for a sheet by reading the header row (with short TTL cache)."""
+        now = time.time()
+        entry = self._column_indices_cache.get(sheet_name)
+        if entry is not None:
+            indices, ts = entry
+            if (now - ts) < self.COLUMN_INDICES_CACHE_TTL_SEC:
+                return indices
+            self._column_indices_cache.pop(sheet_name, None)
+        indices = helpers.get_all_column_indices(
+            self.service, self.spreadsheet_id, sheet_name, self.list_sheets
+        )
+        if indices:
+            self._column_indices_cache[sheet_name] = (indices, now)
+        return indices
+
     def _find_row_by_primary_id(self, sheet_name: str, primary_id: str, id_column: str = 'Primary ID') -> Optional[int]:
         """Find the row index (1-based) for a turtle with a given primary ID."""
         return sheet_management.find_row_by_primary_id(
@@ -96,7 +118,9 @@ class GoogleSheetsService:
     def _ensure_primary_id_column(self, sheet_name: str) -> bool:
         """Ensure the "Primary ID" column exists in the sheet."""
         return sheet_management.ensure_primary_id_column(
-            self.service, self.spreadsheet_id, sheet_name, self._get_all_column_indices
+            self.service, self.spreadsheet_id, sheet_name,
+            self._get_all_column_indices,
+            invalidate_column_indices_cache_func=self._invalidate_column_indices_cache,
         )
     
     def _column_index_to_letter(self, col_idx: int) -> str:
@@ -160,6 +184,18 @@ class GoogleSheetsService:
         """Generate a new unique primary ID for a turtle."""
         return migration.generate_primary_id(
             self.service, self.spreadsheet_id, self.list_sheets, self._find_row_by_primary_id, state, location
+        )
+
+    def generate_biology_id(self, gender: str = 'U', sheet_name: Optional[str] = None) -> str:
+        """
+        Generate the next biology ID (ID column): one letter (M/F/U) + next sequence number.
+        The number is scoped to the given sheet only.
+        Gender: M=Male, F=Female, U=Unknown/Juvenile.
+        """
+        if not sheet_name or not sheet_name.strip():
+            raise ValueError("sheet_name is required for biology ID generation")
+        return migration.generate_biology_id(
+            self.service, self.spreadsheet_id, sheet_name.strip(), self._get_all_column_indices, gender
         )
     
     def needs_migration(self) -> bool:

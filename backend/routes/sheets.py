@@ -137,6 +137,46 @@ def register_sheets_routes(app):
             print(f"Traceback:\n{error_trace}")
             return jsonify({'error': f'Failed to generate primary ID: {str(e)}'}), 500
 
+    @app.route('/api/sheets/generate-id', methods=['POST'])
+    @require_admin
+    def generate_turtle_id():
+        """
+        Generate the next biology ID (ID column) for the given sheet: M/F/J/U + next sequence number (Admin only).
+        Body: { "sex": "M"|"F"|"J"|"U", "sheet_name": "Kansas" }. Sequence is scoped to that sheet only.
+        """
+        try:
+            data = request.json or {}
+            sex = (data.get('sex') or data.get('gender') or '').strip().upper()
+            sheet_name = (data.get('sheet_name') or '').strip()
+            # Normalize: M, F, J, U; anything else -> U
+            if sex in ('M', 'F', 'J'):
+                gender = sex
+            elif sex in ('U', ''):
+                gender = 'U'
+            else:
+                gender = 'U'
+
+            if not sheet_name:
+                return jsonify({'error': 'sheet_name is required for ID generation'}), 400
+
+            service = get_sheets_service()
+            if not service:
+                return jsonify({'error': 'Google Sheets service not configured'}), 503
+
+            id_value = service.generate_biology_id(gender, sheet_name)
+            return jsonify({
+                'success': True,
+                'id': id_value
+            })
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            try:
+                print(f"❌ Error generating turtle ID: {str(e)}")
+            except UnicodeEncodeError:
+                print(f"[ERROR] Error generating turtle ID: {str(e)}")
+            print(f"Traceback:\n{error_trace}")
+            return jsonify({'error': f'Failed to generate turtle ID: {str(e)}'}), 500
+
     @app.route('/api/sheets/turtle', methods=['POST'])
     @require_admin
     def create_turtle_sheets_data():
@@ -164,19 +204,20 @@ def register_sheets_routes(app):
             else:
                 primary_id = service.generate_primary_id(state, location)
                 turtle_data['primary_id'] = primary_id
-            
-            # Keep existing 'id' if present (user input), otherwise use primary_id as fallback
-            # This allows users to enter their own ID while still having a fallback
-            if 'id' not in turtle_data or not turtle_data.get('id'):
-                turtle_data['id'] = primary_id
-            
+
+            # Always auto-generate biology ID (ID column) on create: M/F/J/U + next sequence number (scoped to this sheet)
+            sex = (turtle_data.get('sex') or '').strip().upper()
+            gender = sex if sex in ('M', 'F', 'J') else 'U'
+            turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
+
             created_id = service.create_turtle_data(turtle_data, sheet_name, state, location)
-            
+
             if created_id:
                 print(f"✅ Successfully created turtle in sheets with Primary ID: {created_id}")
                 return jsonify({
                     'success': True,
                     'primary_id': created_id,
+                    'id': turtle_data.get('id'),
                     'message': 'Turtle data created successfully'
                 })
             else:
@@ -235,9 +276,11 @@ def register_sheets_routes(app):
                 # Create in new sheet
                 turtle_data_clean = {k: v for k, v in turtle_data.items() if k != 'sheet_name'}
                 turtle_data_clean['primary_id'] = primary_id
-                if 'id' not in turtle_data_clean:
-                    turtle_data_clean['id'] = primary_id
-                
+                if not turtle_data_clean.get('id'):
+                    sex = (turtle_data_clean.get('sex') or '').strip().upper()
+                    gender = sex if sex in ('M', 'F') else ('U' if sex in ('J', 'U', '') else 'U')
+                    turtle_data_clean['id'] = service.generate_biology_id(gender, sheet_name)
+
                 created_id = service.create_turtle_data(turtle_data_clean, sheet_name, state, location)
                 if created_id:
                     return jsonify({
@@ -268,9 +311,11 @@ def register_sheets_routes(app):
                 turtle_data_clean = {k: v for k, v in turtle_data.items() if k != 'sheet_name'}
                 # Set primary_id in the Primary ID column (not just id)
                 turtle_data_clean['primary_id'] = primary_id
-                # Also set id if not present (for backwards compatibility)
-                if 'id' not in turtle_data_clean:
-                    turtle_data_clean['id'] = primary_id
+                # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
+                if not turtle_data_clean.get('id'):
+                    sex = (turtle_data_clean.get('sex') or '').strip().upper()
+                    gender = sex if sex in ('M', 'F', 'J') else 'U'
+                    turtle_data_clean['id'] = service.generate_biology_id(gender, sheet_name)
                 created_id = service.create_turtle_data(turtle_data_clean, sheet_name, state, location)
                 if created_id:
                     return jsonify({
@@ -489,6 +534,94 @@ def register_sheets_routes(app):
                 print(f"[ERROR] Error listing turtles: {str(e)}")
             print(f"Traceback:\n{error_trace}")
             return jsonify({'error': f'Failed to list turtles: {str(e)}'}), 500
+
+    @app.route('/api/sheets/turtle-names', methods=['GET'])
+    @require_admin
+    def list_turtle_names():
+        """
+        List all turtle names across all location sheets (Admin only).
+        Used by the frontend to prevent duplicate names when creating/editing turtles.
+        Returns name and primary_id so the form can allow the same name when editing the same turtle.
+        """
+        try:
+            try:
+                service = get_sheets_service()
+            except Exception as service_error:
+                print(f"Warning: Google Sheets service not available: {service_error}")
+                return jsonify({
+                    'success': True,
+                    'names': [],
+                    'message': 'Google Sheets service not configured'
+                })
+
+            if not service:
+                return jsonify({
+                    'success': True,
+                    'names': [],
+                    'message': 'Google Sheets service not configured'
+                })
+
+            sheets_to_search = service.list_sheets()
+            backup_sheet_names = ['Backup (Initial State)', 'Backup (Inital State)', 'Backup']
+            sheets_to_search = [s for s in sheets_to_search if s not in backup_sheet_names]
+
+            all_names = []
+            for sheet in sheets_to_search:
+                try:
+                    service._ensure_primary_id_column(sheet)
+                    escaped_sheet = sheet
+                    if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
+                        escaped_sheet = f"'{sheet}'"
+                    range_name = f"{escaped_sheet}!A:Z"
+                    result = service.service.spreadsheets().values().get(
+                        spreadsheetId=service.spreadsheet_id,
+                        range=range_name
+                    ).execute()
+
+                    values = result.get('values', [])
+                    if len(values) < 2:
+                        continue
+
+                    headers = values[0]
+                    column_indices = {}
+                    for idx, header in enumerate(headers):
+                        if header and header.strip():
+                            column_indices[header.strip()] = idx
+
+                    primary_id_idx = column_indices.get('Primary ID')
+                    name_idx = column_indices.get('Name')
+                    if primary_id_idx is None and 'ID' in column_indices:
+                        primary_id_idx = column_indices.get('ID')
+                    if name_idx is None:
+                        continue
+
+                    for row_data in values[1:]:
+                        if not row_data:
+                            continue
+                        max_idx = max(primary_id_idx if primary_id_idx is not None else -1, name_idx)
+                        if len(row_data) <= max_idx:
+                            continue
+                        primary_id = (row_data[primary_id_idx] or '').strip() if primary_id_idx is not None else ''
+                        name = (row_data[name_idx] or '').strip() if name_idx is not None else ''
+                        if primary_id and name:
+                            all_names.append({'name': name, 'primary_id': primary_id})
+                except Exception as e:
+                    print(f"Error reading sheet {sheet} for turtle names: {e}")
+                    continue
+
+            return jsonify({
+                'success': True,
+                'names': all_names
+            })
+
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            try:
+                print(f"Error listing turtle names: {str(e)}")
+            except UnicodeEncodeError:
+                print(f"[ERROR] Error listing turtle names: {str(e)}")
+            print(f"Traceback:\n{error_trace}")
+            return jsonify({'error': f'Failed to list turtle names: {str(e)}'}), 500
 
     @app.route('/api/sheets/migrate-ids', methods=['POST'])
     @require_admin
