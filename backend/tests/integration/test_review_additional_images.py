@@ -139,7 +139,7 @@ def test_remove_additional_image_success(client, review_packet_dir, tmp_path):
     r = client.post(
         f"/api/review-queue/{request_id}/additional-images",
         data={
-            "file_0": (BytesIO(data), "cond.jpg"),
+            "file_0": ("cond.jpg", BytesIO(data)),
             "type_0": "condition",
         },
     )

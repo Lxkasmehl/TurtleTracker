@@ -52,8 +52,16 @@ class BackendApiClient:
             files = {}
             form_data = {}
             for k, v in data.items():
-                if hasattr(v, "read") or (isinstance(v, (tuple, list)) and len(v) >= 2 and hasattr(v[0], "read")):
-                    files[k] = v if isinstance(v, (tuple, list)) else (v, "file")
+                is_file = hasattr(v, "read")
+                if not is_file and isinstance(v, (tuple, list)) and len(v) >= 2:
+                    # (filename, fileobj) or (fileobj, filename) for requests
+                    is_file = hasattr(v[0], "read") or hasattr(v[1], "read")
+                if is_file:
+                    if isinstance(v, (tuple, list)):
+                        # requests expects (filename, fileobj); normalize if reversed
+                        files[k] = (v[1], v[0]) if hasattr(v[0], "read") else v
+                    else:
+                        files[k] = (v, "file")
                 else:
                     form_data[k] = v
             if files:
