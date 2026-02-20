@@ -2,20 +2,23 @@
 Migration functions for Google Sheets
 """
 
+import re
 import time
-import threading
 import random
 from typing import Dict, Optional
 from googleapiclient.errors import HttpError
 from .helpers import escape_sheet_name, column_index_to_letter
 from .sheet_management import ensure_primary_id_column
 
+# Biology ID format: one letter + digits. When parsing max number we accept any letter (M/F/J/U).
+BIOLOGY_ID_PATTERN = re.compile(r'^[A-Za-z](\d+)$')
+
 
 def generate_primary_id(service, spreadsheet_id: str, list_sheets_func=None, find_row_by_primary_id_func=None,
                        state: Optional[str] = None, location: Optional[str] = None) -> str:
     """
-    Generate a new unique primary ID for a turtle.
-    Checks all sheets to ensure uniqueness across the entire spreadsheet.
+    Generate a new unique primary ID for a turtle (T + timestamp + random).
+    Uniqueness is ensured by timestamp and random component; no sheet scan needed.
     
     Args:
         service: Google Sheets API service object
@@ -28,68 +31,115 @@ def generate_primary_id(service, spreadsheet_id: str, list_sheets_func=None, fin
     Returns:
         New unique primary ID
     """
-    # Get all available sheets to check for uniqueness
-    # Use a timeout to avoid blocking for too long (IDs are unique by timestamp anyway)
-    # If list_sheets fails or times out, use empty list (we'll still generate unique IDs)
-    all_sheets = []
-    try:
-        # Use threading to add a timeout to list_sheets()
-        sheets_result = [None]
-        exception_result = [None]
-        
-        def call_list_sheets():
-            try:
-                sheets_result[0] = list_sheets_func()
-            except Exception as e:
-                exception_result[0] = e
-        
-        thread = threading.Thread(target=call_list_sheets)
-        thread.daemon = True
-        thread.start()
-        thread.join(timeout=5.0)  # 5 second timeout
-        
-        if thread.is_alive():
-            # Timeout occurred - list_sheets is taking too long
-            print(f"Warning: list_sheets() timed out after 5 seconds for ID uniqueness check - continuing without check")
-            all_sheets = []  # Continue with empty list - IDs are still unique based on timestamp
-        elif exception_result[0]:
-            # Exception occurred
-            print(f"Warning: Could not list sheets for ID uniqueness check: {exception_result[0]}")
-            all_sheets = []  # Continue with empty list
-        else:
-            # Success
-            all_sheets = sheets_result[0] if isinstance(sheets_result[0], list) else []
-    except Exception as e:
-        print(f"Warning: Could not list sheets for ID uniqueness check: {e}")
-        all_sheets = []  # Continue with empty list - IDs are still unique based on timestamp
-    
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        # Generate a unique ID based on timestamp and random number
-        timestamp = int(time.time() * 1000)  # Use milliseconds for better uniqueness
-        random_part = random.randint(10000, 99999)  # Larger random range
-        candidate_id = f"T{timestamp}{random_part}"
-        
-        # Check if this ID already exists in any sheet
-        id_exists = False
-        for sheet in all_sheets:
-            try:
-                row_idx = find_row_by_primary_id_func(sheet, candidate_id, 'Primary ID')
-                if row_idx:
-                    id_exists = True
-                    break
-            except:
-                # If sheet doesn't have Primary ID column yet, that's okay
-                pass
-        
-        if not id_exists:
-            return candidate_id
-    
-    # Fallback: if we couldn't generate a unique ID after max_attempts, use a more complex one
-    timestamp = int(time.time() * 1000000)  # Microseconds
-    random_part = random.randint(100000, 999999)
+    # Generate ID from timestamp + random. No need to scan all sheets (saves many API reads
+    # and avoids rate limit when adding multiple turtles). Collision probability is negligible.
+    timestamp = int(time.time() * 1000)
+    random_part = random.randint(10000, 99999)
     return f"T{timestamp}{random_part}"
+
+
+def get_max_biology_id_number(service, spreadsheet_id: str, sheet_name: str,
+                               get_all_column_indices_func=None) -> int:
+    """
+    Scan the "ID" column in the given sheet only and return the highest numeric part.
+    IDs are expected to match format: one letter + digits (e.g. F1, M2, U10).
+    Retries on 429 (rate limit) to avoid returning 0 and causing duplicate biology IDs.
+
+    Args:
+        service: Google Sheets API service object
+        spreadsheet_id: Google Sheets spreadsheet ID
+        sheet_name: Name of the sheet (tab) to scan
+        get_all_column_indices_func: Function(sheet_name) -> dict of header -> col index
+
+    Returns:
+        The maximum number found (0 if no valid IDs).
+    """
+    from .helpers import SHEETS_RATE_LIMIT_RETRY_WAIT_SEC, SHEETS_RATE_LIMIT_MAX_RETRIES
+
+    backup_sheet_names = ['Backup (Initial State)', 'Backup (Inital State)', 'Backup']
+    if sheet_name in backup_sheet_names:
+        return 0
+
+    try:
+        column_indices = get_all_column_indices_func(sheet_name) if get_all_column_indices_func else {}
+        id_col_idx = column_indices.get('ID')
+        if id_col_idx is None:
+            return 0
+
+        escaped_sheet = escape_sheet_name(sheet_name)
+        col_letter = column_index_to_letter(id_col_idx)
+        range_name = f"{escaped_sheet}!{col_letter}2:{col_letter}"
+        values = []
+        last_error = None
+        for attempt in range(SHEETS_RATE_LIMIT_MAX_RETRIES + 1):
+            try:
+                result = service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute()
+                values = result.get('values', [])
+                break
+            except HttpError as e:
+                last_error = e
+                status = getattr(e, 'resp', None) and getattr(e.resp, 'status', None)
+                if status == 429 and attempt < SHEETS_RATE_LIMIT_MAX_RETRIES:
+                    wait_sec = SHEETS_RATE_LIMIT_RETRY_WAIT_SEC * (attempt + 1)
+                    print(f"Rate limit (429) reading ID column from sheet '{sheet_name}', waiting {wait_sec}s before retry ({attempt + 1}/{SHEETS_RATE_LIMIT_MAX_RETRIES})")
+                    time.sleep(wait_sec)
+                    continue
+                print(f"Warning: Error reading ID column from sheet '{sheet_name}': {e}")
+                return 0
+        else:
+            if last_error:
+                print(f"Warning: Error reading ID column from sheet '{sheet_name}': {last_error}")
+            return 0
+
+        max_num = 0
+        for row in values:
+            if not row:
+                continue
+            raw = row[0] if isinstance(row, list) and len(row) > 0 else row
+            cell = (raw or '').strip()
+            if not cell:
+                continue
+            match = BIOLOGY_ID_PATTERN.match(cell)
+            if match:
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
+        return max_num
+    except HttpError as e:
+        print(f"Warning: Error reading ID column from sheet '{sheet_name}': {e}")
+        return 0
+    except Exception as e:
+        print(f"Warning: Error scanning sheet '{sheet_name}' for biology ID: {e}")
+        return 0
+
+
+def generate_biology_id(service, spreadsheet_id: str, sheet_name: str,
+                       get_all_column_indices_func=None, gender: str = 'U') -> str:
+    """
+    Generate the next biology ID: one letter (M/F/J/U) + next sequence number.
+    The number is one higher than the current maximum in the ID column of the given sheet only.
+
+    Args:
+        service: Google Sheets API service object
+        spreadsheet_id: Google Sheets spreadsheet ID
+        sheet_name: Name of the sheet (tab) the turtle belongs to
+        get_all_column_indices_func: Function(sheet_name) -> dict of header -> col index
+        gender: One of 'M', 'F', 'J', 'U' (Male, Female, Juvenile, Unknown). Default 'U'.
+
+    Returns:
+        New ID string (e.g. 'M1', 'F2', 'J3', 'U4').
+    """
+    prefix = (gender or 'U').upper()
+    if prefix not in ('M', 'F', 'J', 'U'):
+        prefix = 'U'
+    max_num = get_max_biology_id_number(
+        service, spreadsheet_id, sheet_name, get_all_column_indices_func
+    )
+    next_num = max_num + 1
+    return f"{prefix}{next_num}"
 
 
 def needs_migration(service, spreadsheet_id: str, list_sheets_func=None, ensure_primary_id_column_func=None) -> bool:

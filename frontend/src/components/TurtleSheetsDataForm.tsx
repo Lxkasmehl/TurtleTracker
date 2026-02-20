@@ -29,8 +29,8 @@ import {
 } from '@tabler/icons-react';
 import { MapDisplay } from './MapDisplay';
 import { notifications } from '@mantine/notifications';
-import type { TurtleSheetsData } from '../services/api';
-import { listSheets, createSheet } from '../services/api';
+import type { TurtleSheetsData, TurtleNameEntry } from '../services/api';
+import { listSheets, createSheet, generateTurtleId, getTurtleNames } from '../services/api';
 
 interface TurtleSheetsDataFormProps {
   initialData?: TurtleSheetsData;
@@ -103,6 +103,11 @@ export const TurtleSheetsDataForm = forwardRef<
     const [unlockConfirmField, setUnlockConfirmField] = useState<
       keyof TurtleSheetsData | null
     >(null);
+    /** In create mode: preview of auto-generated ID (gender + sequence number) */
+    const [idPreview, setIdPreview] = useState<string>('');
+    const [loadingIdPreview, setLoadingIdPreview] = useState(false);
+    /** All turtle names across sheets (for duplicate-name validation) */
+    const [existingTurtleNames, setExistingTurtleNames] = useState<TurtleNameEntry[]>([]);
 
     const isFieldModeRestricted = addOnlyMode && mode === 'edit';
     const isFieldUnlocked = (field: keyof TurtleSheetsData) => unlockedFields.has(field);
@@ -126,6 +131,36 @@ export const TurtleSheetsDataForm = forwardRef<
         setSelectedSheetName(initialSheetName);
       }
     }, [initialData, initialSheetName]);
+
+    // In create mode, fetch next biology ID when sex and sheet are selected (preview only; backend assigns on save)
+    useEffect(() => {
+      if (mode !== 'create') {
+        setIdPreview('');
+        return;
+      }
+      const sheetName = (selectedSheetName || '').trim();
+      const sex = (formData.sex || '').trim().toUpperCase();
+      if (!sheetName || !sex || !['M', 'F', 'J', 'U'].includes(sex)) {
+        setIdPreview('');
+        return;
+      }
+      let cancelled = false;
+      setLoadingIdPreview(true);
+      generateTurtleId({ sex, sheet_name: sheetName })
+        .then((res) => {
+          if (!cancelled && res.success && res.id) setIdPreview(res.id);
+          else if (!cancelled) setIdPreview('');
+        })
+        .catch(() => {
+          if (!cancelled) setIdPreview('');
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingIdPreview(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [mode, formData.sex, selectedSheetName]);
 
     useEffect(() => {
       // If parent provided sheets, skip API call to avoid duplicate requests
@@ -185,6 +220,25 @@ export const TurtleSheetsDataForm = forwardRef<
       };
     }, [initialSheetName, initialAvailableSheets]);
 
+    // Load existing turtle names for duplicate-name validation (create mode or when name is editable)
+    useEffect(() => {
+      let cancelled = false;
+      const loadNames = async () => {
+        try {
+          const res = await getTurtleNames();
+          if (!cancelled && res.success && res.names) {
+            setExistingTurtleNames(res.names);
+          }
+        } catch {
+          if (!cancelled) setExistingTurtleNames([]);
+        }
+      };
+      loadNames();
+      return () => {
+        cancelled = true;
+      };
+    }, []);
+
     const handleCreateNewSheet = async (sheetName: string) => {
       if (!sheetName || !sheetName.trim()) {
         notifications.show({
@@ -240,11 +294,24 @@ export const TurtleSheetsDataForm = forwardRef<
       }
     };
 
-    const validate = (): boolean => {
+    const validate = (namesForDuplicateCheck?: TurtleNameEntry[]): boolean => {
       const newErrors: Record<string, string> = {};
-      // No validation needed - Primary ID is auto-generated
+      const nameVal = (formData.name || '').trim();
+      const namesToCheck = namesForDuplicateCheck ?? existingTurtleNames;
+      if (nameVal && namesToCheck.length >= 0) {
+        const nameLower = nameVal.toLowerCase();
+        const isDuplicate = namesToCheck.some(
+          (entry) =>
+            entry.name.trim().toLowerCase() === nameLower &&
+            entry.primary_id !== primaryId,
+        );
+        if (isDuplicate) {
+          newErrors.name =
+            'This name is already used by another turtle. Please choose a different name.';
+        }
+      }
       setErrors(newErrors);
-      return true;
+      return Object.keys(newErrors).length === 0;
     };
 
     const handleSubmit = async () => {
@@ -258,7 +325,21 @@ export const TurtleSheetsDataForm = forwardRef<
         return;
       }
 
-      if (!validate()) {
+      // Always fetch fresh names on submit so we never allow a duplicate due to slow initial load
+      let namesForValidation: TurtleNameEntry[] = existingTurtleNames;
+      if ((formData.name || '').trim()) {
+        try {
+          const res = await getTurtleNames();
+          if (res.success && res.names) {
+            namesForValidation = res.names;
+            setExistingTurtleNames(res.names);
+          }
+        } catch {
+          // proceed with existing cache
+        }
+      }
+
+      if (!validate(namesForValidation)) {
         notifications.show({
           title: 'Validation Error',
           message: 'Please fix the errors in the form',
@@ -445,7 +526,14 @@ export const TurtleSheetsDataForm = forwardRef<
               </Grid.Col>
             )}
             <Grid.Col span={{ base: 12, md: 6 }}>
-              {isFieldModeRestricted && !isFieldUnlocked('id') ? (
+              {mode === 'create' ? (
+                <TextInput
+                  label='ID'
+                  value={loadingIdPreview ? '…' : idPreview || '—'}
+                  disabled
+                  description='Auto-generated from sex and sequence number for this sheet (assigned on save)'
+                />
+              ) : isFieldModeRestricted && !isFieldUnlocked('id') ? (
                 <>
                   <Group gap='xs' mb={4}>
                     <Button
@@ -461,7 +549,7 @@ export const TurtleSheetsDataForm = forwardRef<
                     label='ID'
                     value={formData.id || ''}
                     disabled
-                    description='Original turtle ID (may not be unique across sheets)'
+                    description='Biology ID (gender + sequence number)'
                   />
                 </>
               ) : (
@@ -470,7 +558,7 @@ export const TurtleSheetsDataForm = forwardRef<
                   placeholder='Original ID'
                   value={formData.id || ''}
                   onChange={(e) => handleChange('id', e.target.value)}
-                  description='Original turtle ID (may not be unique across sheets)'
+                  description='Biology ID (gender + sequence number)'
                 />
               )}
             </Grid.Col>
@@ -583,6 +671,13 @@ export const TurtleSheetsDataForm = forwardRef<
                   placeholder='Turtle name'
                   value={formData.name || ''}
                   onChange={(e) => handleChange('name', e.target.value)}
+                  onBlur={() => validate()}
+                  error={errors.name}
+                  description={
+                    mode === 'create'
+                      ? 'Names must be unique across all location sheets.'
+                      : undefined
+                  }
                 />
               )}
             </Grid.Col>

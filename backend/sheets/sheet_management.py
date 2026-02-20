@@ -5,10 +5,12 @@ Sheet management functions for Google Sheets
 from typing import Optional, Dict
 from googleapiclient.errors import HttpError
 import ssl
+import time
 from .helpers import escape_sheet_name, is_backup_sheet
 
 
-def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_all_column_indices_func) -> bool:
+def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_all_column_indices_func,
+                             invalidate_column_indices_cache_func=None) -> bool:
     """
     Ensure the "Primary ID" column exists in the sheet.
     If it doesn't exist, adds it as the first column.
@@ -19,6 +21,7 @@ def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_
         spreadsheet_id: Google Sheets spreadsheet ID
         sheet_name: Name of the sheet (tab)
         get_all_column_indices_func: Function to get all column indices
+        invalidate_column_indices_cache_func: Optional callback(sheet_name) to invalidate column cache after insert
         
     Returns:
         True if column exists or was created, False otherwise
@@ -29,12 +32,21 @@ def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_
     
     try:
         column_indices = get_all_column_indices_func(sheet_name)
+        # Retry once on empty read (transient API/list_sheets cache issues when adding to new sheet)
+        if not column_indices:
+            time.sleep(0.5)
+            column_indices = get_all_column_indices_func(sheet_name)
+        # If we still couldn't read headers, do NOT insert to avoid duplicating "Primary ID" columns.
+        if not column_indices:
+            print(f"WARNING: Could not read column headers for sheet '{sheet_name}' (empty or API error). "
+                  "Skipping Primary ID column insert to avoid duplicating columns.")
+            return False
         
         # Check if Primary ID column already exists
         if 'Primary ID' in column_indices:
             return True
         
-        # Primary ID column doesn't exist - we need to add it
+        # Primary ID column doesn't exist - we need to add it (sheet has other headers but no Primary ID)
         print(f"WARNING: 'Primary ID' column not found in sheet '{sheet_name}'. "
               f"Please add a 'Primary ID' column to the sheet. Available columns: {list(column_indices.keys())}")
         
@@ -85,7 +97,8 @@ def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_
                 valueInputOption='RAW',
                 body=body
             ).execute()
-            
+            if invalidate_column_indices_cache_func:
+                invalidate_column_indices_cache_func(sheet_name)
             print(f"✅ Created 'Primary ID' column in sheet '{sheet_name}'")
             return True
             

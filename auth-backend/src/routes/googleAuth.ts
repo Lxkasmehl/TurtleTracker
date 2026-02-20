@@ -84,9 +84,10 @@ router.get(
 // OAuth error handler
 router.get('/google/error', (req: Request, res: Response) => {
   const error = req.query.error || 'unknown_error';
+  const rawDescription = req.query.error_description;
   const errorDescription =
-    typeof req.query.error_description === 'string'
-      ? req.query.error_description
+    typeof rawDescription === 'string'
+      ? rawDescription
       : 'An error occurred during Google OAuth';
 
   console.error('❌ Google OAuth Error:');
