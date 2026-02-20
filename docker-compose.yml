@@ -1,0 +1,65 @@
+# TurtleTracker – run frontend, auth-backend, and backend with Docker Compose
+# Usage: docker compose up --build
+# Then open http://localhost (frontend), Auth API on :3001, Turtle API on :5000
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # URLs the browser uses (host-relative when all ports are published)
+        VITE_AUTH_API_URL: ${VITE_AUTH_API_URL:-http://localhost:3001/api}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-backend
+      - backend
+
+  auth-backend:
+    build:
+      context: ./auth-backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      # Optional: Google OAuth (set in .env for login with Google)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+    volumes:
+      - auth-data:/app/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      FLASK_DEBUG: "false"
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      GOOGLE_SHEETS_CREDENTIALS_PATH: ${GOOGLE_SHEETS_CREDENTIALS_PATH:-/app/credentials/google-sheets-credentials.json}
+    volumes:
+      - backend-data:/app/data
+      # Mount Google credentials from host (create backend/credentials/ and add JSON)
+      - ./backend/credentials:/app/credentials:ro
+    # Backend may take a while to load vocabulary/index
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  auth-data:
+  backend-data:

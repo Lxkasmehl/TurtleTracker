@@ -1,0 +1,20 @@
+# Git and IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Dependencies and build
+node_modules
+dist
+*.local
+
+# Tests and docs
+tests
+docs
+playwright.config.ts
+*.spec.ts
+
+# Misc
+.env
+.env.*
