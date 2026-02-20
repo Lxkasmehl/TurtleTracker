@@ -1,66 +1,127 @@
 """
-Pytest configuration and fixtures for backend integration tests.
-Uses a stub for manager_service so the real TurtleManager (and its background thread) never loads.
-Routes get the fake_manager from the stub; no real backend/data is touched.
+Pytest configuration and fixtures for backend tests.
+
+Integration tests (tests/integration/) run against the real backend and auth-backend
+running in Docker. Start services with:
+
+  docker compose -f docker-compose.integration.yml up -d --build
+
+Then run:
+
+  BACKEND_URL=http://localhost:5000 AUTH_URL=http://localhost:3001/api pytest tests/integration -v
+
+BACKEND_URL and AUTH_URL can be set in the environment or via pytest -e (e.g. -e BACKEND_URL=...).
+When not set, integration tests are skipped (so "pytest tests/" still runs unit tests only).
 """
 
-import sys
-import threading
+import os
 import pytest
-from unittest.mock import patch
-
-# Stub manager_service so the real module (and its background TurtleManager thread) never loads.
-# Otherwise the thread would overwrite manager with the real instance and tests would see backend/data.
-_manager_service_stub = type(sys)("manager_service")
-_manager_service_stub.manager = None
-_manager_service_stub.manager_ready = threading.Event()
-_manager_service_stub.manager_ready.set()
+import requests
 
 
-def _stub_get_sheets_service():
-    """Stub for get_sheets_service so routes can import it; returns None so Sheets code paths are no-ops."""
-    return None
+def _response_with_get_json(resp: requests.Response):
+    """Attach get_json to response so tests can use r.get_json() like Flask test client."""
+    resp.get_json = lambda: resp.json() if resp.content else None
+    return resp
 
 
-_manager_service_stub.get_sheets_service = _stub_get_sheets_service
-# Install before any test or app code imports manager_service (conftest loads first).
-sys.modules["services.manager_service"] = _manager_service_stub
+class BackendApiClient:
+    """HTTP client for backend API with admin JWT. Mirrors Flask test client interface used by integration tests."""
+
+    def __init__(self, base_url: str, token: str):
+        self._base = base_url.rstrip("/")
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    def _url(self, path: str) -> str:
+        path = path if path.startswith("/") else "/" + path
+        return self._base + path
+
+    def get(self, path: str, **kwargs) -> requests.Response:
+        headers = {**self._headers, **kwargs.pop("headers", {})}
+        r = requests.get(self._url(path), headers=headers, timeout=30, **kwargs)
+        return _response_with_get_json(r)
+
+    def post(self, path: str, data=None, json=None, content_type=None, **kwargs) -> requests.Response:
+        headers = dict(self._headers)
+        if content_type:
+            headers["Content-Type"] = content_type
+        if json is not None:
+            r = requests.post(self._url(path), json=json, headers=headers, timeout=30, **kwargs)
+        elif data and isinstance(data, dict):
+            # Support multipart form: split file-like values into files=, rest into data=
+            files = {}
+            form_data = {}
+            for k, v in data.items():
+                if hasattr(v, "read") or (isinstance(v, (tuple, list)) and len(v) >= 2 and hasattr(v[0], "read")):
+                    files[k] = v if isinstance(v, (tuple, list)) else (v, "file")
+                else:
+                    form_data[k] = v
+            if files:
+                r = requests.post(self._url(path), files=files, data=form_data, headers=headers, timeout=30, **kwargs)
+            else:
+                r = requests.post(self._url(path), data=data, headers=headers, timeout=30, **kwargs)
+        else:
+            r = requests.post(self._url(path), data=data, headers=headers, timeout=30, **kwargs)
+        return _response_with_get_json(r)
+
+    def delete(self, path: str, json=None, content_type=None, **kwargs) -> requests.Response:
+        headers = dict(self._headers)
+        if content_type:
+            headers["Content-Type"] = content_type
+        r = requests.delete(self._url(path), json=json, headers=headers, timeout=30, **kwargs)
+        return _response_with_get_json(r)
 
 
-@pytest.fixture
-def fake_manager(tmp_path):
-    """Fake TurtleManager using a temporary directory (tmp_path is pytest built-in)."""
-    from tests.fake_turtle_manager import FakeTurtleManager
-    base = str(tmp_path / "data")
-    manager = FakeTurtleManager(base_dir=base)
-    yield manager
+@pytest.fixture(scope="session")
+def backend_url():
+    """Backend base URL (e.g. http://localhost:5000). Set BACKEND_URL env to run integration tests."""
+    return os.environ.get("BACKEND_URL", "").rstrip("/")
 
 
-@pytest.fixture
-def manager_ready_event():
-    """Event that is already set so manager_ready.wait() returns immediately."""
-    ev = threading.Event()
-    ev.set()
-    return ev
+@pytest.fixture(scope="session")
+def auth_url():
+    """Auth API base URL (e.g. http://localhost:3001/api). Set AUTH_URL env to run integration tests."""
+    return os.environ.get("AUTH_URL", "").rstrip("/")
 
 
-@pytest.fixture
-def admin_auth():
-    """Make get_user_from_request return admin so require_admin passes."""
-
-    def fake_get_user():
-        return True, {"role": "admin", "sub": "test-admin"}, None
-
-    return fake_get_user
+@pytest.fixture(scope="session")
+def integration_env(backend_url, auth_url):
+    """True if both BACKEND_URL and AUTH_URL are set (Docker integration test run)."""
+    return bool(backend_url and auth_url)
 
 
-@pytest.fixture
-def client(fake_manager, manager_ready_event, admin_auth):
-    """Flask test client with stubbed manager and patched auth."""
-    _manager_service_stub.manager = fake_manager
-    _manager_service_stub.manager_ready = manager_ready_event
-    with patch("auth.get_user_from_request", admin_auth):
-        from app import app
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            yield c
+@pytest.fixture(scope="session")
+def admin_token(auth_url, integration_env):
+    """Obtain admin JWT by logging in to auth-backend. Requires Docker services and seeded test user."""
+    if not integration_env:
+        return None
+    login_url = f"{auth_url}/auth/login"
+    try:
+        r = requests.post(
+            login_url,
+            json={
+                "email": os.environ.get("E2E_ADMIN_EMAIL", "admin@test.com"),
+                "password": os.environ.get("E2E_ADMIN_PASSWORD", "testpassword123"),
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data.get("token")
+    except Exception as e:
+        pytest.skip(f"Cannot get admin token from auth-backend at {login_url}: {e}")
+
+
+@pytest.fixture(scope="session")
+def api_client(backend_url, admin_token, integration_env):
+    """HTTP client for backend API with admin auth. Skip integration tests if BACKEND_URL/AUTH_URL not set."""
+    if not integration_env or not admin_token:
+        pytest.skip("Set BACKEND_URL and AUTH_URL (and start Docker) to run integration tests")
+    return BackendApiClient(backend_url, admin_token)
+
+
+# Alias for integration tests: they expect a fixture named "client"
+@pytest.fixture(scope="session")
+def client(api_client):
+    """Alias for api_client so existing integration tests can use the same fixture name."""
+    return api_client

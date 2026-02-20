@@ -127,8 +127,6 @@ export default defineConfig({
         FLASK_DEBUG: 'false',
         // Force Python to output immediately (unbuffered)
         PYTHONUNBUFFERED: '1',
-        // Use FakeTurtleManager + temp dir so E2E never touches real backend data
-        E2E_USE_FAKE_MANAGER: '1',
       },
     },
     // Start frontend dev server last (after backends are ready)

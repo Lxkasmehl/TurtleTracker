@@ -232,9 +232,20 @@ echo "VITE_API_URL=http://localhost:5000/api" >> .env
 
 ## Testing
 
-- **Integration tests (Backend):** Ordner `backend/tests/` (bzw. `backend/tests/integration/`). Ausführen: `cd backend && pip install -r requirements.txt -r requirements-test.txt && python -m pytest tests/ -v`.
-- **E2E tests (Frontend):** Ordner `frontend/tests/e2e/` (Playwright). Ausführen: `cd frontend && npm run test`.
-- Details und Strategie: [docs/TESTING.md](docs/TESTING.md). Unter Windows `python -m pytest` verwenden, falls `pytest` nicht im PATH liegt.
+Tests run against the real backends (no fake backends). Use Docker to run services, then run tests.
+
+- **Backend integration tests:** `backend/tests/integration/`. Start auth + backend with Docker, then run pytest:
+  ```bash
+  docker compose -f docker-compose.integration.yml up -d --build
+  # Seed test user (once): docker compose -f docker-compose.integration.yml exec -e E2E_ADMIN_EMAIL=admin@test.com -e E2E_ADMIN_PASSWORD=testpassword123 auth-backend node dist/scripts/seed-test-users.js
+  cd backend && BACKEND_URL=http://localhost:5000 AUTH_URL=http://localhost:3001/api python -m pytest tests/integration -v
+  ```
+- **E2E tests (Frontend):** `frontend/tests/e2e/` (Playwright). Start the full stack with Docker, then run Playwright:
+  ```bash
+  docker compose up -d --build
+  # Seed test users (see .github/workflows/playwright-e2e-tests.yml), then:
+  cd frontend && PLAYWRIGHT_BASE_URL=http://localhost npm test
+  ```
 
 ## Further Information
 
