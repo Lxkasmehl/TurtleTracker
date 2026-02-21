@@ -182,12 +182,17 @@ def register_review_routes(app):
                                 
                                 # Set primary_id in the Primary ID column (globally unique)
                                 turtle_data['primary_id'] = primary_id
-                                # Keep user-provided 'id' if present, otherwise use primary_id as fallback
-                                if 'id' not in turtle_data or not turtle_data.get('id'):
-                                    turtle_data['id'] = primary_id
+                                # Determine sheet_name from the turtle data or use a default
+                                sheet_name = sheets_data.get('sheet_name') if isinstance(sheets_data, dict) else 'Location A'
+                                # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
+                                if not turtle_data.get('id'):
+                                    sex = (turtle_data.get('sex') or '').strip().upper()
+                                    gender = sex if sex in ('M', 'F', 'J') else 'U'
+                                    turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
                                 # Do not set general_location or location from state/location – leave empty if admin did not fill them; community location is for display only
                                 
-                                # sheet_name already set above (sheet tab name)
+                                # Debug: Log what data we're creating
+                                
                                 service.create_turtle_data(turtle_data, sheet_name, state, location)
                                 print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
                         elif match_turtle_id:

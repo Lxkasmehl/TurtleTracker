@@ -2,8 +2,13 @@
 Helper functions for Google Sheets operations
 """
 
+import time
 from typing import Optional, Dict
 from googleapiclient.errors import HttpError
+
+# Retry config for Sheets API rate limit (429)
+SHEETS_RATE_LIMIT_RETRY_WAIT_SEC = 3
+SHEETS_RATE_LIMIT_MAX_RETRIES = 2
 
 
 def escape_sheet_name(sheet_name: str) -> str:
@@ -121,13 +126,27 @@ def get_all_column_indices(service, spreadsheet_id: str, sheet_name: str, list_s
             print(f"Warning: Sheet '{sheet_name}' not found. Available sheets: {available_sheets}")
             return {}
         
-        # Get the first row (headers)
+        # Get the first row (headers), with retry on rate limit (429)
         escaped_sheet = escape_sheet_name(sheet_name)
         range_name = f"{escaped_sheet}!1:1"
-        result = service.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id,
-            range=range_name
-        ).execute()
+        result = None
+        for attempt in range(SHEETS_RATE_LIMIT_MAX_RETRIES + 1):
+            try:
+                result = service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute()
+                break
+            except HttpError as e:
+                status = getattr(e, 'resp', None) and getattr(e.resp, 'status', None)
+                if status == 429 and attempt < SHEETS_RATE_LIMIT_MAX_RETRIES:
+                    wait_sec = SHEETS_RATE_LIMIT_RETRY_WAIT_SEC * (attempt + 1)
+                    print(f"Rate limit (429) reading sheet '{sheet_name}', waiting {wait_sec}s before retry ({attempt + 1}/{SHEETS_RATE_LIMIT_MAX_RETRIES})")
+                    time.sleep(wait_sec)
+                    continue
+                raise
+        if result is None:
+            return {}
         
         values = result.get('values', [])
         if not values:
@@ -137,7 +156,11 @@ def get_all_column_indices(service, spreadsheet_id: str, sheet_name: str, list_s
         column_indices = {}
         for idx, header in enumerate(headers):
             if header and header.strip():
-                column_indices[header.strip()] = idx
+                key = header.strip()
+                # Keep first occurrence for duplicate headers (e.g. multiple "Primary ID" columns)
+                # so we always write to the same column and don't leave duplicates empty
+                if key not in column_indices:
+                    column_indices[key] = idx
         
         return column_indices
     except HttpError as e:
@@ -146,7 +169,7 @@ def get_all_column_indices(service, spreadsheet_id: str, sheet_name: str, list_s
         try:
             available_sheets = list_sheets_func()
             print(f"Available sheets: {available_sheets}")
-        except:
+        except Exception:
             pass
         return {}
 

@@ -49,8 +49,13 @@ def handle_exception(err):
     """Log unhandled exceptions and return JSON (works in debug mode too)."""
     import traceback
     tb = traceback.format_exc()
-    sys.stderr.write(f"Unhandled exception: {err}\n{tb}")
+    prefix = "[UNHANDLED]"
+    sys.stderr.write(f"{prefix} {err}\n{tb}")
     sys.stderr.flush()
+    try:
+        print(f"{prefix} {err}", flush=True)
+    except Exception:
+        pass
     return (
         {'error': f'Server error: {str(err)}', 'details': tb if app.debug else None},
         500,

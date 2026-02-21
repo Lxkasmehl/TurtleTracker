@@ -50,11 +50,22 @@ def register_upload_routes(app):
         # Wait for manager to be ready (with timeout); use module ref so we see current value after background init
         if not manager_service.manager_ready.wait(timeout=30):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-        
+
         if manager_service.manager is None:
-            return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-        
+            try:
+                print("[UPLOAD] 503: TurtleManager failed to initialize (service unavailable)", flush=True)
+            except Exception:
+                pass
+            return jsonify({
+                'error': 'TurtleManager is not ready. The server may still be starting or initialization failed. Please try again in a moment.'
+            }), 503
+
         try:
+            if app.debug:
+                try:
+                    print("[UPLOAD] Request received", flush=True)
+                except Exception:
+                    pass
             if 'file' not in request.files:
                 return jsonify({'error': 'No file provided'}), 400
             
@@ -109,15 +120,19 @@ def register_upload_routes(app):
                 formatted_matches = []
                 for match in matches:
                     # Convert .npz path to image path
-                    npz_path = match.get('file_path', '')
+                    npz_path = match.get('file_path', '') or ''
                     image_path = convert_npz_to_image_path(npz_path)
-                    
+                    # Coerce distance to float (may be numpy scalar from faiss)
+                    try:
+                        dist_val = float(match.get('distance', 0))
+                    except (TypeError, ValueError):
+                        dist_val = 0.0
                     formatted_matches.append({
-                        'turtle_id': match.get('site_id', 'Unknown'),
-                        'location': match.get('location', 'Unknown'),
-                        'distance': float(match.get('distance', 0)),
+                        'turtle_id': match.get('site_id', 'Unknown') or 'Unknown',
+                        'location': match.get('location', 'Unknown') or 'Unknown',
+                        'distance': dist_val,
                         'file_path': image_path,  # Now contains image path, not .npz path
-                        'filename': match.get('filename', '')
+                        'filename': match.get('filename', '') or ''
                     })
                 
                 # Create a temporary request ID for this admin upload
@@ -175,12 +190,14 @@ def register_upload_routes(app):
             error_trace = traceback.format_exc()
             err_msg = str(e)
             import sys
-            # Force unbuffered error output so it appears in the terminal
-            sys.stderr.write(f"Upload error: {err_msg}\n")
+            # Log so it's visible in the terminal (stdout and stderr)
+            prefix = "[UPLOAD 500]"
+            sys.stderr.write(f"{prefix} {err_msg}\n")
             sys.stderr.write(error_trace)
             sys.stderr.flush()
             try:
-                print(f"❌ Error processing upload: {err_msg}", flush=True)
+                print(f"{prefix} {err_msg}", flush=True)
+                print(error_trace, flush=True)
             except Exception:
                 pass
             return jsonify({

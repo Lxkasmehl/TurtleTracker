@@ -84,13 +84,17 @@ router.get(
 // OAuth error handler
 router.get('/google/error', (req: Request, res: Response) => {
   const error = req.query.error || 'unknown_error';
-  const errorDescription = req.query.error_description || 'An error occurred during Google OAuth';
-  
+  const rawDescription = req.query.error_description;
+  const errorDescription =
+    typeof rawDescription === 'string'
+      ? rawDescription
+      : 'An error occurred during Google OAuth';
+
   console.error('❌ Google OAuth Error:');
   console.error(`   Error: ${error}`);
   console.error(`   Description: ${errorDescription}`);
   console.error(`   Query params:`, req.query);
-  
+
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   res.redirect(`${frontendUrl}/login?error=auth_failed&message=${encodeURIComponent(errorDescription)}`);
 });
