@@ -13,6 +13,9 @@ import {
   Loader,
   TextInput,
   SegmentedControl,
+  Select,
+  Divider,
+  Paper,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { Transition } from '@mantine/core';
@@ -24,11 +27,14 @@ import {
   IconClock,
   IconSparkles,
   IconCurrentLocation,
+  IconFlag,
+  IconPhotoPlus,
 } from '@tabler/icons-react';
 import { useState, useEffect, useRef } from 'react';
 import type { FileWithPath } from '@mantine/dropzone';
-import type { LocationHint } from '../services/api';
+import type { LocationHint, UploadExtraFile } from '../services/api';
 import { MapPicker } from './MapPicker';
+import { validateFile } from '../utils/fileValidation';
 
 interface PreviewCardProps {
   preview: string | null;
@@ -47,6 +53,15 @@ interface PreviewCardProps {
   locationHint?: LocationHint | null;
   setLocationHint?: (hint: LocationHint | null) => void;
   requestLocationHint?: () => Promise<void>;
+  /** Admin: will this turtle be taken to the lab? (community cannot take turtles to lab) */
+  collectedToLab?: 'yes' | 'no' | null;
+  setCollectedToLab?: (v: 'yes' | 'no' | null) => void;
+  /** Admin: physical flag at position (when taken to lab) */
+  physicalFlag?: 'yes' | 'no' | 'no_flag' | null;
+  setPhysicalFlag?: (v: 'yes' | 'no' | 'no_flag' | null) => void;
+  /** Optional extra images (microhabitat, condition) */
+  extraFiles?: UploadExtraFile[];
+  setExtraFiles?: (files: UploadExtraFile[] | ((prev: UploadExtraFile[]) => UploadExtraFile[])) => void;
   onUpload: () => void;
   onRemove: () => void;
 }
@@ -66,6 +81,12 @@ export function PreviewCard({
   locationHint,
   setLocationHint,
   requestLocationHint,
+  collectedToLab,
+  setCollectedToLab,
+  physicalFlag,
+  setPhysicalFlag,
+  extraFiles = [],
+  setExtraFiles,
   onUpload,
   onRemove,
 }: PreviewCardProps) {
@@ -94,7 +115,10 @@ export function PreviewCard({
     setManualLat('');
     setManualLon('');
     if (setLocationHint) setLocationHint(null);
-  }, [fileKey, setLocationHint]);
+    if (setCollectedToLab) setCollectedToLab(null);
+    if (setPhysicalFlag) setPhysicalFlag(null);
+    if (setExtraFiles) setExtraFiles([]);
+  }, [fileKey, setLocationHint, setCollectedToLab, setPhysicalFlag, setExtraFiles]);
 
   if (!preview) return null;
 
@@ -132,18 +156,161 @@ export function PreviewCard({
               </Text>
             )}
 
-            {/* Location hint (only for community members) – coords only, never stored in sheets */}
-            {role === 'community' && uploadState === 'idle' && (
+            {/* Additional photos (microhabitat, condition) – multiple per type, remove one by one */}
+            {role === 'community' && uploadState === 'idle' && setExtraFiles && (
+              <Paper p='sm' withBorder radius='md'>
+                <Text fw={600} size='sm' mb='xs'>
+                  Additional photos (optional)
+                </Text>
+                <Text size='xs' c='dimmed' mb='xs'>
+                  Add as many microhabitat and/or condition photos as you like. Select files below; remove any with the trash icon.
+                </Text>
+                <Group gap='xs' mb='xs'>
+                  <Button size='sm' variant='light' leftSection={<IconPhotoPlus size={14} />} component='label'>
+                    Microhabitat
+                    <input
+                      type='file'
+                      accept='image/*'
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        const list = e.target.files;
+                        if (!list?.length) return;
+                        const valid: UploadExtraFile[] = [];
+                        for (let i = 0; i < list.length; i++) {
+                          const file = list[i];
+                          const validation = validateFile(file);
+                          if (validation.isValid) valid.push({ type: 'microhabitat', file });
+                        }
+                        if (valid.length) setExtraFiles((prev) => [...prev, ...valid]);
+                        e.target.value = '';
+                      }}
+                    />
+                  </Button>
+                  <Button size='sm' variant='light' leftSection={<IconPhotoPlus size={14} />} component='label'>
+                    Condition
+                    <input
+                      type='file'
+                      accept='image/*'
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        const list = e.target.files;
+                        if (!list?.length) return;
+                        const valid: UploadExtraFile[] = [];
+                        for (let i = 0; i < list.length; i++) {
+                          const file = list[i];
+                          const validation = validateFile(file);
+                          if (validation.isValid) valid.push({ type: 'condition', file });
+                        }
+                        if (valid.length) setExtraFiles((prev) => [...prev, ...valid]);
+                        e.target.value = '';
+                      }}
+                    />
+                  </Button>
+                </Group>
+                {extraFiles.length > 0 && (
+                  <Stack gap='xs'>
+                    {(['microhabitat', 'condition'] as const).map((t) => {
+                      const ofType = extraFiles.map((ef, i) => ({ ef, i })).filter(({ ef }) => ef.type === t);
+                      if (ofType.length === 0) return null;
+                      return (
+                        <Stack key={t} gap={4}>
+                          <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t}</Text>
+                          <Group gap='xs' wrap='wrap'>
+                            {ofType.map(({ ef, i }) => (
+                              <Badge key={i} size='sm' variant='light' rightSection={
+                                <Button size='xs' variant='subtle' color='red' p={2} style={{ minWidth: 20 }} onClick={() => setExtraFiles((prev) => prev.filter((_, idx) => idx !== i))}>
+                                  <IconTrash size={12} />
+                                </Button>
+                              }>
+                                {ef.file.name}
+                              </Badge>
+                            ))}
+                          </Group>
+                        </Stack>
+                      );
+                    })}
+                  </Stack>
+                )}
+              </Paper>
+            )}
+
+            {/* Collected to lab + physical flag (admin only): first ask if taking to lab, then flag questions */}
+            {role === 'admin' && uploadState === 'idle' && setCollectedToLab && setPhysicalFlag && (
               <Stack gap='sm'>
-                <Alert color='blue' radius='md'>
-                  <Text size='xs'>
-                    Optionally share where you found this turtle. This is only shown to
-                    admins as a hint and is never saved in the database.
+                <Text size='sm' fw={500}>
+                  Will you take this turtle to the lab?
+                </Text>
+                <SegmentedControl
+                  value={collectedToLab ?? ''}
+                  onChange={(v) => {
+                    const val = v === 'yes' || v === 'no' ? v : null;
+                    setCollectedToLab(val ?? null);
+                    if (val !== 'yes') setPhysicalFlag(null);
+                  }}
+                  data={[
+                    { label: 'Skip', value: '' },
+                    { label: 'Yes', value: 'yes' },
+                    { label: 'No', value: 'no' },
+                  ]}
+                  fullWidth
+                />
+                {collectedToLab === 'yes' && (
+                  <>
+                    <Text size='xs' c='dimmed'>
+                      Please place a physical flag at the spot so the turtle can be returned to the exact position. Did you place one?
+                    </Text>
+                    <Select
+                      placeholder='Select...'
+                      leftSection={<IconFlag size={14} />}
+                      value={physicalFlag ?? ''}
+                      onChange={(v) =>
+                        setPhysicalFlag(
+                          v === 'yes' || v === 'no' || v === 'no_flag' ? v : null
+                        )
+                      }
+                      data={[
+                        { value: 'yes', label: 'Yes' },
+                        { value: 'no', label: 'No' },
+                        { value: 'no_flag', label: 'No flag (ran out)' },
+                      ]}
+                      clearable
+                      allowDeselect
+                    />
+                  </>
+                )}
+                {collectedToLab === 'yes' && (
+                  <Text size='xs' c='dimmed'>
+                    Set the digital flag below (exact release position) so the turtle can be returned to the same spot.
                   </Text>
-                </Alert>
+                )}
+                <Divider />
+              </Stack>
+            )}
+
+            {/* Digital flag (when collected to lab) or location hint (optional): community always; admin only when taking to lab */}
+            {(role === 'community' || (role === 'admin' && collectedToLab === 'yes')) && uploadState === 'idle' && (
+              <Stack gap='sm'>
+                {collectedToLab === 'yes' ? (
+                  <Alert color='orange' radius='md'>
+                    <Text size='xs' fw={500}>
+                      Set digital flag (release position)
+                    </Text>
+                    <Text size='xs' mt={4}>
+                      Use GPS or pick on the map so we can return the turtle to the exact spot.
+                    </Text>
+                  </Alert>
+                ) : (
+                  <Alert color='blue' radius='md'>
+                    <Text size='xs'>
+                      Optionally share where you found this turtle (shown to admins as a hint only).
+                    </Text>
+                  </Alert>
+                )}
                 <Stack gap='xs'>
                   <Text size='sm' fw={500}>
-                    Exact spot (optional)
+                    {collectedToLab === 'yes' ? 'Release position (digital flag)' : 'Exact spot (optional)'}
                   </Text>
                   <SegmentedControl
                     value={stillAtLocation ?? ''}

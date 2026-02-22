@@ -98,6 +98,12 @@ export default function HomePage() {
     locationHint,
     setLocationHint,
     requestLocationHint,
+    collectedToLab,
+    setCollectedToLab,
+    physicalFlag,
+    setPhysicalFlag,
+    extraFiles,
+    setExtraFiles,
     handleDrop,
     handleUpload,
     handleRemove,
@@ -356,6 +362,12 @@ export default function HomePage() {
             locationHint={locationHint}
             setLocationHint={setLocationHint}
             requestLocationHint={requestLocationHint}
+            collectedToLab={collectedToLab}
+            setCollectedToLab={setCollectedToLab}
+            physicalFlag={physicalFlag}
+            setPhysicalFlag={setPhysicalFlag}
+            extraFiles={extraFiles}
+            setExtraFiles={setExtraFiles}
             onUpload={handleUpload}
             onRemove={handleRemove}
           />

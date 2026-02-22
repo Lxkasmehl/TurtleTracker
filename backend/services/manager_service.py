@@ -5,7 +5,6 @@ Turtle Manager and Google Sheets Service initialization
 import os
 import threading
 import time
-from turtle_manager import TurtleManager
 from google_sheets_service import GoogleSheetsService
 
 # Initialize Turtle Manager in background thread to avoid blocking server start
@@ -107,8 +106,9 @@ def check_and_run_migration():
 
 
 def initialize_manager():
-    """Initialize Turtle Manager in background thread"""
+    """Initialize Turtle Manager in background thread (real TurtleManager only)."""
     global manager
+    from turtle_manager import TurtleManager
     try:
         manager = TurtleManager()
         manager_ready.set()
@@ -138,7 +138,7 @@ def initialize_sheets_migration():
         pass
 
 
-# Start manager initialization in background
+# Start manager in background thread
 manager_thread = threading.Thread(target=initialize_manager, daemon=True)
 manager_thread.start()
 

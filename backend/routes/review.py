@@ -4,8 +4,10 @@ Review queue endpoints
 
 import os
 import json
+import time
 import traceback
 from flask import request, jsonify
+from werkzeug.utils import secure_filename
 from auth import require_admin
 from services import manager_service
 from services.manager_service import get_sheets_service, get_community_sheets_service
@@ -65,6 +67,7 @@ def _sync_confirmed_to_community(data, sheets_data, service, new_location, new_t
     else:
         comm.create_turtle_data(turtle_data, sheet_name, state, location)
         print(f"✅ Community spreadsheet: added turtle {primary_id} to sheet '{sheet_name}'")
+from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 
 
 def register_review_routes(app):
@@ -85,69 +88,181 @@ def register_review_routes(app):
         
         try:
             queue_items = manager_service.manager.get_review_queue()
-            
-            # Load metadata and candidate matches for each item
-            formatted_items = []
-            for item in queue_items:
-                request_id = item['request_id']
-                packet_dir = item['path']
-                
-                # Load metadata
-                metadata_path = os.path.join(packet_dir, 'metadata.json')
-                metadata = {}
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
-                
-                # Find the uploaded image
-                uploaded_image = None
-                for f in os.listdir(packet_dir):
-                    if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json':
-                        uploaded_image = os.path.join(packet_dir, f)
-                        break
-                
-                # Get candidate matches
-                candidates_dir = os.path.join(packet_dir, 'candidate_matches')
-                candidates = []
-                if os.path.exists(candidates_dir):
-                    for candidate_file in sorted(os.listdir(candidates_dir)):
-                        if candidate_file.lower().endswith(('.jpg', '.png', '.jpeg')):
-                            # Parse rank, ID, and score from filename: Rank1_IDT101_Score85.jpg
-                            parts = candidate_file.replace('.jpg', '').replace('.png', '').replace('.jpeg', '').split('_')
-                            rank = 0
-                            turtle_id = 'Unknown'
-                            score = 0
-                            
-                            for part in parts:
-                                if part.startswith('Rank'):
-                                    rank = int(part.replace('Rank', ''))
-                                elif part.startswith('ID'):
-                                    turtle_id = part.replace('ID', '')
-                                elif part.startswith('Score'):
-                                    score = int(part.replace('Score', ''))
-                            
-                            candidates.append({
-                                'rank': rank,
-                                'turtle_id': turtle_id,
-                                'score': score,
-                                'image_path': os.path.join(candidates_dir, candidate_file)
-                            })
-                
-                formatted_items.append({
-                    'request_id': request_id,
-                    'uploaded_image': uploaded_image,
-                    'metadata': metadata,
-                    'candidates': sorted(candidates, key=lambda x: x['rank']),
-                    'status': 'pending'
-                })
-            
-            return jsonify({
-                'success': True,
-                'items': formatted_items
-            })
+            formatted_items = [_format_packet_item(item['path'], item['request_id']) for item in queue_items]
+            return jsonify({'success': True, 'items': formatted_items})
         
         except Exception as e:
             return jsonify({'error': f'Failed to load review queue: {str(e)}'}), 500
+
+    @app.route('/api/review-queue/<request_id>/additional-images', methods=['POST'])
+    @require_admin
+    def add_review_packet_additional_images(request_id):
+        """Add microhabitat/condition images to an existing review packet (Admin only)."""
+        if not manager_service.manager_ready.wait(timeout=30):
+            return jsonify({'error': 'TurtleManager is still initializing.'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager failed to initialize'}), 500
+        files_with_types = []
+        try:
+            for key in list(request.files.keys()):
+                if not key.startswith('file_'):
+                    continue
+                f = request.files[key]
+                if not f or not f.filename:
+                    continue
+                idx = key.replace('file_', '')
+                typ = request.form.get(f'type_{idx}', 'other').strip().lower()
+                if typ not in ('microhabitat', 'condition', 'other'):
+                    typ = 'other'
+                if not allowed_file(f.filename):
+                    continue
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(0)
+                if size > MAX_FILE_SIZE:
+                    continue
+                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                temp_path = os.path.join(UPLOAD_FOLDER, f"review_extra_{request_id}_{idx}_{int(time.time())}{ext}")
+                f.save(temp_path)
+                files_with_types.append({'path': temp_path, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+            if not files_with_types:
+                return jsonify({'error': 'No valid image files provided'}), 400
+            success, msg = manager_service.manager.add_additional_images_to_packet(request_id, files_with_types)
+            for item in files_with_types:
+                p = item.get('path')
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            if not success:
+                return jsonify({'error': msg}), 400
+            return jsonify({'success': True, 'message': f'Added {len(files_with_types)} image(s).'})
+        except Exception as e:
+            for item in files_with_types:
+                p = item.get('path')
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/review-queue/<request_id>/additional-images', methods=['DELETE'])
+    @require_admin
+    def remove_review_packet_additional_image(request_id):
+        """Remove one microhabitat/condition image from a packet (Admin only). Body: { "filename": "..." }."""
+        if not manager_service.manager_ready.wait(timeout=30):
+            return jsonify({'error': 'TurtleManager is still initializing.'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager failed to initialize'}), 500
+        data = request.get_json(silent=True) or {}
+        filename = (data.get('filename') or '').strip()
+        if not filename:
+            return jsonify({'error': 'filename required'}), 400
+        success, err = manager_service.manager.remove_additional_image_from_packet(request_id, filename)
+        if not success:
+            return jsonify({'error': err or 'Failed to remove image'}), 400
+        return jsonify({'success': True})
+
+    def _format_packet_item(packet_dir, request_id):
+        """Build one queue item dict from packet_dir (used by get_review_queue and get_review_packet)."""
+        metadata_path = os.path.join(packet_dir, 'metadata.json')
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        additional_images = []
+        additional_dir = os.path.join(packet_dir, 'additional_images')
+        manifest_path = os.path.join(additional_dir, 'manifest.json')
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                for entry in manifest:
+                    fn = entry.get('filename')
+                    if fn and os.path.isfile(os.path.join(additional_dir, fn)):
+                        additional_images.append({
+                            'filename': fn, 'type': entry.get('type', 'other'),
+                            'timestamp': entry.get('timestamp'),
+                            'image_path': os.path.join(additional_dir, fn),
+                        })
+            except (json.JSONDecodeError, OSError):
+                pass
+        uploaded_image = None
+        for f in os.listdir(packet_dir):
+            if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json' and not f.startswith('.'):
+                uploaded_image = os.path.join(packet_dir, f)
+                break
+        candidates_dir = os.path.join(packet_dir, 'candidate_matches')
+        candidates = []
+        if os.path.exists(candidates_dir):
+            for candidate_file in sorted(os.listdir(candidates_dir)):
+                if candidate_file.lower().endswith(('.jpg', '.png', '.jpeg')):
+                    parts = candidate_file.replace('.jpg', '').replace('.png', '').replace('.jpeg', '').split('_')
+                    rank, turtle_id, score = 0, 'Unknown', 0
+                    for part in parts:
+                        if part.startswith('Rank'):
+                            rank = int(part.replace('Rank', ''))
+                        elif part.startswith('ID'):
+                            turtle_id = part.replace('ID', '')
+                        elif part.startswith('Score'):
+                            score = int(part.replace('Score', ''))
+                    candidates.append({'rank': rank, 'turtle_id': turtle_id, 'score': score, 'image_path': os.path.join(candidates_dir, candidate_file)})
+        return {
+            'request_id': request_id,
+            'uploaded_image': uploaded_image,
+            'metadata': metadata,
+            'additional_images': additional_images,
+            'candidates': sorted(candidates, key=lambda x: x['rank']),
+            'status': 'pending',
+        }
+
+    @app.route('/api/review-queue/<request_id>', methods=['GET'])
+    @require_admin
+    def get_review_packet(request_id):
+        """Get a single review packet by request_id (Admin only)."""
+        if not manager_service.manager_ready.wait(timeout=30):
+            return jsonify({'error': 'TurtleManager is still initializing.'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager failed to initialize'}), 500
+        packet_dir = os.path.join(manager_service.manager.review_queue_dir, request_id)
+        if not os.path.isdir(packet_dir):
+            return jsonify({'error': 'Request not found'}), 404
+        item = _format_packet_item(packet_dir, request_id)
+        return jsonify({'success': True, 'item': item})
+
+    @app.route('/api/flags', methods=['GET'])
+    @require_admin
+    def get_turtles_with_flags():
+        """List turtles that have find_metadata (e.g. digital flag / collected to lab) for release page."""
+        if not manager_service.manager_ready.wait(timeout=30):
+            return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager failed to initialize'}), 500
+        try:
+            items = manager_service.manager.get_turtles_with_flags()
+            return jsonify({'success': True, 'items': items})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/flags/release', methods=['POST'])
+    @require_admin
+    def clear_release_flag():
+        """Mark turtle as released back to nature: clear digital flag, set released_at (Admin only)."""
+        if not manager_service.manager_ready.wait(timeout=5):
+            return jsonify({'error': 'TurtleManager is still initializing'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager not available'}), 500
+        data = request.json or {}
+        turtle_id = (data.get('turtle_id') or '').strip()
+        location = (data.get('location') or '').strip() or None
+        if not turtle_id:
+            return jsonify({'error': 'turtle_id required'}), 400
+        success, err = manager_service.manager.clear_release_flag(turtle_id, location)
+        if not success:
+            return jsonify({'error': err or 'Failed to clear release flag'}), 400
+        return jsonify({'success': True})
 
     @app.route('/api/review/<request_id>', methods=['DELETE'])
     @require_admin
@@ -181,20 +296,22 @@ def register_review_routes(app):
         if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
         
-        data = request.json
+        data = request.json or {}
         match_turtle_id = data.get('match_turtle_id')  # The turtle ID that was selected
         new_location = data.get('new_location')  # Optional: if creating new turtle (format: "State/Location")
         new_turtle_id = data.get('new_turtle_id')  # Optional: Turtle ID for new turtle (e.g., "T101")
         uploaded_image_path = data.get('uploaded_image_path')  # Optional: direct path for admin uploads
         sheets_data = data.get('sheets_data')  # Optional: Google Sheets data to create/update
-        
+        find_metadata = data.get('find_metadata')  # Optional: microhabitat_uploaded, physical_flag, digital_flag_*, etc.
+
         try:
             success, message = manager_service.manager.approve_review_packet(
                 request_id,
                 match_turtle_id=match_turtle_id,
                 new_location=new_location,
                 new_turtle_id=new_turtle_id,
-                uploaded_image_path=uploaded_image_path
+                uploaded_image_path=uploaded_image_path,
+                find_metadata=find_metadata
             )
             
             if success:

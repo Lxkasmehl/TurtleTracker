@@ -16,7 +16,7 @@ import {
   ScrollArea,
   Modal,
 } from '@mantine/core';
-import { IconPhoto, IconCheck, IconArrowLeft, IconPlus } from '@tabler/icons-react';
+import { IconPhoto, IconCheck, IconArrowLeft, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useEffect, useState, useRef } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -25,23 +25,35 @@ import {
   type TurtleMatch,
   getImageUrl,
   approveReview,
+  uploadReviewPacketAdditionalImages,
+  removeReviewPacketAdditionalImage,
+  getReviewPacket,
+  getTurtleImages,
+  deleteTurtleAdditionalImage,
   createTurtleSheetsData,
   updateTurtleSheetsData,
   generatePrimaryId,
   getTurtleSheetsData,
   listSheets,
   type TurtleSheetsData,
+  type AdditionalImage,
+  type TurtleImageAdditional,
 } from '../services/api';
 import { notifications } from '@mantine/notifications';
 import {
   TurtleSheetsDataForm,
   type TurtleSheetsDataFormRef,
 } from '../components/TurtleSheetsDataForm';
+import { FindMetadataForm } from '../components/FindMetadataForm';
+import type { FindMetadata } from '../services/api';
+import { getCurrentLocation } from '../services/geolocation';
 
 interface MatchData {
   request_id: string;
   uploaded_image_path: string;
   matches: TurtleMatch[];
+  /** Flag/metadata from upload page – match page uses this so we don't ask again for physical/digital flag */
+  find_metadata_from_upload?: FindMetadata;
 }
 
 export default function AdminTurtleMatchPage() {
@@ -63,6 +75,11 @@ export default function AdminTurtleMatchPage() {
   const [newTurtleBackendPath, setNewTurtleBackendPath] = useState<string | undefined>(undefined);
   const [loadingTurtleData, setLoadingTurtleData] = useState(false);
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+  const [findMetadata, setFindMetadata] = useState<FindMetadata | null>(null);
+  const [additionalImagesUploading, setAdditionalImagesUploading] = useState(false);
+  const [packetAdditionalImages, setPacketAdditionalImages] = useState<AdditionalImage[]>([]);
+  const [turtleAdditionalImages, setTurtleAdditionalImages] = useState<TurtleImageAdditional[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
 
@@ -102,6 +119,35 @@ export default function AdminTurtleMatchPage() {
 
     loadMatchData();
   }, [imageId, authChecked, role, navigate]);
+
+  // Pre-fill find metadata from upload (physical/digital flag set on upload page – don't ask again)
+  useEffect(() => {
+    if (matchData?.find_metadata_from_upload != null) {
+      setFindMetadata((prev) => (prev == null ? matchData.find_metadata_from_upload ?? null : prev));
+    }
+  }, [matchData]);
+
+  useEffect(() => {
+    if (!imageId) {
+      setPacketAdditionalImages([]);
+      return;
+    }
+    getReviewPacket(imageId)
+      .then((res) => setPacketAdditionalImages(res.item.additional_images || []))
+      .catch(() => setPacketAdditionalImages([]));
+  }, [imageId]);
+
+  // When a match is selected, load that turtle's existing additional images (from disk)
+  useEffect(() => {
+    if (!selectedMatch) {
+      setTurtleAdditionalImages([]);
+      return;
+    }
+    const sheetName = sheetsData?.sheet_name || undefined;
+    getTurtleImages(selectedMatch, sheetName)
+      .then((res) => setTurtleAdditionalImages(res.additional || []))
+      .catch(() => setTurtleAdditionalImages([]));
+  }, [selectedMatch, sheetsData?.sheet_name]);
 
   const handleSelectMatch = async (turtleId: string) => {
     setSelectedMatch(turtleId);
@@ -219,6 +265,7 @@ export default function AdminTurtleMatchPage() {
       await approveReview(imageId, {
         match_turtle_id: selectedMatch,
         uploaded_image_path: matchData.uploaded_image_path,
+        find_metadata: findMetadata ?? undefined,
         sheets_data: {
           primary_id: currentPrimaryId,
           sheet_name: sheetName,
@@ -383,6 +430,7 @@ export default function AdminTurtleMatchPage() {
               primary_id: finalPrimaryId ?? undefined,
             }
           : undefined,
+        find_metadata: findMetadata ?? undefined,
       });
 
       localStorage.removeItem(`match_${imageId}`);
@@ -663,6 +711,145 @@ export default function AdminTurtleMatchPage() {
                     </ScrollArea>
                   </Paper>
 
+                  {/* Additional photos: already on file for this turtle + new from this upload */}
+                  <Paper shadow='sm' p='md' radius='md' withBorder>
+                    <Stack gap='sm'>
+                      <Text size='sm' fw={500}>Additional photos (microhabitat / condition)</Text>
+                      {/* Already on file for this turtle (from previous uploads) */}
+                      {turtleAdditionalImages.length > 0 && (
+                        <Stack gap='md'>
+                          <Text size='xs' c='dimmed'>Already on file for this turtle ({turtleAdditionalImages.length}) – avoid adding duplicates:</Text>
+                          {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                            const ofType = turtleAdditionalImages.filter((img) => img.type === t);
+                            if (ofType.length === 0) return null;
+                            return (
+                              <Stack key={t} gap={4}>
+                                <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
+                                <Group gap='xs' wrap='wrap'>
+                                  {ofType.map((img) => {
+                                    const filename = img.path.replace(/^.*[/\\]/, '');
+                                    return (
+                                      <Card key={img.path} shadow='xs' padding='xs' radius='md' withBorder w={120} style={{ cursor: 'pointer' }} onClick={() => setPreviewImageUrl(getImageUrl(img.path))}>
+                                        <Image src={getImageUrl(img.path)} alt={img.type} radius='sm' h={80} style={{ objectFit: 'cover' }} />
+                                        <Group justify='space-between' mt={4} gap={4}>
+                                          <Text size='xs' c='dimmed' lineClamp={1}>{img.timestamp?.slice(0, 10) ?? ''}</Text>
+                                          <Button size='xs' variant='subtle' color='red' p={4} onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!selectedMatch) return;
+                                            try {
+                                              await deleteTurtleAdditionalImage(selectedMatch, filename, sheetsData?.sheet_name);
+                                              const res = await getTurtleImages(selectedMatch, sheetsData?.sheet_name);
+                                              setTurtleAdditionalImages(res.additional || []);
+                                              notifications.show({ title: 'Deleted', message: 'Photo removed from turtle.', color: 'green' });
+                                            } catch (err) {
+                                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed', color: 'red' });
+                                            }
+                                          }}>
+                                            <IconTrash size={14} />
+                                          </Button>
+                                        </Group>
+                                      </Card>
+                                    );
+                                  })}
+                                </Group>
+                              </Stack>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                      {/* New from this upload (can remove before saving) */}
+                      {packetAdditionalImages.length > 0 && (
+                        <Stack gap='md'>
+                          <Text size='xs' c='dimmed'>New from this upload ({packetAdditionalImages.length}):</Text>
+                          {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                            const ofType = packetAdditionalImages.filter((img) => img.type === t);
+                            if (ofType.length === 0) return null;
+                            return (
+                              <Stack key={t} gap={4}>
+                                <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
+                                <Group gap='xs' wrap='wrap'>
+                                  {ofType.map((img) => (
+                                    <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder w={120} style={{ cursor: 'pointer' }} onClick={() => setPreviewImageUrl(getImageUrl(img.image_path))}>
+                                      <Image src={getImageUrl(img.image_path)} alt={img.type} radius='sm' h={80} style={{ objectFit: 'cover' }} />
+                                      <Group justify='space-between' mt={4} gap={4}>
+                                        <Text size='xs' c='dimmed' lineClamp={1}>{img.timestamp?.slice(0, 10) ?? ''}</Text>
+                                        <Button size='xs' variant='subtle' color='red' p={4} onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (!imageId) return;
+                                          try {
+                                            await removeReviewPacketAdditionalImage(imageId, img.filename);
+                                            const res = await getReviewPacket(imageId);
+                                            setPacketAdditionalImages(res.item.additional_images || []);
+                                          } catch (e) {
+                                            notifications.show({ title: 'Error', message: e instanceof Error ? e.message : 'Remove failed', color: 'red' });
+                                          }
+                                        }}>
+                                          <IconTrash size={14} />
+                                        </Button>
+                                      </Group>
+                                    </Card>
+                                  ))}
+                                </Group>
+                              </Stack>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                      {turtleAdditionalImages.length === 0 && packetAdditionalImages.length === 0 && (
+                        <Text size='xs' c='dimmed'>No additional photos for this turtle yet. Add microhabitat or condition photos below (as many as you like).</Text>
+                      )}
+                      <Divider label='Add more' labelPosition='left' />
+                      <Text size='xs' c='dimmed'>Add more photos (will be saved with this turtle):</Text>
+                      <Group gap='xs'>
+                        <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
+                          Microhabitat
+                          <input type='file' accept='image/*' multiple hidden onChange={async (e) => {
+                            const fileList = e.target.files;
+                            if (!fileList?.length || !imageId) return;
+                            const files = Array.from(fileList).map((f) => ({ type: 'microhabitat' as const, file: f }));
+                            e.target.value = '';
+                            setAdditionalImagesUploading(true);
+                            try {
+                              await uploadReviewPacketAdditionalImages(imageId, files);
+                              const res = await getReviewPacket(imageId);
+                              setPacketAdditionalImages(res.item.additional_images || []);
+                            } catch (err) {
+                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                            } finally { setAdditionalImagesUploading(false); }
+                          }} />
+                        </Button>
+                        <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
+                          Condition
+                          <input type='file' accept='image/*' multiple hidden onChange={async (e) => {
+                            const fileList = e.target.files;
+                            if (!fileList?.length || !imageId) return;
+                            const files = Array.from(fileList).map((f) => ({ type: 'condition' as const, file: f }));
+                            e.target.value = '';
+                            setAdditionalImagesUploading(true);
+                            try {
+                              await uploadReviewPacketAdditionalImages(imageId, files);
+                              const res = await getReviewPacket(imageId);
+                              setPacketAdditionalImages(res.item.additional_images || []);
+                            } catch (err) {
+                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                            } finally { setAdditionalImagesUploading(false); }
+                          }} />
+                        </Button>
+                        {additionalImagesUploading && <Text size='xs' c='dimmed'>Uploading…</Text>}
+                      </Group>
+                    </Stack>
+                  </Paper>
+
+                  <FindMetadataForm
+                    value={findMetadata}
+                    onChange={setFindMetadata}
+                    onRequestLocation={async () => {
+                      const res = await getCurrentLocation();
+                      return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
+                    }}
+                    hideFlagFields
+                  />
+
                   {/* Action Buttons */}
                   <Paper shadow='sm' p='md' radius='md' withBorder>
                     <Group justify='space-between' gap='md'>
@@ -725,6 +912,26 @@ export default function AdminTurtleMatchPage() {
         )}
       </Stack>
 
+      {/* Image preview modal – click any additional photo to view large */}
+      <Modal
+        opened={previewImageUrl != null}
+        onClose={() => setPreviewImageUrl(null)}
+        title='Photo'
+        size='lg'
+        centered
+      >
+        {previewImageUrl && (
+          <Image
+            src={previewImageUrl}
+            alt='Preview'
+            fit='contain'
+            maw='100%'
+            mah={70 * 8}
+            radius='sm'
+          />
+        )}
+      </Modal>
+
       {/* New Turtle Creation Modal - full width on mobile */}
       <Modal
         opened={showNewTurtleModal}
@@ -748,6 +955,97 @@ export default function AdminTurtleMatchPage() {
               <Text fw={500}>{newTurtlePrimaryId}</Text>
             </Paper>
           )}
+
+          <Paper shadow='sm' p='sm' radius='md' withBorder>
+            <Stack gap='xs'>
+              <Text size='sm' fw={500}>Additional photos (microhabitat / condition)</Text>
+              {packetAdditionalImages.length > 0 ? (
+                <>
+                  <Text size='xs' c='dimmed'>Already uploaded ({packetAdditionalImages.length}) – avoid adding duplicates:</Text>
+                  <Stack gap={4}>
+                    {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                      const ofType = packetAdditionalImages.filter((img) => img.type === t);
+                      if (ofType.length === 0) return null;
+                      return (
+                        <Stack key={t} gap={4}>
+                          <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t} ({ofType.length})</Text>
+                          <Group gap='xs' wrap='wrap'>
+                          {ofType.map((img) => (
+                            <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder w={100}>
+                              <Image src={getImageUrl(img.image_path)} alt={img.type} radius='sm' h={60} style={{ objectFit: 'cover' }} />
+                              <Button size='xs' variant='subtle' color='red' p={4} fullWidth onClick={async () => {
+                                if (!imageId) return;
+                                try {
+                                  await removeReviewPacketAdditionalImage(imageId, img.filename);
+                                  const res = await getReviewPacket(imageId);
+                                  setPacketAdditionalImages(res.item.additional_images || []);
+                                } catch (e) {
+                                  notifications.show({ title: 'Error', message: e instanceof Error ? e.message : 'Remove failed', color: 'red' });
+                                }
+                              }}>
+                                <IconTrash size={12} />
+                              </Button>
+                            </Card>
+                          ))}
+                        </Group>
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+                </>
+              ) : (
+                <Text size='xs' c='dimmed'>No additional photos yet. Add microhabitat or condition photos below.</Text>
+              )}
+              <Divider label='Add more' labelPosition='left' />
+              <Text size='xs' c='dimmed'>Add more photos (optional):</Text>
+              <Group gap='xs'>
+                <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
+                  Microhabitat
+                  <input type='file' accept='image/*' multiple hidden onChange={async (e) => {
+                    const fileList = e.target.files;
+                    if (!fileList?.length || !imageId) return;
+                    const files = Array.from(fileList).map((f) => ({ type: 'microhabitat' as const, file: f }));
+                    e.target.value = '';
+                    setAdditionalImagesUploading(true);
+                    try {
+                      await uploadReviewPacketAdditionalImages(imageId, files);
+                      const res = await getReviewPacket(imageId);
+                      setPacketAdditionalImages(res.item.additional_images || []);
+                    } catch (err) {
+                      notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                    } finally { setAdditionalImagesUploading(false); }
+                  }} />
+                </Button>
+                <Button size='sm' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading || !imageId}>
+                  Condition
+                  <input type='file' accept='image/*' multiple hidden onChange={async (e) => {
+                    const fileList = e.target.files;
+                    if (!fileList?.length || !imageId) return;
+                    const files = Array.from(fileList).map((f) => ({ type: 'condition' as const, file: f }));
+                    e.target.value = '';
+                    setAdditionalImagesUploading(true);
+                    try {
+                      await uploadReviewPacketAdditionalImages(imageId, files);
+                      const res = await getReviewPacket(imageId);
+                      setPacketAdditionalImages(res.item.additional_images || []);
+                    } catch (err) {
+                      notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                    } finally { setAdditionalImagesUploading(false); }
+                  }} />
+                </Button>
+              </Group>
+            </Stack>
+          </Paper>
+
+          <FindMetadataForm
+            value={findMetadata}
+            onChange={setFindMetadata}
+            onRequestLocation={async () => {
+              const res = await getCurrentLocation();
+              return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
+            }}
+            hideFlagFields
+          />
 
           <Divider label='Google Sheets Data' labelPosition='center' />
 
