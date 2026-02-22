@@ -64,5 +64,5 @@ jobs:
           AUTH_URL: http://localhost:3001/api
           E2E_ADMIN_EMAIL: admin@test.com
           E2E_ADMIN_PASSWORD: testpassword123
-        # Includes tests/integration/test_sheets_turtle_names.py (turtle-names API for duplicate-name validation)
+        # Includes test_sheets_turtle_names.py, test_sheets_generate_id.py (turtle-names, biology ID auto-generation)
         run: python -m pytest tests/integration -v --tb=short
