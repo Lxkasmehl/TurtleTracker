@@ -73,10 +73,6 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
       timeout: 15_000,
     });
 
-    const generateIdResponse = page.waitForResponse(
-      (resp) => resp.url().includes('generate-id') && resp.status() === 200,
-      { timeout: 15_000 },
-    );
     const createBtn = page.getByRole('button', { name: 'Create New Turtle' });
     await expect(createBtn).toBeVisible({ timeout: 15_000 });
     await createBtn.click();
@@ -85,12 +81,17 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
 
-    // Select sheet then sex so the form requests the next biology ID
-    const sheetSelect = dialog.getByLabel('Sheet / Location');
+    const generateIdResponse = page.waitForResponse(
+      (resp) => resp.url().includes('generate-id') && resp.status() === 200,
+      { timeout: 15_000 },
+    );
+
+    // Select sheet (Kansas) then sex (F)
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
 
-    const sexSelect = dialog.getByLabel('Sex', { exact: true });
+    const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
     await sexSelect.click();
     await page.getByRole('option', { name: 'F' }).click();
 
@@ -159,11 +160,11 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const sheetSelect = dialog.getByLabel('Sheet / Location');
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
 
-    const sexSelect = dialog.getByLabel('Sex', { exact: true });
+    const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
     await sexSelect.click();
     await page.getByRole('option', { name: 'M' }).click();
 

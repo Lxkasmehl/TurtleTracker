@@ -81,7 +81,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await turtleNamesResponse;
 
     // Select a sheet so name validation can run (form requires sheet for submit)
-    const sheetSelect = dialog.getByLabel('Sheet / Location');
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
 
@@ -149,7 +149,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await expect(dialog).toBeVisible();
     await turtleNamesResponse;
 
-    const sheetSelect = dialog.getByLabel('Sheet / Location');
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
 
@@ -204,7 +204,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const sheetSelect = dialog.getByLabel('Sheet / Location');
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
 

@@ -94,3 +94,18 @@ export function getTestImageBuffer(): Buffer {
 export async function clickUploadPhotoButton(page: Page): Promise<void> {
   await page.locator('button[data-size="md"]:has-text("Upload Photo")').click();
 }
+
+/**
+ * Selects an option from an open Mantine Select/Combobox by keyboard.
+ * Call after clicking the select input. Index 0 = first option.
+ * Works when the dropdown is portaled or not visible to Playwright (e.g. mobile).
+ */
+export async function selectComboboxOptionByIndex(
+  page: Page,
+  optionIndex: number,
+): Promise<void> {
+  for (let i = 0; i < optionIndex; i++) {
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
+}

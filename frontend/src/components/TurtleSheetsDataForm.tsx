@@ -511,6 +511,7 @@ export const TurtleSheetsDataForm = forwardRef<
                   description='Select the Google Sheets tab where this turtle data should be stored'
                   error={!selectedSheetName ? 'Sheet selection is required' : undefined}
                   searchable
+                  comboboxProps={{ withinPortal: false }}
                 />
               )}
             </Grid.Col>
@@ -703,6 +704,7 @@ export const TurtleSheetsDataForm = forwardRef<
                   data={['F', 'M', 'J', 'U']}
                   value={formData.sex || ''}
                   onChange={(value) => handleChange('sex', value || '')}
+                  comboboxProps={{ withinPortal: false }}
                 />
               )}
             </Grid.Col>
