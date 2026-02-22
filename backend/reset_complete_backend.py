@@ -34,50 +34,81 @@ from django.db.utils import OperationalError
 from identification.models import Turtle, TurtleImage
 
 
+def _table_exists(table_name):
+    """Return True if the given table exists in the database."""
+    with connection.cursor() as cursor:
+        if connection.vendor == 'sqlite':
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
+                [table_name],
+            )
+        else:
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = %s",
+                [table_name],
+            )
+        return cursor.fetchone() is not None
+
+
+def _clear_media_if_present():
+    """Remove Django media directory if it exists."""
+    from django.conf import settings
+    media_root = getattr(settings, 'MEDIA_ROOT', None)
+    if media_root and os.path.exists(media_root):
+        print(f"   🗑️  Deleting Django media files from {media_root}...")
+        shutil.rmtree(media_root)
+        print("   ✅ Deleted Django media directory")
+    else:
+        media_dir = os.path.join(turtles_dir, 'media')
+        if os.path.exists(media_dir):
+            print("   🗑️  Deleting Django media files...")
+            shutil.rmtree(media_dir)
+            print("   ✅ Deleted Django media directory")
+
+
 def clear_database():
     """Delete all Turtle and TurtleImage records from the database"""
     print("🗄️  Clearing database...")
     
+    turtle_table = Turtle._meta.db_table
+    image_table = TurtleImage._meta.db_table
+
+    if not _table_exists(image_table) and not _table_exists(turtle_table):
+        print("   ℹ️  Database tables do not exist (migrations not applied). Nothing to clear.")
+        _clear_media_if_present()
+        return
+
     try:
         # Delete all images first (due to foreign key constraint)
         try:
-            image_count = TurtleImage.objects.count()
-            TurtleImage.objects.all().delete()
-            print(f"   ✅ Deleted {image_count} TurtleImage records")
+            if _table_exists(image_table):
+                image_count = TurtleImage.objects.count()
+                TurtleImage.objects.all().delete()
+                print(f"   ✅ Deleted {image_count} TurtleImage records")
         except OperationalError as e:
             if "no such table" in str(e).lower():
                 print("   ℹ️  TurtleImage table does not exist (migrations may not be applied); skipping.")
             else:
                 raise
-        
+        else:
+            print("   ℹ️  TurtleImage table does not exist. Skipping.")
+
         # Delete all turtles
         try:
-            turtle_count = Turtle.objects.count()
-            Turtle.objects.all().delete()
-            print(f"   ✅ Deleted {turtle_count} Turtle records")
+            if _table_exists(turtle_table):
+                turtle_count = Turtle.objects.count()
+                Turtle.objects.all().delete()
+                print(f"   ✅ Deleted {turtle_count} Turtle records")
         except OperationalError as e:
             if "no such table" in str(e).lower():
                 print("   ℹ️  Turtle table does not exist (migrations may not be applied); skipping.")
             else:
                 raise
-        
-        # Also clear any Django media files if they exist
-        # Django stores uploaded images in media/ directory (default location)
-        from django.conf import settings
-        media_root = getattr(settings, 'MEDIA_ROOT', None)
-        
-        if media_root and os.path.exists(media_root):
-            print(f"   🗑️  Deleting Django media files from {media_root}...")
-            shutil.rmtree(media_root)
-            print(f"   ✅ Deleted Django media directory")
         else:
-            # Check default location in turtles directory
-            media_dir = os.path.join(turtles_dir, 'media')
-            if os.path.exists(media_dir):
-                print(f"   🗑️  Deleting Django media files...")
-                shutil.rmtree(media_dir)
-                print(f"   ✅ Deleted Django media directory")
-        
+            print("   ℹ️  Turtle table does not exist. Skipping.")
+
+        _clear_media_if_present()
+
     except Exception as e:
         print(f"   ❌ Error clearing database: {e}")
         raise

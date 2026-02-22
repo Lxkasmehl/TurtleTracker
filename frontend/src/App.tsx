@@ -11,6 +11,7 @@ import ContactPage from './pages/ContactPage';
 import LoginPage from './pages/LoginPage';
 import AdminTurtleRecordsPage from './pages/AdminTurtleRecordsPage';
 import AdminTurtleMatchPage from './pages/AdminTurtleMatchPage';
+import AdminReleasePage from './pages/AdminReleasePage';
 import AdminUserManagementPage from './pages/AdminUserManagementPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import EmailVerificationGuard from './components/EmailVerificationGuard';
@@ -50,6 +51,7 @@ function App(): React.JSX.Element {
                   path='/admin/turtle-match/:imageId'
                   element={<AdminTurtleMatchPage />}
                 />
+                <Route path='/admin/release' element={<AdminReleasePage />} />
                 <Route path='/admin/users' element={<AdminUserManagementPage />} />
               </Routes>
               </EmailVerificationGuard>

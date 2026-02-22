@@ -19,6 +19,7 @@ import {
   Flex,
   Modal,
   Select,
+  Box,
 } from '@mantine/core';
 import {
   IconPhoto,
@@ -39,8 +40,13 @@ import {
   approveReview,
   deleteReviewItem,
   getImageUrl,
+  uploadReviewPacketAdditionalImages,
+  removeReviewPacketAdditionalImage,
   getTurtleSheetsData,
+  getTurtleImages,
+  deleteTurtleAdditionalImage,
   type ReviewQueueItem,
+  type TurtleImagesResponse,
   updateTurtleSheetsData,
   createTurtleSheetsData,
   generatePrimaryId,
@@ -53,7 +59,20 @@ import {
   TurtleSheetsDataForm,
   type TurtleSheetsDataFormRef,
 } from '../components/TurtleSheetsDataForm';
+import { FindMetadataForm } from '../components/FindMetadataForm';
 import { MapDisplay } from '../components/MapDisplay';
+import type { FindMetadata } from '../services/api';
+import { getCurrentLocation } from '../services/geolocation';
+
+function formatTurtleImageTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
 
 export default function AdminTurtleRecordsPage() {
   const { role, authChecked } = useUser();
@@ -79,6 +98,8 @@ export default function AdminTurtleRecordsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ReviewQueueItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [findMetadata, setFindMetadata] = useState<FindMetadata | null>(null);
+  const [additionalImagesUploading, setAdditionalImagesUploading] = useState(false);
   const sheetsFormRef = useRef<TurtleSheetsDataFormRef>(null);
   // Create new turtle (review queue)
   const [showNewTurtleModal, setShowNewTurtleModal] = useState(false);
@@ -97,6 +118,15 @@ export default function AdminTurtleRecordsPage() {
   const [selectedSheetFilter, setSelectedSheetFilter] = useState<string>('');
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [sheetsListLoading, setSheetsListLoading] = useState(false);
+  const [turtleImages, setTurtleImages] = useState<TurtleImagesResponse | null>(null);
+  const [turtleImagesLoading, setTurtleImagesLoading] = useState(false);
+  const [turtleImageDetail, setTurtleImageDetail] = useState<{
+    path: string;
+    type: string;
+    timestamp?: string | null;
+    uploaded_by?: string | null;
+  } | null>(null);
+  const [queuePreviewImageUrl, setQueuePreviewImageUrl] = useState<string | null>(null);
   /** Only show full loading state on first queue load; 30s poll updates in background */
   const queueInitialLoadDone = useRef(false);
 
@@ -123,6 +153,35 @@ export default function AdminTurtleRecordsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when tab changes; filter changes trigger load from Select onChange
   }, [authChecked, role, navigate, activeTab]);
+
+  // Load turtle images when a turtle is selected in the Sheets tab
+  useEffect(() => {
+    if (activeTab !== 'sheets' || !selectedTurtle) {
+      setTurtleImages(null);
+      return;
+    }
+    const turtleId = selectedTurtle.primary_id || selectedTurtle.id;
+    if (!turtleId) {
+      setTurtleImages(null);
+      return;
+    }
+    let cancelled = false;
+    setTurtleImagesLoading(true);
+    setTurtleImages(null);
+    getTurtleImages(turtleId, selectedTurtle.sheet_name || undefined)
+      .then((data) => {
+        if (!cancelled) setTurtleImages(data);
+      })
+      .catch(() => {
+        if (!cancelled) setTurtleImages({ primary: null, additional: [], loose: [] });
+      })
+      .finally(() => {
+        if (!cancelled) setTurtleImagesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, selectedTurtle]);
 
   const loadQueue = async () => {
     const isInitial = !queueInitialLoadDone.current;
@@ -186,6 +245,7 @@ export default function AdminTurtleRecordsPage() {
     setSelectedCandidate(candidateId || null);
     setSheetsData(null);
     setPrimaryId(null);
+    setFindMetadata(null);
     if (isNewItem) {
       setCandidateNames({});
       setCandidateOriginalIds({});
@@ -377,6 +437,7 @@ export default function AdminTurtleRecordsPage() {
       await handleSaveSheetsData(data, sheetName);
       await approveReview(selectedItem.request_id, {
         match_turtle_id: selectedCandidate,
+        find_metadata: findMetadata ?? undefined,
       });
       notifications.show({
         title: 'Success!',
@@ -492,6 +553,7 @@ export default function AdminTurtleRecordsPage() {
               primary_id: sheetsDataCreated ? (finalPrimaryId ?? undefined) : undefined,
             }
           : undefined,
+        find_metadata: findMetadata ?? undefined,
       });
       notifications.show({
         title: 'Success!',
@@ -828,6 +890,129 @@ export default function AdminTurtleRecordsPage() {
                       </Grid>
                     </Paper>
 
+                    {/* Additional images (microhabitat / condition): list with remove, upload on select (no extra button) */}
+                    <Paper shadow='sm' p='md' radius='md' withBorder>
+                      <Stack gap='sm'>
+                        <Text fw={600} size='sm'>
+                          Additional photos (microhabitat / condition)
+                        </Text>
+                        {selectedItem.additional_images && selectedItem.additional_images.length > 0 ? (
+                          <Stack gap='md'>
+                            {(['microhabitat', 'condition', 'other'] as const).map((t) => {
+                              const ofType = selectedItem.additional_images!.filter((img) => img.type === t);
+                              if (ofType.length === 0) return null;
+                              return (
+                                <Stack key={t} gap={4}>
+                                  <Text size='xs' fw={500} c='dimmed' tt='capitalize'>{t}</Text>
+                                  <Flex gap='sm' wrap='wrap'>
+                                    {ofType.map((img) => (
+                                      <Card key={img.filename} shadow='xs' padding='xs' radius='md' withBorder style={{ width: 140, cursor: 'pointer' }} onClick={() => setQueuePreviewImageUrl(getImageUrl(img.image_path))}>
+                                        <Image
+                                          src={getImageUrl(img.image_path)}
+                                          alt={img.type}
+                                          radius='sm'
+                                          style={{ height: 100, objectFit: 'cover' }}
+                                        />
+                                        <Group justify='space-between' mt={4} gap={4}>
+                                          <Text size='xs' c='dimmed' lineClamp={1}>
+                                            {img.timestamp ? img.timestamp.slice(0, 10) : ''}
+                                          </Text>
+                                          <Button
+                                            size='xs'
+                                            variant='subtle'
+                                            color='red'
+                                            p={4}
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              if (!selectedItem) return;
+                                              try {
+                                                await removeReviewPacketAdditionalImage(selectedItem.request_id, img.filename);
+                                                const response = await getReviewQueue();
+                                                setQueueItems(response.items);
+                                                const updated = response.items.find((i) => i.request_id === selectedItem.request_id);
+                                                if (updated) setSelectedItem(updated);
+                                              } catch (e) {
+                                                notifications.show({ title: 'Error', message: e instanceof Error ? e.message : 'Remove failed', color: 'red' });
+                                              }
+                                            }}
+                                          >
+                                            <IconTrash size={14} />
+                                          </Button>
+                                        </Group>
+                                      </Card>
+                                    ))}
+                                  </Flex>
+                                </Stack>
+                              );
+                            })}
+                          </Stack>
+                        ) : (
+                          <Text size='xs' c='dimmed'>
+                            No additional photos yet. Choose Microhabitat or Condition below to add photos (as many as you like).
+                          </Text>
+                        )}
+                        <Divider />
+                        <Text size='xs' fw={500}>Add photos (select one or multiple per type)</Text>
+                        <Group gap='xs'>
+                          <Button size='xs' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading}>
+                            Microhabitat
+                            <input
+                              type='file'
+                              accept='image/*'
+                              multiple
+                              hidden
+                              onChange={async (e) => {
+                                const fileList = e.target.files;
+                                if (!fileList?.length || !selectedItem) return;
+                                const files = Array.from(fileList).map((f) => ({ type: 'microhabitat' as const, file: f }));
+                                e.target.value = '';
+                                setAdditionalImagesUploading(true);
+                                try {
+                                  await uploadReviewPacketAdditionalImages(selectedItem.request_id, files);
+                                  const response = await getReviewQueue();
+                                  setQueueItems(response.items);
+                                  const updated = response.items.find((i) => i.request_id === selectedItem.request_id);
+                                  if (updated) setSelectedItem(updated);
+                                } catch (err) {
+                                  notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                                } finally {
+                                  setAdditionalImagesUploading(false);
+                                }
+                              }}
+                            />
+                          </Button>
+                          <Button size='xs' variant='light' component='label' leftSection={<IconPhoto size={14} />} disabled={additionalImagesUploading}>
+                            Condition
+                            <input
+                              type='file'
+                              accept='image/*'
+                              multiple
+                              hidden
+                              onChange={async (e) => {
+                                const fileList = e.target.files;
+                                if (!fileList?.length || !selectedItem) return;
+                                const files = Array.from(fileList).map((f) => ({ type: 'condition' as const, file: f }));
+                                e.target.value = '';
+                                setAdditionalImagesUploading(true);
+                                try {
+                                  await uploadReviewPacketAdditionalImages(selectedItem.request_id, files);
+                                  const response = await getReviewQueue();
+                                  setQueueItems(response.items);
+                                  const updated = response.items.find((i) => i.request_id === selectedItem.request_id);
+                                  if (updated) setSelectedItem(updated);
+                                } catch (err) {
+                                  notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Upload failed', color: 'red' });
+                                } finally {
+                                  setAdditionalImagesUploading(false);
+                                }
+                              }}
+                            />
+                          </Button>
+                          {additionalImagesUploading && <Text size='xs' c='dimmed'>Uploading…</Text>}
+                        </Group>
+                      </Stack>
+                    </Paper>
+
                     {/* Location hint from community (coords + map) – only when present */}
                     {selectedItem.metadata.location_hint_lat != null &&
                       selectedItem.metadata.location_hint_lon != null && (
@@ -857,6 +1042,16 @@ export default function AdminTurtleRecordsPage() {
                           </Stack>
                         </Paper>
                       )}
+
+                    {selectedItem.metadata.collected_to_lab != null && (
+                      <Paper shadow='sm' p='xs' radius='md' withBorder>
+                        <Text size='xs' c='dimmed'>
+                          Uploader: Collected to lab: {selectedItem.metadata.collected_to_lab}
+                          {selectedItem.metadata.physical_flag != null &&
+                            ` · Physical flag: ${selectedItem.metadata.physical_flag}`}
+                        </Text>
+                      </Paper>
+                    )}
 
                     {selectedCandidate ? (
                       <>
@@ -894,6 +1089,24 @@ export default function AdminTurtleRecordsPage() {
                               onCombinedSubmit={handleSaveAndApprove}
                             />
                           </ScrollArea>
+                          <FindMetadataForm
+                            value={findMetadata}
+                            onChange={setFindMetadata}
+                            digitalFlagFromUpload={
+                              selectedItem?.metadata?.digital_flag_lat != null &&
+                              selectedItem?.metadata?.digital_flag_lon != null
+                                ? {
+                                    latitude: selectedItem.metadata.digital_flag_lat,
+                                    longitude: selectedItem.metadata.digital_flag_lon,
+                                    source: selectedItem.metadata.digital_flag_source,
+                                  }
+                                : undefined
+                            }
+                            onRequestLocation={async () => {
+                              const res = await getCurrentLocation();
+                              return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
+                            }}
+                          />
                           <Group justify='space-between' gap='md' mt='md'>
                             <Button
                               variant='subtle'
@@ -1208,22 +1421,174 @@ export default function AdminTurtleRecordsPage() {
 
               <Grid.Col span={{ base: 12, md: 8 }}>
                 {selectedTurtle ? (
-                  <Paper shadow='sm' p='md' radius='md' withBorder>
-                    <ScrollArea h={700}>
-                      <TurtleSheetsDataForm
-                        initialData={selectedTurtle}
-                        sheetName={selectedTurtle.sheet_name}
-                        initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
+                  <Stack gap='md'>
+                    {/* Turtle images: plastron, microhabitat, other – click to open detail modal */}
+                    <Paper shadow='sm' p='md' radius='md' withBorder>
+                      <Text size='sm' fw={600} mb='xs'>
+                        Turtle images
+                      </Text>
+                      <Text size='xs' c='dimmed' mb='xs'>Click for full-size view and details</Text>
+                      {turtleImagesLoading ? (
+                        <Center py='md'>
+                          <Loader size='sm' />
+                        </Center>
+                      ) : turtleImages ? (
+                        <Stack gap='md'>
+                          {turtleImages.primary && (
+                            <Stack gap={4}>
+                              <Text size='xs' c='dimmed'>Plastron (primary)</Text>
+                              <Box
+                                style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', maxWidth: 180 }}
+                                onClick={() => setTurtleImageDetail({ path: turtleImages.primary!, type: 'Plastron (primary)' })}
+                              >
+                                <Image
+                                  src={getImageUrl(turtleImages.primary)}
+                                  alt='Plastron'
+                                  fit='contain'
+                                  h={180}
+                                  radius='sm'
+                                  fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+                                />
+                              </Box>
+                            </Stack>
+                          )}
+                          {turtleImages.additional.length > 0 && (
+                            <Stack gap={4}>
+                              <Text size='xs' c='dimmed'>Microhabitat / condition</Text>
+                              <Group gap='xs'>
+                                {turtleImages.additional.map((a, i) => {
+                                  const turtleId = selectedTurtle.primary_id || selectedTurtle.id;
+                                  const filename = a.path.replace(/^.*[/\\]/, '');
+                                  return (
+                                    <Card key={`${a.path}-${i}`} shadow='xs' padding='xs' radius='md' withBorder w={140} style={{ cursor: 'pointer' }} onClick={() => setTurtleImageDetail({
+                                      path: a.path,
+                                      type: a.type === 'microhabitat' ? 'Microhabitat' : a.type === 'condition' ? 'Condition' : a.type,
+                                      timestamp: a.timestamp ?? undefined,
+                                      uploaded_by: a.uploaded_by ?? undefined,
+                                    })}>
+                                      <Image
+                                        src={getImageUrl(a.path)}
+                                        alt={a.type}
+                                        fit='cover'
+                                        w={120}
+                                        h={120}
+                                        radius='sm'
+                                        fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+                                      />
+                                      <Group justify='space-between' mt={4} gap={4}>
+                                        <Text size='xs' c='dimmed' lineClamp={1}>{a.timestamp ? a.timestamp.slice(0, 10) : ''}</Text>
+                                        <Button
+                                          size='xs'
+                                          variant='subtle'
+                                          color='red'
+                                          p={4}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!turtleId) return;
+                                            try {
+                                              await deleteTurtleAdditionalImage(turtleId, filename, selectedTurtle.sheet_name || undefined);
+                                              const data = await getTurtleImages(turtleId, selectedTurtle.sheet_name || undefined);
+                                              setTurtleImages(data);
+                                              notifications.show({ title: 'Deleted', message: 'Photo removed from turtle.', color: 'green' });
+                                            } catch (err) {
+                                              notifications.show({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed', color: 'red' });
+                                            }
+                                          }}
+                                        >
+                                          <IconTrash size={14} />
+                                        </Button>
+                                      </Group>
+                                    </Card>
+                                  );
+                                })}
+                              </Group>
+                            </Stack>
+                          )}
+                          {turtleImages.loose.length > 0 && (
+                            <Stack gap={4}>
+                              <Text size='xs' c='dimmed'>Other observations</Text>
+                              <Group gap='xs'>
+                                {turtleImages.loose.map((path, i) => (
+                                  <Box
+                                    key={`${path}-${i}`}
+                                    style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden' }}
+                                    onClick={() => setTurtleImageDetail({ path, type: 'Other observation' })}
+                                  >
+                                    <Image
+                                      src={getImageUrl(path)}
+                                      alt='Observation'
+                                      fit='cover'
+                                      w={120}
+                                      h={120}
+                                      radius='sm'
+                                      fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+                                    />
+                                  </Box>
+                                ))}
+                              </Group>
+                            </Stack>
+                          )}
+                          {!turtleImages.primary &&
+                            turtleImages.additional.length === 0 &&
+                            turtleImages.loose.length === 0 && (
+                              <Text size='sm' c='dimmed'>
+                                No images for this turtle yet.
+                              </Text>
+                            )}
+                        </Stack>
+                      ) : null}
+                    </Paper>
+
+                    {/* Modal: large image + timestamp, type, uploaded by */}
+                    <Modal
+                      opened={turtleImageDetail != null}
+                      onClose={() => setTurtleImageDetail(null)}
+                      title='Image details'
+                      size='lg'
+                      centered
+                    >
+                      {turtleImageDetail && (
+                        <Stack gap='md'>
+                          <Image
+                            src={getImageUrl(turtleImageDetail.path)}
+                            alt={turtleImageDetail.type}
+                            fit='contain'
+                            maw='100%'
+                            mah={400}
+                            radius='sm'
+                            fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+                          />
+                          <Stack gap={4}>
+                            <Text size='sm' fw={500}>Type: {turtleImageDetail.type}</Text>
+                            {turtleImageDetail.timestamp && (
+                              <Text size='sm' c='dimmed'>
+                                Taken / uploaded: {formatTurtleImageTimestamp(turtleImageDetail.timestamp)}
+                              </Text>
+                            )}
+                            <Text size='sm' c='dimmed'>
+                              Uploaded by: {turtleImageDetail.uploaded_by ?? '—'}
+                            </Text>
+                          </Stack>
+                        </Stack>
+                      )}
+                    </Modal>
+                    <Paper shadow='sm' p='md' radius='md' withBorder>
+                      <ScrollArea h={600}>
+                        <TurtleSheetsDataForm
+                          initialData={selectedTurtle}
+                          sheetName={selectedTurtle.sheet_name}
+                          initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
                         state={selectedTurtle.general_location || ''}
-                        location={selectedTurtle.location || ''}
-                        primaryId={
-                          selectedTurtle.primary_id || selectedTurtle.id || undefined
-                        }
-                        mode='edit'
-                        onSave={handleSaveTurtleFromBrowser}
-                      />
-                    </ScrollArea>
-                  </Paper>
+                          location={selectedTurtle.location || ''}
+                          primaryId={
+                            selectedTurtle.primary_id || selectedTurtle.id || undefined
+                          }
+                          mode='edit'
+                          onSave={handleSaveTurtleFromBrowser}
+                        />
+                      </ScrollArea>
+                    </Paper>
+                  </Stack>
                 ) : (
                   <Paper shadow='sm' p='xl' radius='md' withBorder>
                     <Center py='xl'>
@@ -1245,6 +1610,27 @@ export default function AdminTurtleRecordsPage() {
           </Tabs.Panel>
         </Tabs>
       </Stack>
+
+      {/* Queue additional photo preview – click to view large */}
+      <Modal
+        opened={queuePreviewImageUrl != null}
+        onClose={() => setQueuePreviewImageUrl(null)}
+        title='Photo'
+        size='lg'
+        centered
+      >
+        {queuePreviewImageUrl && (
+          <Image
+            src={queuePreviewImageUrl}
+            alt='Preview'
+            fit='contain'
+            maw='100%'
+            mah={400}
+            radius='sm'
+            fallbackSrc='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+          />
+        )}
+      </Modal>
 
       {/* Create New Turtle Modal (Review Queue) - full width on mobile */}
       <Modal
@@ -1268,6 +1654,24 @@ export default function AdminTurtleRecordsPage() {
               <Text fw={500}>{newTurtlePrimaryId}</Text>
             </Paper>
           )}
+          <FindMetadataForm
+            value={findMetadata}
+            onChange={setFindMetadata}
+            digitalFlagFromUpload={
+              selectedItem?.metadata?.digital_flag_lat != null &&
+              selectedItem?.metadata?.digital_flag_lon != null
+                ? {
+                    latitude: selectedItem.metadata.digital_flag_lat,
+                    longitude: selectedItem.metadata.digital_flag_lon,
+                    source: selectedItem.metadata.digital_flag_source,
+                  }
+                : undefined
+            }
+            onRequestLocation={async () => {
+              const res = await getCurrentLocation();
+              return res.location ? { latitude: res.location.latitude, longitude: res.location.longitude } : null;
+            }}
+          />
           <Divider label='Google Sheets Data' labelPosition='center' />
           <TurtleSheetsDataForm
             initialData={newTurtleSheetsData || undefined}
