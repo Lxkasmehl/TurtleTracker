@@ -42,7 +42,6 @@ import {
   getTurtleSheetsData,
   type ReviewQueueItem,
   updateTurtleSheetsData,
-  createTurtleSheetsData,
   generatePrimaryId,
   listAllTurtlesFromSheets,
   listSheets,
@@ -87,6 +86,7 @@ export default function AdminTurtleRecordsPage() {
     null,
   );
   const [newTurtleSheetName, setNewTurtleSheetName] = useState('');
+  const [newTurtleBackendPath, setNewTurtleBackendPath] = useState<string | undefined>(undefined);
   // Google Sheets Browser State
   const [allTurtles, setAllTurtles] = useState<TurtleSheetsData[]>([]);
   const [turtlesLoading, setTurtlesLoading] = useState(false);
@@ -414,15 +414,18 @@ export default function AdminTurtleRecordsPage() {
     setNewTurtlePrimaryId(null);
     setNewTurtleSheetsData(null);
     setNewTurtleSheetName('');
+    setNewTurtleBackendPath(undefined);
   };
 
   const handleConfirmNewTurtle = async (
     sheetNameOverride?: string,
     sheetsDataOverride?: TurtleSheetsData,
+    backendPathOverride?: string,
   ) => {
     if (!selectedItem) return;
     const effectiveSheetName = sheetNameOverride || newTurtleSheetName;
     const effectiveSheetsData = sheetsDataOverride || newTurtleSheetsData;
+    const effectiveBackendPath = backendPathOverride ?? newTurtleBackendPath;
     if (!effectiveSheetName) {
       notifications.show({
         title: 'Error',
@@ -433,9 +436,7 @@ export default function AdminTurtleRecordsPage() {
     }
     setProcessing(selectedItem.request_id);
     try {
-      // Backend path: always use sheet name only (never general_location/location from form).
-      // general_location and location are only for the Google Sheet row data.
-      const backendPathLocation = effectiveSheetName;
+      const backendPathLocation = effectiveBackendPath ?? effectiveSheetName;
 
       const formState = effectiveSheetsData?.general_location || '';
       const formLocation = effectiveSheetsData?.location || '';
@@ -456,30 +457,8 @@ export default function AdminTurtleRecordsPage() {
           console.error('Error generating primary ID:', error);
         }
       }
-      let sheetsDataCreated = false;
-      if (effectiveSheetsData && finalPrimaryId && effectiveSheetName) {
-        try {
-          const result = await createTurtleSheetsData({
-            sheet_name: effectiveSheetName,
-            state: turtleState,
-            location: turtleLocation,
-            turtle_data: {
-              ...effectiveSheetsData,
-              primary_id: finalPrimaryId,
-              general_location: effectiveSheetsData?.general_location ?? '',
-              location: effectiveSheetsData?.location ?? '',
-            },
-          });
-          sheetsDataCreated = result.success ?? false;
-        } catch {
-          notifications.show({
-            title: 'Warning',
-            message:
-              'Failed to create turtle in Google Sheets. Backend will create it as fallback.',
-            color: 'yellow',
-          });
-        }
-      }
+      // Community upload new turtle: create only in community spreadsheet (backend does this on approve).
+      // Do not create in research spreadsheet.
       const turtleIdForReview = finalPrimaryId || `T${Date.now()}`;
       await approveReview(selectedItem.request_id, {
         new_location: backendPathLocation,
@@ -489,7 +468,7 @@ export default function AdminTurtleRecordsPage() {
           ? {
               ...effectiveSheetsData,
               sheet_name: effectiveSheetName,
-              primary_id: sheetsDataCreated ? (finalPrimaryId ?? undefined) : undefined,
+              primary_id: finalPrimaryId ?? undefined,
             }
           : undefined,
       });
@@ -522,9 +501,11 @@ export default function AdminTurtleRecordsPage() {
   const handleSaveNewTurtleSheetsData = async (
     data: TurtleSheetsData,
     sheetName: string,
+    backendLocationPath?: string,
   ) => {
     setNewTurtleSheetsData(data);
     setNewTurtleSheetName(sheetName);
+    setNewTurtleBackendPath(backendLocationPath);
     const state = data.general_location || '';
     const location = data.location || '';
     let primaryId = newTurtlePrimaryId;
@@ -539,7 +520,7 @@ export default function AdminTurtleRecordsPage() {
         console.error('Error generating primary ID:', error);
       }
     }
-    await handleConfirmNewTurtle(sheetName, data);
+    await handleConfirmNewTurtle(sheetName, data, backendLocationPath);
   };
 
   const handleOpenDeleteModal = (item: ReviewQueueItem, e: React.MouseEvent) => {
@@ -1272,7 +1253,7 @@ export default function AdminTurtleRecordsPage() {
           <TurtleSheetsDataForm
             initialData={newTurtleSheetsData || undefined}
             sheetName={newTurtleSheetName}
-            initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
+            useBackendLocations
             hintLocationFromCommunity={
               selectedItem?.metadata?.state && selectedItem?.metadata?.location
                 ? `${selectedItem.metadata.state} / ${selectedItem.metadata.location}`

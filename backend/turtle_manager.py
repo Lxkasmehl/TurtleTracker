@@ -506,11 +506,16 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
-            # Create new turtle. new_location is the sheet name (one folder level); never use form location/general_location for path.
+            # Create new turtle. new_location can be "State" or "State/Location" for two-level paths.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
-            # Use only the first path segment (sheet name) so path is always data/<sheet_name>/<turtle_id>/ref_data
-            sheet_name = new_location.split("/")[0].strip() or new_location
-            location_dir = os.path.join(self.base_dir, sheet_name)
+            parts = [p.strip() for p in new_location.split("/") if p.strip()]
+            sheet_name = parts[0] if parts else new_location
+            if len(parts) >= 2:
+                # Two-level: data/<sheet>/<location>/<turtle_id>/
+                location_dir = os.path.join(self.base_dir, parts[0], parts[1])
+            else:
+                # Single-level (backward compatible): data/<sheet>/<turtle_id>/
+                location_dir = os.path.join(self.base_dir, sheet_name)
             os.makedirs(location_dir, exist_ok=True)
             
             # Process the new turtle (this will create the turtle folder and process the image)

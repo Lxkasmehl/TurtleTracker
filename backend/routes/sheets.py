@@ -163,6 +163,13 @@ def register_sheets_routes(app):
             if not service:
                 return jsonify({'error': 'Google Sheets service not configured'}), 503
 
+            # If sheet does not exist (e.g. backend location "Kansas"), create it so we can generate ID
+            existing_sheets = service.list_sheets()
+            if sheet_name not in existing_sheets:
+                if not service.create_sheet_with_headers(sheet_name):
+                    return jsonify({'error': f'Could not create sheet "{sheet_name}" for ID generation'}), 500
+                print(f"✅ Created new sheet '{sheet_name}' in research spreadsheet (for ID generation)")
+
             id_value = service.generate_biology_id(gender, sheet_name)
             return jsonify({
                 'success': True,
@@ -196,7 +203,14 @@ def register_sheets_routes(app):
             service = get_sheets_service()
             if not service:
                 return jsonify({'error': 'Google Sheets service not configured'}), 503
-            
+
+            # If sheet (tab) does not exist, create it with required headers (e.g. when using backend locations like "Kansas")
+            existing_sheets = service.list_sheets()
+            if sheet_name not in existing_sheets:
+                if not service.create_sheet_with_headers(sheet_name):
+                    return jsonify({'error': f'Could not create sheet "{sheet_name}" in spreadsheet'}), 500
+                print(f"✅ Created new sheet '{sheet_name}' in research spreadsheet")
+
             # Use primary_id from turtle_data if provided (frontend already generated it), otherwise generate new one
             # Primary ID is globally unique across all sheets
             if turtle_data.get('primary_id'):
@@ -256,7 +270,14 @@ def register_sheets_routes(app):
             service = get_sheets_service()
             if not service:
                 return jsonify({'error': 'Google Sheets service not configured'}), 503
-            
+
+            # If sheet (tab) does not exist, create it with required headers (e.g. when using backend locations like "Kansas")
+            existing_sheets = service.list_sheets()
+            if sheet_name not in existing_sheets:
+                if not service.create_sheet_with_headers(sheet_name):
+                    return jsonify({'error': f'Could not create sheet "{sheet_name}" in spreadsheet'}), 500
+                print(f"✅ Created new sheet '{sheet_name}' in research spreadsheet")
+
             # Check if turtle exists in the new sheet
             existing_data = service.get_turtle_data(primary_id, sheet_name, state, location)
             
@@ -573,10 +594,9 @@ def register_sheets_routes(app):
                     if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
                         escaped_sheet = f"'{sheet}'"
                     range_name = f"{escaped_sheet}!A:Z"
-                    result = service.service.spreadsheets().values().get(
-                        spreadsheetId=service.spreadsheet_id,
-                        range=range_name
-                    ).execute()
+                    result = service.get_sheet_values(range_name)
+                    if not result:
+                        continue
 
                     values = result.get('values', [])
                     if len(values) < 2:

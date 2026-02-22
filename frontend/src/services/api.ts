@@ -454,6 +454,12 @@ export interface ListSheetsResponse {
   error?: string;
 }
 
+export interface GetLocationsResponse {
+  success: boolean;
+  locations?: string[]; // e.g. ["Kansas/Wichita", "Kansas/Lawrence", "Nebraska/Topeka", "Incidental_Finds", "Community_Uploads"]
+  error?: string;
+}
+
 export interface GeneratePrimaryIdRequest {
   state: string;
   location?: string;
@@ -722,6 +728,24 @@ export const listSheets = async (
     }
     throw error;
   }
+};
+
+// List backend location paths (State/Location) for community upload and manual upload
+export const getLocations = async (): Promise<GetLocationsResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(`${TURTLE_API_BASE_URL}/locations`, {
+    method: 'GET',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to load locations');
+  }
+  return await response.json();
 };
 
 // Create a new sheet with headers

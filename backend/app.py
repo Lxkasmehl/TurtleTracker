@@ -22,6 +22,7 @@ from routes.upload import register_upload_routes
 from routes.review import register_review_routes
 from routes.images import register_image_routes
 from routes.sheets import register_sheets_routes
+from routes.locations import register_locations_routes
 
 # Create Flask app
 app = Flask(__name__)
@@ -42,6 +43,7 @@ register_upload_routes(app)
 register_review_routes(app)
 register_image_routes(app)
 register_sheets_routes(app)
+register_locations_routes(app)
 
 
 @app.errorhandler(Exception)

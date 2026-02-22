@@ -19,7 +19,7 @@ import {
   Modal,
   Anchor,
 } from '@mantine/core';
-import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   IconInfoCircle,
   IconCheck,
@@ -30,7 +30,9 @@ import {
 import { MapDisplay } from './MapDisplay';
 import { notifications } from '@mantine/notifications';
 import type { TurtleSheetsData, TurtleNameEntry } from '../services/api';
-import { listSheets, createSheet, generateTurtleId, getTurtleNames } from '../services/api';
+import { listSheets, getLocations, createSheet, generateTurtleId, getTurtleNames } from '../services/api';
+
+const SYSTEM_FOLDERS = ['Incidental_Finds', 'Community_Uploads', 'Review_Queue'];
 
 interface TurtleSheetsDataFormProps {
   initialData?: TurtleSheetsData;
@@ -42,15 +44,17 @@ interface TurtleSheetsDataFormProps {
   /** Optional coordinates hint from community (never stored in sheets) */
   hintCoordinates?: { latitude: number; longitude: number; source?: 'gps' | 'manual' };
   primaryId?: string;
-  onSave: (data: TurtleSheetsData, sheetName: string) => Promise<void>;
+  onSave: (data: TurtleSheetsData, sheetName: string, backendLocationPath?: string) => Promise<void>;
   onCancel?: () => void;
   mode: 'create' | 'edit';
   hideSubmitButton?: boolean; // Hide the form's submit button
-  onCombinedSubmit?: (data: TurtleSheetsData, sheetName: string) => Promise<void>; // Combined action handler
+  onCombinedSubmit?: (data: TurtleSheetsData, sheetName: string, backendLocationPath?: string) => Promise<void>; // Combined action handler
   /** When true (e.g. field use), only allow adding data; existing values are read-only unless user unlocks per field */
   addOnlyMode?: boolean;
   /** When provided, form uses this list and does not call listSheets() on mount (avoids duplicate API calls) */
   initialAvailableSheets?: string[];
+  /** When true, use backend locations (State/Location) instead of Google Sheet tabs. For community upload new turtle: sheet = State, path = State/Location. */
+  useBackendLocations?: boolean;
 }
 
 export interface TurtleSheetsDataFormRef {
@@ -75,6 +79,7 @@ export const TurtleSheetsDataForm = forwardRef<
       onCombinedSubmit,
       addOnlyMode = false,
       initialAvailableSheets,
+      useBackendLocations = false,
       // state/location accepted for API compatibility but not used as form values – use hintLocationFromCommunity for display
     },
     ref,
@@ -92,6 +97,14 @@ export const TurtleSheetsDataForm = forwardRef<
     const [showCreateSheetModal, setShowCreateSheetModal] = useState(false);
     const [newSheetName, setNewSheetName] = useState('');
     const [creatingSheet, setCreatingSheet] = useState(false);
+    /** When useBackendLocations: backend location paths and derived state/location lists */
+    const [backendLocations, setBackendLocations] = useState<string[]>([]);
+    const [selectedLocation, setSelectedLocation] = useState<string>('');
+    const [newLocationName, setNewLocationName] = useState<string>('');
+    const [addNewLocation, setAddNewLocation] = useState(false);
+    const [addNewState, setAddNewState] = useState(false);
+    const [newStateName, setNewStateName] = useState('');
+    const newStateInputRef = useRef<HTMLInputElement>(null);
     /** In addOnlyMode (edit): fields the user has explicitly unlocked for editing */
     const [unlockedFields, setUnlockedFields] = useState<Set<keyof TurtleSheetsData>>(
       new Set(),
@@ -108,6 +121,51 @@ export const TurtleSheetsDataForm = forwardRef<
     const [loadingIdPreview, setLoadingIdPreview] = useState(false);
     /** All turtle names across sheets (for duplicate-name validation) */
     const [existingTurtleNames, setExistingTurtleNames] = useState<TurtleNameEntry[]>([]);
+
+    const { stateList, locationsByState } = useMemo(() => {
+      const byState = new Map<string, string[]>();
+      const states = new Set<string>();
+      const filtered = backendLocations.filter(
+        (p) =>
+          !SYSTEM_FOLDERS.includes(p) &&
+          !SYSTEM_FOLDERS.includes(p.split('/')[0] ?? ''),
+      );
+      for (const path of filtered) {
+        if (path.includes('/')) {
+          const [state, loc] = path.split('/', 2);
+          states.add(state);
+          const list = byState.get(state) ?? [];
+          if (!list.includes(loc)) list.push(loc);
+          byState.set(state, list);
+        } else {
+          states.add(path);
+        }
+      }
+      return {
+        stateList: Array.from(states).sort(),
+        locationsByState: byState,
+      };
+    }, [backendLocations]);
+
+    const effectiveState =
+      addNewState && newStateName.trim()
+        ? newStateName.trim()
+        : selectedSheetName && selectedSheetName !== '__add_new_state__'
+          ? selectedSheetName
+          : '';
+
+    const locationsForSelectedState = effectiveState
+      ? (locationsByState.get(effectiveState) ?? []).sort()
+      : [];
+    const hasLocationLevel = locationsForSelectedState.length > 0;
+    const showLocationSection = !!effectiveState;
+    const resolvedGeneralLocationForDisplay =
+      effectiveState &&
+      (addNewLocation && newLocationName.trim()
+        ? newLocationName.trim()
+        : selectedLocation && selectedLocation !== '__add_new__'
+          ? selectedLocation
+          : '');
 
     const isFieldModeRestricted = addOnlyMode && mode === 'edit';
     const isFieldUnlocked = (field: keyof TurtleSheetsData) => unlockedFields.has(field);
@@ -138,7 +196,9 @@ export const TurtleSheetsDataForm = forwardRef<
         setIdPreview('');
         return;
       }
-      const sheetName = (selectedSheetName || '').trim();
+      const sheetName = (
+        useBackendLocations ? effectiveState : selectedSheetName
+      ).trim();
       const sex = (formData.sex || '').trim().toUpperCase();
       if (!sheetName || !sex || !['M', 'F', 'J', 'U'].includes(sex)) {
         setIdPreview('');
@@ -160,9 +220,56 @@ export const TurtleSheetsDataForm = forwardRef<
       return () => {
         cancelled = true;
       };
-    }, [mode, formData.sex, selectedSheetName]);
+    }, [mode, formData.sex, selectedSheetName, useBackendLocations, effectiveState]);
+
+    // When useBackendLocations: load backend State/Location paths instead of Google Sheet tabs
+    useEffect(() => {
+      if (!useBackendLocations) return;
+      let cancelled = false;
+      setLoadingSheets(true);
+      getLocations()
+        .then((res) => {
+          if (cancelled) return;
+          if (res.success && res.locations) {
+            setBackendLocations(res.locations);
+            const system = ['Incidental_Finds', 'Community_Uploads', 'Review_Queue'];
+            const firstValid = res.locations.find(
+              (p: string) =>
+                !system.includes(p) && !system.includes((p.split('/')[0] ?? '')),
+            );
+            if (!initialSheetName && firstValid) {
+              const state = firstValid.includes('/')
+                ? firstValid.split('/')[0]
+                : firstValid;
+              setSelectedSheetName(state);
+            }
+          } else {
+            setBackendLocations([]);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            console.error('Failed to load locations:', err);
+            setBackendLocations([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingSheets(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [useBackendLocations, initialSheetName]);
 
     useEffect(() => {
+      if (addNewState && newStateInputRef.current) {
+        const t = setTimeout(() => newStateInputRef.current?.focus(), 100);
+        return () => clearTimeout(t);
+      }
+    }, [addNewState]);
+
+    useEffect(() => {
+      if (useBackendLocations) return;
       // If parent provided sheets, skip API call to avoid duplicate requests
       if (initialAvailableSheets != null && initialAvailableSheets.length > 0) {
         setAvailableSheets(initialAvailableSheets);
@@ -218,7 +325,7 @@ export const TurtleSheetsDataForm = forwardRef<
       return () => {
         cancelled = true;
       };
-    }, [initialSheetName, initialAvailableSheets]);
+    }, [useBackendLocations, initialSheetName, initialAvailableSheets]);
 
     // Load existing turtle names for duplicate-name validation (create mode or when name is editable)
     useEffect(() => {
@@ -315,10 +422,36 @@ export const TurtleSheetsDataForm = forwardRef<
     };
 
     const handleSubmit = async () => {
-      if (!selectedSheetName) {
+      const sheetOrState = useBackendLocations ? effectiveState : selectedSheetName;
+      if (!sheetOrState) {
         notifications.show({
           title: 'Validation Error',
-          message: 'Please select a sheet',
+          message: useBackendLocations
+            ? 'Please select or add a state/region'
+            : 'Please select a sheet',
+          color: 'red',
+          icon: <IconX size={18} />,
+        });
+        return;
+      }
+      if (useBackendLocations && hasLocationLevel) {
+        const hasGeneralLocation =
+          (selectedLocation && selectedLocation !== '__add_new__') ||
+          (addNewLocation && newLocationName.trim().length > 0);
+        if (!hasGeneralLocation) {
+          notifications.show({
+            title: 'Validation Error',
+            message: 'Please select a general location or add a new one',
+            color: 'red',
+            icon: <IconX size={18} />,
+          });
+          return;
+        }
+      }
+      if (useBackendLocations && addNewState && !newStateName.trim()) {
+        notifications.show({
+          title: 'Validation Error',
+          message: 'Please enter the new state/region name',
           color: 'red',
           icon: <IconX size={18} />,
         });
@@ -370,11 +503,38 @@ export const TurtleSheetsDataForm = forwardRef<
               : {}),
           };
         }
-        // Use combined submit handler if provided, otherwise use normal onSave
+        // Backend path: part 1 = sheet name (State), part 2 = General Location (site folder)
+        const backendPath =
+          useBackendLocations && effectiveState
+            ? addNewLocation && newLocationName.trim()
+              ? `${effectiveState}/${newLocationName.trim()}`
+              : selectedLocation && selectedLocation !== '__add_new__'
+                ? `${effectiveState}/${selectedLocation}`
+                : effectiveState
+            : undefined;
+        const sheetNameForSubmit = useBackendLocations ? effectiveState : selectedSheetName;
+
+        // Backend path = Sheet name / General Location. Sheet column "General Location" = second part; "Location" = user free text (unchanged).
+        const resolvedGeneralLocation =
+          useBackendLocations && effectiveState
+            ? addNewLocation && newLocationName.trim()
+              ? newLocationName.trim()
+              : selectedLocation && selectedLocation !== '__add_new__'
+                ? selectedLocation
+                : ''
+            : undefined;
+        if (useBackendLocations && effectiveState) {
+          dataToSave = {
+            ...dataToSave,
+            general_location: resolvedGeneralLocation ?? dataToSave.general_location ?? '',
+            // location = free text (e.g. "Refound by Aubrey...") – keep user input, do not overwrite
+          };
+        }
+
         if (onCombinedSubmit) {
-          await onCombinedSubmit(dataToSave, selectedSheetName);
+          await onCombinedSubmit(dataToSave, sheetNameForSubmit, backendPath);
         } else {
-          await onSave(dataToSave, selectedSheetName);
+          await onSave(dataToSave, sheetNameForSubmit, backendPath);
           notifications.show({
             title: 'Success!',
             message: `Turtle data ${mode === 'create' ? 'created' : 'updated'} successfully`,
@@ -462,13 +622,13 @@ export const TurtleSheetsDataForm = forwardRef<
           )}
 
           <Grid gutter='md'>
-            {/* Sheet Selection */}
+            {/* Sheet / Location selection: backend State+Location (community upload) or Google Sheet tabs (research) */}
             <Grid.Col span={12}>
               {loadingSheets ? (
                 <Group gap='sm'>
                   <Loader size='sm' />
                   <Text size='sm' c='dimmed'>
-                    Loading available sheets...
+                    {useBackendLocations ? 'Loading locations…' : 'Loading available sheets...'}
                   </Text>
                 </Group>
               ) : isFieldModeRestricted && !isFieldUnlocked('sheet_name') ? (
@@ -490,6 +650,104 @@ export const TurtleSheetsDataForm = forwardRef<
                     description='Select the Google Sheets tab where this turtle data should be stored'
                   />
                 </>
+              ) : useBackendLocations ? (
+                <Stack gap='md'>
+                  <Select
+                    label='Sheet (State / Region)'
+                    placeholder='Select state or add new'
+                    data={[
+                      ...stateList.map((s) => ({ value: s, label: s })),
+                      { value: '__add_new_state__', label: '+ Add new state/region' },
+                    ]}
+                    value={addNewState ? '__add_new_state__' : selectedSheetName}
+                    onChange={(value) => {
+                      if (value === '__add_new_state__') {
+                        setAddNewState(true);
+                        setSelectedSheetName('');
+                        setSelectedLocation('');
+                        setAddNewLocation(false);
+                        setNewLocationName('');
+                      } else {
+                        setAddNewState(false);
+                        setNewStateName('');
+                        setSelectedSheetName(value || '');
+                        setSelectedLocation('');
+                        setAddNewLocation(false);
+                        setNewLocationName('');
+                      }
+                    }}
+                    required
+                    description='Backend folder: data/State/ or data/State/Location/. System folders (e.g. Community_Uploads) are not listed.'
+                    error={
+                      !effectiveState
+                        ? 'Select a state/region or add a new one'
+                        : undefined
+                    }
+                    searchable
+                  />
+                  {addNewState && (
+                    <TextInput
+                      ref={newStateInputRef}
+                      label='New state/region name'
+                      placeholder='e.g. Kansas, Nebraska'
+                      value={newStateName}
+                      onChange={(e) => setNewStateName(e.currentTarget.value)}
+                      description='Enter a name for the new state or region (folder is created on save)'
+                      autoFocus
+                    />
+                  )}
+                  {showLocationSection && (
+                    <>
+                      <Select
+                        label='General Location (optional)'
+                        placeholder='Select site or add new'
+                        data={[
+                          ...locationsForSelectedState.map((loc) => ({
+                            value: loc,
+                            label: loc,
+                          })),
+                          { value: '__add_new__', label: '+ Add new general location' },
+                        ]}
+                        value={addNewLocation ? '__add_new__' : selectedLocation}
+                        onChange={(value) => {
+                          if (value === '__add_new__') {
+                            setAddNewLocation(true);
+                            setSelectedLocation('');
+                          } else {
+                            setAddNewLocation(false);
+                            setSelectedLocation(value || '');
+                            setNewLocationName('');
+                          }
+                        }}
+                        description='Site/region under this sheet (e.g. Wichita). Backend folder + spreadsheet column "General Location". Optional.'
+                        error={
+                          hasLocationLevel &&
+                          !selectedLocation &&
+                          !(addNewLocation && newLocationName.trim())
+                            ? 'Select or add a general location'
+                            : undefined
+                        }
+                        searchable
+                      />
+                      {addNewLocation && (
+                        <TextInput
+                          label='New general location name'
+                          placeholder='e.g. Wichita, North Topeka'
+                          value={newLocationName}
+                          onChange={(e) =>
+                            setNewLocationName(e.currentTarget.value)
+                          }
+                          description='New folder under this sheet + value for "General Location" column (created on save)'
+                        />
+                      )}
+                    </>
+                  )}
+                  <Text size='sm' c='dimmed'>
+                    Backend path: {effectiveState}
+                    {resolvedGeneralLocationForDisplay ? ` / ${resolvedGeneralLocationForDisplay}` : ''}.
+                    Spreadsheet: General Location = {resolvedGeneralLocationForDisplay || '(none)'}. Use "Location" field below for free text (e.g. refound notes).
+                  </Text>
+                </Stack>
               ) : (
                 <Select
                   label='Sheet / Location'
@@ -788,7 +1046,7 @@ export const TurtleSheetsDataForm = forwardRef<
               )}
             </Grid.Col>
 
-            {/* Row 5: Location – only form values; community location shown as hint only when provided */}
+            {/* Row 5: Location – when useBackendLocations, State/Location above sets these; no duplicate fields */}
             {(hintLocationFromCommunity || hintCoordinates) && (
               <Grid.Col span={12}>
                 <Alert
@@ -834,34 +1092,36 @@ export const TurtleSheetsDataForm = forwardRef<
                 </Alert>
               </Grid.Col>
             )}
-            <Grid.Col span={{ base: 12, md: 6 }}>
-              {isFieldModeRestricted && !isFieldUnlocked('general_location') ? (
-                <>
-                  <Group gap='xs' mb={4}>
-                    <Button
-                      variant='subtle'
-                      size='compact-xs'
-                      leftSection={<IconLockOpen size={14} />}
-                      onClick={() => requestUnlock('general_location')}
-                    >
-                      Unlock editing
-                    </Button>
-                  </Group>
+            {!useBackendLocations && (
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                {isFieldModeRestricted && !isFieldUnlocked('general_location') ? (
+                  <>
+                    <Group gap='xs' mb={4}>
+                      <Button
+                        variant='subtle'
+                        size='compact-xs'
+                        leftSection={<IconLockOpen size={14} />}
+                        onClick={() => requestUnlock('general_location')}
+                      >
+                        Unlock editing
+                      </Button>
+                    </Group>
+                    <TextInput
+                      label='General Location'
+                      value={formData.general_location ?? ''}
+                      disabled
+                    />
+                  </>
+                ) : (
                   <TextInput
                     label='General Location'
+                    placeholder='General location'
                     value={formData.general_location ?? ''}
-                    disabled
+                    onChange={(e) => handleChange('general_location', e.target.value)}
                   />
-                </>
-              ) : (
-                <TextInput
-                  label='General Location'
-                  placeholder='General location'
-                  value={formData.general_location ?? ''}
-                  onChange={(e) => handleChange('general_location', e.target.value)}
-                />
-              )}
-            </Grid.Col>
+                )}
+              </Grid.Col>
+            )}
             <Grid.Col span={{ base: 12, md: 6 }}>
               {isFieldModeRestricted && !isFieldUnlocked('location') ? (
                 <>
@@ -880,9 +1140,10 @@ export const TurtleSheetsDataForm = forwardRef<
               ) : (
                 <TextInput
                   label='Location'
-                  placeholder='Specific location'
+                  placeholder={useBackendLocations ? 'e.g. Refound by John Doe along a trail' : 'Specific location'}
                   value={formData.location ?? ''}
                   onChange={(e) => handleChange('location', e.target.value)}
+                  description={useBackendLocations ? 'Free text for the Location column (refound notes, trail name, etc.)' : undefined}
                 />
               )}
             </Grid.Col>
