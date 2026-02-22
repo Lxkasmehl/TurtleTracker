@@ -6,7 +6,7 @@ import { getToken, TURTLE_API_BASE_URL } from './config';
 
 export interface TurtleSheetsData {
   primary_id?: string;
-  sheet_name?: string;
+  sheet_name?: string; // Which Google Sheets tab this turtle belongs to
   transmitter_id?: string;
   id?: string;
   id2?: string;
@@ -92,6 +92,28 @@ export interface CreateSheetResponse {
   success: boolean;
   message?: string;
   sheets?: string[];
+  error?: string;
+}
+
+export interface GenerateTurtleIdRequest {
+  sex: string; // M, F, J, or U
+  sheet_name: string;
+}
+
+export interface GenerateTurtleIdResponse {
+  success: boolean;
+  id?: string;
+  error?: string;
+}
+
+export interface TurtleNameEntry {
+  name: string;
+  primary_id: string;
+}
+
+export interface ListTurtleNamesResponse {
+  success: boolean;
+  names: TurtleNameEntry[];
   error?: string;
 }
 
@@ -246,6 +268,40 @@ export const generatePrimaryId = async (
   }
 };
 
+// Generate the next biology ID (ID column) based on sex: M/F/J/U + sequence number
+export const generateTurtleId = async (
+  data: GenerateTurtleIdRequest,
+  timeoutMs: number = 10000,
+): Promise<GenerateTurtleIdResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/generate-id`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate turtle ID');
+    }
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
 // List all available sheets
 export const listSheets = async (
   timeoutMs: number = 25000,
@@ -282,6 +338,22 @@ export const listSheets = async (
     }
     throw error;
   }
+};
+
+// List all turtle names across sheets (for duplicate-name validation)
+export const getTurtleNames = async (): Promise<ListTurtleNamesResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/turtle-names`, {
+    method: 'GET',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to list turtle names');
+  }
+  return await response.json();
 };
 
 // Create a new sheet with headers

@@ -47,6 +47,7 @@ interface MatchData {
 export default function AdminTurtleMatchPage() {
   const { role, authChecked } = useUser();
   const { imageId } = useParams<{ imageId: string }>();
+  const navigate = useNavigate();
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
@@ -63,6 +64,10 @@ export default function AdminTurtleMatchPage() {
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
+
+  const selectedMatchData = selectedMatch && matchData
+    ? matchData.matches.find((m) => m.turtle_id === selectedMatch)
+    : undefined;
 
   // Load sheets once when admin (avoids each TurtleSheetsDataForm calling listSheets)
   useEffect(() => {
@@ -667,8 +672,6 @@ export default function AdminTurtleMatchPage() {
                         ref={formRef}
                         initialData={sheetsData || undefined}
                         sheetName={sheetsData?.sheet_name}
-                        state={state}
-                        location={location}
                         primaryId={primaryId || undefined}
                         mode={sheetsData ? 'edit' : 'create'}
                         onSave={handleSaveSheetsData}
