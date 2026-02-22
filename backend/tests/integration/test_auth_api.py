@@ -41,11 +41,13 @@ def test_register_common_password_rejected(auth_url, integration_env):
     if not integration_env:
         pytest.skip("Set BACKEND_URL and AUTH_URL to run integration tests")
     url = f"{_auth_url(auth_url)}/auth/register"
+    # Use a password that meets complexity (upper, lower, digit, special, 10+ chars)
+    # but is in the common-password list so the auth backend rejects it as "too common"
     r = requests.post(
         url,
         json={
             "email": f"test-common-pw-{int(time.time())}@example.com",
-            "password": "Password123",
+            "password": "Password1!",
             "name": "Test",
         },
         timeout=10,
