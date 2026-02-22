@@ -1,0 +1,48 @@
+# Docker Compose for backend integration tests.
+# Run: docker compose -f docker-compose.integration.yml up -d --build
+# Then: cd backend && pytest tests/integration -v (with BACKEND_URL and AUTH_URL set)
+# Backend uses fixture data from backend/tests/fixture-data so tests have known state.
+
+services:
+  auth-backend:
+    build:
+      context: ./auth-backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      FRONTEND_URL: http://localhost
+      SESSION_SECRET: ${SESSION_SECRET:-test-session-secret}
+      JWT_SECRET: ${JWT_SECRET:-test-jwt-secret-key-for-integration-tests}
+    volumes:
+      - auth-data-integration:/app/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      FLASK_DEBUG: "false"
+      JWT_SECRET: ${JWT_SECRET:-test-jwt-secret-key-for-integration-tests}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      GOOGLE_SHEETS_CREDENTIALS_PATH: ${GOOGLE_SHEETS_CREDENTIALS_PATH:-/app/credentials/google-sheets-credentials.json}
+    volumes:
+      # Mount fixture data so integration tests see known review queue, turtles, flags
+      - ./backend/tests/fixture-data:/app/data
+      - ./backend/credentials:/app/credentials:ro
+    depends_on:
+      - auth-backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  auth-data-integration:

@@ -44,12 +44,12 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
     await navClick(page, 'Turtle Records');
     await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
 
-    const reviewBtn = page.locator('button:has-text("Review Matches")');
-    const count = await reviewBtn.count();
-    if (count > 0) {
-      await reviewBtn.first().click();
-      await expect(page.getByRole('dialog')).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Review Matches' })).toBeVisible();
+    const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
+    const hasItems = await tabPanel.getByText(/\d+ matches/).count() > 0;
+    if (hasItems) {
+      await tabPanel.getByText(/\d+ matches/).first().click();
+      await expect(page.getByRole('button', { name: /Back to list/ })).toBeVisible();
+      await expect(page.getByText('Uploaded Photo')).toBeVisible();
     } else {
       await expect(page.getByText('No pending reviews')).toBeVisible();
     }

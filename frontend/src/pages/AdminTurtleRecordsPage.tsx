@@ -84,9 +84,9 @@ export default function AdminTurtleRecordsPage() {
             </Tabs.Panel>
           </Tabs>
         </Stack>
-
-        <CreateNewTurtleModal size={isMobile ? '100%' : 'xl'} />
       </Container>
+
+      <CreateNewTurtleModal size={isMobile ? '100%' : 'xl'} />
     </AdminTurtleRecordsProvider>
   );
 }
