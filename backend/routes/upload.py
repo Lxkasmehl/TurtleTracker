@@ -3,6 +3,8 @@ Photo upload endpoint
 """
 
 import os
+import shutil
+import json
 import time
 import traceback
 from flask import request, jsonify
@@ -86,6 +88,12 @@ def register_upload_routes(app):
             location_hint_lat = request.form.get('location_hint_lat', type=float)
             location_hint_lon = request.form.get('location_hint_lon', type=float)
             location_hint_source = request.form.get('location_hint_source', '')  # 'gps' or 'manual'
+            # Optional: collected to lab / physical flag / digital flag (reminder + storage for release)
+            collected_to_lab = request.form.get('collected_to_lab', '').strip().lower()  # 'yes' | 'no'
+            physical_flag = request.form.get('physical_flag', '').strip().lower()  # 'yes' | 'no' | 'no_flag'
+            digital_flag_lat = request.form.get('digital_flag_lat', type=float)
+            digital_flag_lon = request.form.get('digital_flag_lon', type=float)
+            digital_flag_source = request.form.get('digital_flag_source', '').strip().lower()  # 'gps' | 'manual'
             
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
@@ -110,16 +118,26 @@ def register_upload_routes(app):
                 return jsonify({'error': 'Failed to save file'}), 500
             
             if user_role == 'admin':
-                # Admin: Process immediately; optionally restrict to one location (sheet/datasheet)
-                # match_sheet: sheet name from Google Sheets (e.g. "Location A"); empty = test against all
+                # Admin: create a packet (so we can add additional images on match page) then run search
+                request_id = f"admin_{int(time.time())}_{filename}"
+                packet_dir = os.path.join(manager_service.manager.review_queue_dir, request_id)
+                os.makedirs(packet_dir, exist_ok=True)
+                query_save_path = os.path.join(packet_dir, filename)
+                shutil.copy2(temp_path, query_save_path)
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+                additional_dir = os.path.join(packet_dir, 'additional_images')
+                os.makedirs(additional_dir, exist_ok=True)
+                with open(os.path.join(additional_dir, 'manifest.json'), 'w') as f:
+                    json.dump([], f)
                 match_sheet = (request.form.get('match_sheet') or '').strip() or None
-                matches = manager_service.manager.search_for_matches(temp_path, sheet_name=match_sheet)
+                matches = manager_service.manager.search_for_matches(query_save_path, sheet_name=match_sheet)
                 if matches is None:
                     matches = []
-                # Format matches for frontend
                 formatted_matches = []
                 for match in matches:
-                    # Convert .npz path to image path
                     npz_path = match.get('file_path', '') or ''
                     image_path = convert_npz_to_image_path(npz_path)
                     # Coerce distance to float (may be numpy scalar from faiss)
@@ -131,24 +149,18 @@ def register_upload_routes(app):
                         'turtle_id': match.get('site_id', 'Unknown') or 'Unknown',
                         'location': match.get('location', 'Unknown') or 'Unknown',
                         'distance': dist_val,
-                        'file_path': image_path,  # Now contains image path, not .npz path
+                        'file_path': image_path,
                         'filename': match.get('filename', '') or ''
                     })
-                
-                # Create a temporary request ID for this admin upload
-                request_id = f"admin_{int(time.time())}_{filename}"
-                
-                # Adjust message based on number of matches
                 if len(formatted_matches) > 0:
                     message = f'Photo processed successfully. {len(formatted_matches)} matches found.'
                 else:
                     message = 'Photo processed successfully. No matches found. You can create a new turtle.'
-                
                 return jsonify({
                     'success': True,
                     'request_id': request_id,
                     'matches': formatted_matches,
-                    'uploaded_image_path': temp_path,
+                    'uploaded_image_path': query_save_path,
                     'message': message
                 })
             
@@ -174,11 +186,47 @@ def register_upload_routes(app):
                     user_info['location_hint_lon'] = location_hint_lon
                     if location_hint_source in ('gps', 'manual'):
                         user_info['location_hint_source'] = location_hint_source
-                
+                if collected_to_lab in ('yes', 'no'):
+                    user_info['collected_to_lab'] = collected_to_lab
+                if physical_flag in ('yes', 'no', 'no_flag'):
+                    user_info['physical_flag'] = physical_flag
+                if digital_flag_lat is not None and digital_flag_lon is not None:
+                    user_info['digital_flag_lat'] = digital_flag_lat
+                    user_info['digital_flag_lon'] = digital_flag_lon
+                    if digital_flag_source in ('gps', 'manual'):
+                        user_info['digital_flag_source'] = digital_flag_source
+
                 request_id = manager_service.manager.create_review_packet(
                     temp_path,
                     user_info=user_info
                 )
+
+                # Optional: additional images (microhabitat, condition) uploaded in same request (multiple per type)
+                files_with_types = []
+                for key in list(request.files.keys()):
+                    if key.startswith('extra_') and key != 'file':
+                        rest = key.replace('extra_', '', 1).strip().lower()
+                        if rest.startswith('microhabitat'):
+                            typ = 'microhabitat'
+                        elif rest.startswith('condition'):
+                            typ = 'condition'
+                        else:
+                            typ = 'other'
+                        f = request.files[key]
+                        if f and f.filename:
+                            ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                            extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
+                            f.save(extra_temp)
+                            files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+                if files_with_types:
+                    manager_service.manager.add_additional_images_to_packet(request_id, files_with_types)
+                    for item in files_with_types:
+                        path = item.get('path')
+                        if path and os.path.isfile(path):
+                            try:
+                                os.remove(path)
+                            except OSError:
+                                pass
                 
                 return jsonify({
                     'success': True,

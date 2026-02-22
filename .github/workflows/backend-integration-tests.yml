@@ -1,0 +1,67 @@
+name: Backend Integration Tests
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths: ['backend/**', 'auth-backend/**', '.github/workflows/backend-integration-tests.yml', 'docker-compose.integration.yml']
+  pull_request:
+    branches: [main, master, develop]
+    paths: ['backend/**', 'auth-backend/**', '.github/workflows/backend-integration-tests.yml', 'docker-compose.integration.yml']
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env for Docker Compose
+        run: |
+          echo "JWT_SECRET=test-jwt-secret-key-for-integration-tests" >> .env
+          echo "SESSION_SECRET=test-session-secret" >> .env
+
+      - name: Build and start services (auth-backend + backend)
+        run: docker compose -f docker-compose.integration.yml up -d --build
+
+      - name: Wait for auth backend
+        run: |
+          n=0
+          until [ $n -ge 60 ]; do
+            if curl -sf http://localhost:3001/api/health > /dev/null; then break; fi
+            n=$((n+1)); sleep 1
+          done
+          [ $n -lt 60 ] || (echo "Auth backend did not become ready"; exit 1)
+
+      - name: Seed test users in auth backend
+        run: |
+          docker compose -f docker-compose.integration.yml exec -T \
+            -e E2E_ADMIN_EMAIL=admin@test.com \
+            -e E2E_ADMIN_PASSWORD=testpassword123 \
+            auth-backend node dist/scripts/seed-test-users.js
+
+      - name: Wait for Flask backend
+        run: |
+          n=0
+          until [ $n -ge 120 ]; do
+            if curl -sf http://localhost:5000/api/health > /dev/null; then break; fi
+            n=$((n+1)); sleep 1
+          done
+          [ $n -lt 120 ] || (echo "Flask backend did not become ready"; exit 1)
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: pip install -r requirements.txt
+
+      - name: Run integration tests
+        working-directory: ./backend
+        env:
+          BACKEND_URL: http://localhost:5000
+          AUTH_URL: http://localhost:3001/api
+          E2E_ADMIN_EMAIL: admin@test.com
+          E2E_ADMIN_PASSWORD: testpassword123
+        run: python -m pytest tests/integration -v --tb=short

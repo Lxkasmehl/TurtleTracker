@@ -1,0 +1,7 @@
+{
+  "collected_to_lab": "yes",
+  "physical_flag": "yes",
+  "digital_flag_lat": 39.0,
+  "digital_flag_lon": -95.7,
+  "digital_flag_source": "gps"
+}

@@ -4,7 +4,14 @@ import { notifications } from '@mantine/notifications';
 import { IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { validateFile } from '../utils/fileValidation';
 import { getCurrentLocation } from '../services/geolocation';
-import { uploadTurtlePhoto, type UploadPhotoResponse, type LocationHint } from '../services/api';
+import {
+  uploadTurtlePhoto,
+  type UploadPhotoResponse,
+  type LocationHint,
+  type UploadFlagOptions,
+  type UploadExtraFile,
+  type FindMetadata,
+} from '../services/api';
 import { useUser } from './useUser';
 import type { FileWithPath } from '../types/file';
 
@@ -34,6 +41,14 @@ interface UsePhotoUploadReturn {
   setLocationHint: (hint: LocationHint | null) => void;
   /** Request current GPS as location hint (community: permission flow) */
   requestLocationHint: () => Promise<void>;
+  /** Flag options (collected to lab, physical flag, digital flag) – community upload */
+  collectedToLab: 'yes' | 'no' | null;
+  setCollectedToLab: (v: 'yes' | 'no' | null) => void;
+  physicalFlag: 'yes' | 'no' | 'no_flag' | null;
+  setPhysicalFlag: (v: 'yes' | 'no' | 'no_flag' | null) => void;
+  /** Optional extra images (microhabitat, condition) – community upload */
+  extraFiles: UploadExtraFile[];
+  setExtraFiles: (files: UploadExtraFile[] | ((prev: UploadExtraFile[]) => UploadExtraFile[])) => void;
   handleDrop: (acceptedFiles: FileWithPath[]) => void;
   handleUpload: () => Promise<void>;
   handleRemove: () => void;
@@ -57,6 +72,9 @@ export function usePhotoUpload({
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationHint, setLocationHint] = useState<LocationHint | null>(null);
+  const [collectedToLab, setCollectedToLab] = useState<'yes' | 'no' | null>(null);
+  const [physicalFlag, setPhysicalFlag] = useState<'yes' | 'no' | 'no_flag' | null>(null);
+  const [extraFiles, setExtraFiles] = useState<UploadExtraFile[]>([]);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup interval on unmount
@@ -92,6 +110,9 @@ export function usePhotoUpload({
       setIsDuplicate(false);
       setPreviousUploadDate(null);
       setLocationHint(null);
+      setCollectedToLab(null);
+      setPhysicalFlag(null);
+      setExtraFiles([]);
       setLocationPermissionDenied(false);
 
       // Create preview
@@ -140,13 +161,28 @@ export function usePhotoUpload({
         'community';
       const userEmail = user?.email || 'anonymous@example.com';
 
+      const hasFlagData =
+        collectedToLab || physicalFlag || (locationHint && collectedToLab === 'yes');
+      const flagOptions: UploadFlagOptions | undefined =
+        hasFlagData && (userRole === 'community' || userRole === 'admin')
+          ? {
+              ...(collectedToLab && { collectedToLab }),
+              ...(physicalFlag && { physicalFlag }),
+              ...(locationHint && collectedToLab === 'yes' && {
+                digitalFlag: locationHint,
+              }),
+            }
+          : undefined;
+
       const response: UploadPhotoResponse = await uploadTurtlePhoto(
         file,
         userRole,
         userEmail,
         undefined,
         locationHint ?? undefined,
-        userRole === 'admin' ? (matchSheet ?? '') : undefined
+        userRole === 'admin' ? (matchSheet ?? '') : undefined,
+        flagOptions,
+        extraFiles.length > 0 ? extraFiles : undefined
       );
 
       // Clear interval and set to 100%
@@ -159,11 +195,26 @@ export function usePhotoUpload({
       if (response.success) {
         // Admin: Always navigate to match page (even if no matches found)
         if (userRole === 'admin' && response.request_id) {
-          // Save match data to localStorage for the match page
+          // Build find_metadata from upload so match page doesn't ask again for physical/digital flag
+          const find_metadata_from_upload: FindMetadata | undefined = hasFlagData
+            ? {
+                ...(collectedToLab && { collected_to_lab: collectedToLab }),
+                ...(physicalFlag && { physical_flag: physicalFlag }),
+                ...(locationHint &&
+                  collectedToLab === 'yes' && {
+                    digital_flag_lat: locationHint.latitude,
+                    digital_flag_lon: locationHint.longitude,
+                    digital_flag_source: locationHint.source,
+                  }),
+              }
+            : undefined;
           const matchData = {
             request_id: response.request_id,
             uploaded_image_path: response.uploaded_image_path || '',
             matches: response.matches || [], // Empty array if no matches
+            ...(find_metadata_from_upload && Object.keys(find_metadata_from_upload).length > 0 && {
+              find_metadata_from_upload,
+            }),
           };
           localStorage.setItem(`match_${response.request_id}`, JSON.stringify(matchData));
 
@@ -252,6 +303,9 @@ export function usePhotoUpload({
     setIsDuplicate(false);
     setPreviousUploadDate(null);
     setLocationHint(null);
+    setCollectedToLab(null);
+    setPhysicalFlag(null);
+    setExtraFiles([]);
   };
 
   return {
@@ -268,6 +322,12 @@ export function usePhotoUpload({
     locationHint,
     setLocationHint,
     requestLocationHint,
+    collectedToLab,
+    setCollectedToLab,
+    physicalFlag,
+    setPhysicalFlag,
+    extraFiles,
+    setExtraFiles,
     handleDrop,
     handleUpload,
     handleRemove,

@@ -26,6 +26,7 @@ import {
   IconShield,
   IconPhoto,
   IconUsers,
+  IconFlag,
 } from '@tabler/icons-react';
 import { useUser } from '../hooks/useUser';
 import { logout as apiLogout } from '../services/api';
@@ -60,6 +61,11 @@ export default function Navigation({ children }: NavigationProps) {
         icon: IconPhoto,
       });
       items.splice(2, 0, {
+        label: 'Release',
+        path: '/admin/release',
+        icon: IconFlag,
+      });
+      items.splice(3, 0, {
         label: 'User Management',
         path: '/admin/users',
         icon: IconUsers,
@@ -75,7 +81,7 @@ export default function Navigation({ children }: NavigationProps) {
     const baseBreakpoint = 1000; // Base breakpoint for customer view with normal name
 
     // Calculate item count based on role
-    const itemCount = role === 'admin' ? 5 : 3; // Admin has 2 extra items
+    const itemCount = role === 'admin' ? 6 : 3; // Admin has 3 extra items
 
     // Admin has 2 extra items, increase breakpoint by ~167px per extra item
     // This makes drawer appear earlier when there are more nav items
