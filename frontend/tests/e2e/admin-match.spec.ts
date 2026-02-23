@@ -74,7 +74,7 @@ test.describe('Admin Turtle Match', () => {
 
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
-    await expect(page.getByRole('dialog').getByLabel('Sheet / Location')).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('textbox', { name: 'Sheet / Location' })).toBeVisible();
   });
 
   test('Match page shows Additional photos (microhabitat / condition) section and add buttons', async ({
