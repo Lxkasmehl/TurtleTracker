@@ -79,55 +79,44 @@ export function useAdminTurtleMatch(
     const matchState = locationParts[0] || '';
     const matchLocationSpecific = locationParts.slice(1).join('/') || '';
 
-    try {
-      let response = await getTurtleSheetsData(turtleId);
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => abortController.abort(), 35000);
 
-      if (
-        !response.exists &&
-        matchState &&
-        (!response.data || Object.keys(response.data).length <= 3)
-      ) {
+    try {
+      let response: Awaited<ReturnType<typeof getTurtleSheetsData>>;
+      if (matchState) {
         try {
           response = await getTurtleSheetsData(
             turtleId,
             matchState,
             matchState,
             matchLocationSpecific,
+            abortController.signal,
           );
         } catch {
-          // Ignore
+          response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
         }
+      } else {
+        response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
       }
 
       if (response.success && response.data) {
-        const hasRealData =
-          response.exists ||
-          !!(
-            response.data.name ||
-            response.data.species ||
-            response.data.sex ||
-            response.data.transmitter_id ||
-            response.data.sheet_name ||
-            response.data.date_1st_found ||
-            response.data.notes ||
-            Object.keys(response.data).length > 3
-          );
-
-        if (hasRealData) {
+        if (response.exists) {
           setSheetsData(response.data);
           setPrimaryId(response.data.primary_id || turtleId);
         } else {
           setPrimaryId(turtleId);
-          setSheetsData({ id: turtleId });
+          setSheetsData({ primary_id: turtleId });
         }
       } else {
         setPrimaryId(turtleId);
-        setSheetsData({ id: turtleId });
+        setSheetsData({ primary_id: turtleId });
       }
     } catch {
       setPrimaryId(turtleId);
-      setSheetsData({ id: turtleId });
+      setSheetsData({ primary_id: turtleId });
     } finally {
+      window.clearTimeout(timeoutId);
       setLoadingTurtleData(false);
     }
   };

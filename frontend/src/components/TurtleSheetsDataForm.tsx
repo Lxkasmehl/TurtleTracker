@@ -149,6 +149,8 @@ export const TurtleSheetsDataForm = forwardRef<
               primaryId={primaryId}
               hintLocationFromCommunity={hintLocationFromCommunity}
               hintCoordinates={hintCoordinates}
+              errors={hook.errors}
+              mode={mode}
             />
           </Grid>
 

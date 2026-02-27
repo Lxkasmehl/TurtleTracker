@@ -2,10 +2,38 @@
 Google Sheets API endpoints
 """
 
+import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from flask import request, jsonify
 from auth import require_admin
 from services.manager_service import get_sheets_service
+
+# Timeout for single attempt to find sheet + get turtle data (avoids hanging on SSL/slow API)
+SHEETS_TURTLE_DATA_TIMEOUT_SEC = 25
+
+
+def _is_ssl_or_connection_error(e):
+    """True if the exception looks like an SSL or connection flake (retry after reinit)."""
+    msg = (str(e) or '').lower()
+    return (
+        'ssl' in msg
+        or 'decryption_failed' in msg
+        or 'wrong_version' in msg
+        or 'incompleteread' in msg
+        or 'bad record mac' in msg
+    )
+
+
+def _fetch_turtle_sheets_data_impl(service, primary_id, sheet_name_arg, state, location):
+    """Run in thread: find sheet (if needed) and get turtle data. Returns (sheet_name or None, turtle_data or None)."""
+    sn = (sheet_name_arg or '').strip()
+    if not sn:
+        sn = service.find_turtle_sheet(primary_id)
+    if not sn:
+        return None, None
+    data = service.get_turtle_data(primary_id, sn, state, location)
+    return sn, data
 
 
 def register_sheets_routes(app):
@@ -17,7 +45,7 @@ def register_sheets_routes(app):
         """
         Get turtle data from Google Sheets by primary ID (Admin only)
         If sheet_name is not provided, automatically finds the sheet containing the turtle.
-        If turtle doesn't exist, returns empty data structure (for new turtles)
+        Uses a timeout so the request cannot hang on slow/SSL-flaky API calls.
         """
         try:
             sheet_name = request.args.get('sheet_name', '')
@@ -28,63 +56,56 @@ def register_sheets_routes(app):
             if not service:
                 return jsonify({'error': 'Google Sheets service not configured'}), 503
             
-            # If sheet_name is not provided, try to find it automatically
-            if not sheet_name or not sheet_name.strip():
+            result_sheet = None
+            result_data = None
+            for attempt in range(2):
                 try:
-                    sheet_name = service.find_turtle_sheet(primary_id)
-                except Exception as find_error:
-                    print(f"Error finding turtle sheet for {primary_id}: {find_error}")
-                    sheet_name = None
-                
-                if not sheet_name:
-                    # Turtle doesn't exist in any sheet - return empty structure for new turtle (do not pre-fill general_location/location from state/location)
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(
+                            _fetch_turtle_sheets_data_impl,
+                            service, primary_id, sheet_name, state, location
+                        )
+                        result_sheet, result_data = future.result(timeout=SHEETS_TURTLE_DATA_TIMEOUT_SEC)
+                    break
+                except FuturesTimeoutError:
+                    print(f"Timeout loading turtle data for {primary_id} (attempt {attempt + 1}/2)")
+                    if attempt == 0:
+                        try:
+                            service._reinitialize_service()
+                            time.sleep(1.0)
+                        except Exception as reinit_err:
+                            print(f"Reinit failed: {reinit_err}")
+                        continue
+                    print("Second attempt timed out; returning minimal data so client is not stuck.")
                     return jsonify({
                         'success': True,
-                        'data': {
-                            'id': primary_id,  # Use the provided primary_id
-                        },
+                        'data': {'primary_id': primary_id},
                         'exists': False
                     })
+                except Exception as e:
+                    print(f"Error in turtle sheets data for {primary_id}: {e}")
+                    if attempt == 0 and _is_ssl_or_connection_error(e):
+                        try:
+                            service._reinitialize_service()
+                            time.sleep(1.0)
+                        except Exception as reinit_err:
+                            print(f"Reinit failed: {reinit_err}")
+                        continue
+                    result_sheet = None
+                    result_data = None
+                    break
             
-            # Ensure sheet_name is not empty before calling get_turtle_data
-            if not sheet_name or not sheet_name.strip():
+            if result_data:
                 return jsonify({
                     'success': True,
-                    'data': {
-                        'id': primary_id,
-                    },
-                    'exists': False
-                })
-            
-            # Try to get turtle data, but handle errors gracefully
-            try:
-                turtle_data = service.get_turtle_data(primary_id, sheet_name, state, location)
-            except Exception as get_error:
-                print(f"Error getting turtle data for {primary_id} from sheet {sheet_name}: {get_error}")
-                # If we can't get the data (e.g., SSL error), return empty structure
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'id': primary_id,
-                    },
-                    'exists': False
-                })
-            
-            if turtle_data:
-                return jsonify({
-                    'success': True,
-                    'data': turtle_data,
+                    'data': result_data,
                     'exists': True
                 })
-            else:
-                # Turtle doesn't exist yet - return empty structure for new turtle
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'id': primary_id,  # Use the provided primary_id
-                    },
-                    'exists': False
-                })
+            return jsonify({
+                'success': True,
+                'data': {'primary_id': primary_id},
+                'exists': False
+            })
         
         except ValueError as e:
             # Handle validation errors (e.g., empty sheet_name)
@@ -567,47 +588,60 @@ def register_sheets_routes(app):
 
             all_names = []
             for sheet in sheets_to_search:
-                try:
-                    service._ensure_primary_id_column(sheet)
-                    escaped_sheet = sheet
-                    if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
-                        escaped_sheet = f"'{sheet}'"
-                    range_name = f"{escaped_sheet}!A:Z"
-                    result = service.service.spreadsheets().values().get(
-                        spreadsheetId=service.spreadsheet_id,
-                        range=range_name
-                    ).execute()
+                sheet_ok = False
+                for name_attempt in range(2):
+                    try:
+                        service._ensure_primary_id_column(sheet)
+                        escaped_sheet = sheet
+                        if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
+                            escaped_sheet = f"'{sheet}'"
+                        range_name = f"{escaped_sheet}!A:Z"
+                        result = service.service.spreadsheets().values().get(
+                            spreadsheetId=service.spreadsheet_id,
+                            range=range_name
+                        ).execute()
 
-                    values = result.get('values', [])
-                    if len(values) < 2:
-                        continue
+                        values = result.get('values', [])
+                        if len(values) < 2:
+                            sheet_ok = True
+                            break
 
-                    headers = values[0]
-                    column_indices = {}
-                    for idx, header in enumerate(headers):
-                        if header and header.strip():
-                            column_indices[header.strip()] = idx
+                        headers = values[0]
+                        column_indices = {}
+                        for idx, header in enumerate(headers):
+                            if header and header.strip():
+                                column_indices[header.strip()] = idx
 
-                    primary_id_idx = column_indices.get('Primary ID')
-                    name_idx = column_indices.get('Name')
-                    if primary_id_idx is None and 'ID' in column_indices:
-                        primary_id_idx = column_indices.get('ID')
-                    if name_idx is None:
-                        continue
+                        primary_id_idx = column_indices.get('Primary ID')
+                        name_idx = column_indices.get('Name')
+                        if primary_id_idx is None and 'ID' in column_indices:
+                            primary_id_idx = column_indices.get('ID')
+                        if name_idx is None:
+                            sheet_ok = True
+                            break
 
-                    for row_data in values[1:]:
-                        if not row_data:
+                        for row_data in values[1:]:
+                            if not row_data:
+                                continue
+                            max_idx = max(primary_id_idx if primary_id_idx is not None else -1, name_idx)
+                            if len(row_data) <= max_idx:
+                                continue
+                            primary_id = (row_data[primary_id_idx] or '').strip() if primary_id_idx is not None else ''
+                            name = (row_data[name_idx] or '').strip() if name_idx is not None else ''
+                            if primary_id and name:
+                                all_names.append({'name': name, 'primary_id': primary_id})
+                        sheet_ok = True
+                        break
+                    except Exception as e:
+                        print(f"Error reading sheet {sheet} for turtle names: {e}")
+                        if name_attempt == 0 and _is_ssl_or_connection_error(e):
+                            try:
+                                service._reinitialize_service()
+                                time.sleep(1.0)
+                            except Exception as reinit_err:
+                                print(f"Reinit failed: {reinit_err}")
                             continue
-                        max_idx = max(primary_id_idx if primary_id_idx is not None else -1, name_idx)
-                        if len(row_data) <= max_idx:
-                            continue
-                        primary_id = (row_data[primary_id_idx] or '').strip() if primary_id_idx is not None else ''
-                        name = (row_data[name_idx] or '').strip() if name_idx is not None else ''
-                        if primary_id and name:
-                            all_names.append({'name': name, 'primary_id': primary_id})
-                except Exception as e:
-                    print(f"Error reading sheet {sheet} for turtle names: {e}")
-                    continue
+                        break
 
             return jsonify({
                 'success': True,

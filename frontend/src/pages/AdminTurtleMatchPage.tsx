@@ -110,69 +110,54 @@ export default function AdminTurtleMatchPage() {
     setSelectedMatch(turtleId);
     setLoadingTurtleData(true);
 
-    // Get match data to extract location for sheet name
     const match = matchData?.matches.find((m) => m.turtle_id === turtleId);
     const matchLocation = match?.location || '';
     const locationParts = matchLocation.split('/');
     const matchState = locationParts[0] || '';
     const matchLocationSpecific = locationParts.slice(1).join('/') || '';
 
-    try {
-      // First try without sheet name (backend will auto-find)
-      let response = await getTurtleSheetsData(turtleId);
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => abortController.abort(), 35000);
 
-      // If auto-find failed and we have a match location, try with sheet name
-      if (
-        !response.exists &&
-        matchState &&
-        (!response.data || Object.keys(response.data).length <= 3)
-      ) {
+    try {
+      // Prefer request WITH sheet name when we have it from the match – backend then skips
+      // slow find_turtle_sheet (searching all sheets) and loads data directly. Much faster.
+      let response: Awaited<ReturnType<typeof getTurtleSheetsData>>;
+      if (matchState) {
         try {
           response = await getTurtleSheetsData(
             turtleId,
             matchState,
             matchState,
             matchLocationSpecific,
+            abortController.signal,
           );
         } catch {
-          // Ignore, use first response
+          response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
         }
+      } else {
+        response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
       }
 
       if (response.success && response.data) {
-        const hasRealData =
-          response.exists ||
-          response.data.name ||
-          response.data.species ||
-          response.data.sex ||
-          response.data.transmitter_id ||
-          response.data.sheet_name ||
-          response.data.date_1st_found ||
-          response.data.notes ||
-          Object.keys(response.data).length > 3;
-
-        if (hasRealData) {
+        if (response.exists) {
           setSheetsData(response.data);
           setPrimaryId(response.data.primary_id || turtleId);
         } else {
           setPrimaryId(turtleId);
           setSheetsData({
-            id: turtleId,
-            // Do not pre-fill general_location or location from match – user fills these
+            primary_id: turtleId,
           });
         }
       } else {
         setPrimaryId(turtleId);
-        setSheetsData({
-          id: turtleId,
-        });
+        setSheetsData({ primary_id: turtleId });
       }
     } catch {
       setPrimaryId(turtleId);
-      setSheetsData({
-        id: turtleId,
-      });
+      setSheetsData({ primary_id: turtleId });
     } finally {
+      window.clearTimeout(timeoutId);
       setLoadingTurtleData(false);
     }
   };

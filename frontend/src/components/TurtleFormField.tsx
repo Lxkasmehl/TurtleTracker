@@ -20,6 +20,8 @@ export interface TurtleFormFieldProps {
   isFieldModeRestricted: boolean;
   isFieldUnlocked: (field: keyof TurtleSheetsData) => boolean;
   requestUnlock: (field: keyof TurtleSheetsData) => void;
+  disabled?: boolean;
+  error?: string;
 }
 
 export function TurtleFormField({
@@ -34,6 +36,8 @@ export function TurtleFormField({
   isFieldModeRestricted,
   isFieldUnlocked,
   requestUnlock,
+  disabled,
+  error,
 }: TurtleFormFieldProps) {
   const locked = isFieldModeRestricted && !isFieldUnlocked(field);
 
@@ -55,6 +59,7 @@ export function TurtleFormField({
           value={value}
           disabled
           description={description}
+          error={error}
         />
       </>
     );
@@ -72,6 +77,8 @@ export function TurtleFormField({
         value={value}
         onChange={(v) => onChange(v || '')}
         description={description}
+        disabled={disabled}
+        error={error}
       />
     );
   }
@@ -83,6 +90,8 @@ export function TurtleFormField({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       description={description}
+      disabled={disabled}
+      error={error}
     />
   );
 }
