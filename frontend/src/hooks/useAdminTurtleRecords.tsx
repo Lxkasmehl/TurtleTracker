@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getReviewQueue,
+  getReviewPacket,
   approveReview,
   deleteReviewItem,
   getTurtleSheetsData,
@@ -91,6 +92,25 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
       });
     } finally {
       if (isInitial) setQueueLoading(false);
+    }
+  };
+
+  const refreshQueueItem = async (requestId: string) => {
+    try {
+      const { item } = await getReviewPacket(requestId);
+      setQueueItems((prev) =>
+        prev.map((it) => (it.request_id === requestId ? item : it)),
+      );
+      setSelectedItem((prev) =>
+        prev?.request_id === requestId ? item : prev,
+      );
+    } catch (error) {
+      console.error('Error refreshing queue item:', error);
+      notifications.show({
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'Failed to refresh item',
+        color: 'red',
+      });
     }
   };
 
@@ -586,5 +606,6 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
     closeDeleteModal,
     clearSelectedItem,
     setSelectedSheetFilterAndLoad,
+    refreshQueueItem,
   };
 }

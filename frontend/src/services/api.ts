@@ -42,6 +42,8 @@ export {
   clearReleaseFlag,
   getImageUrl,
   getTurtleImages,
+  getTurtlePrimariesBatch,
+  uploadTurtleAdditionalImages,
   deleteTurtleAdditionalImage,
 } from './api/turtle';
 export type {

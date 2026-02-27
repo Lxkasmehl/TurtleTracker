@@ -417,6 +417,40 @@ class TurtleManager:
             json.dump(new_manifest, f)
         return True, None
 
+    def add_additional_images_to_turtle(self, turtle_id, files_with_types, sheet_name=None):
+        """
+        Add extra images (e.g. microhabitat, condition) to an existing turtle folder.
+        files_with_types: list of dicts with keys: path (str), type (str), timestamp (optional ISO str).
+        Returns (True, "OK") on success, (False, error_message) on failure.
+        """
+        turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
+        if not turtle_dir or not os.path.isdir(turtle_dir):
+            return False, "Turtle folder not found"
+        additional_dir = os.path.join(turtle_dir, 'additional_images')
+        os.makedirs(additional_dir, exist_ok=True)
+        manifest_path = os.path.join(additional_dir, 'manifest.json')
+        manifest = []
+        if os.path.exists(manifest_path):
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+        for item in files_with_types:
+            src = item.get('path')
+            typ = (item.get('type') or 'other').lower()
+            if typ not in ('microhabitat', 'condition', 'other'):
+                typ = 'other'
+            ts = item.get('timestamp') or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            if not src or not os.path.isfile(src):
+                continue
+            ext = os.path.splitext(src)[1] or '.jpg'
+            safe_name = f"{typ}_{int(time.time())}_{os.path.basename(src)}"
+            safe_name = "".join(c for c in safe_name if c.isalnum() or c in '._-')
+            dest = os.path.join(additional_dir, safe_name)
+            shutil.copy2(src, dest)
+            manifest.append({"filename": safe_name, "type": typ, "timestamp": ts})
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+        return True, "OK"
+
     # --- NEW: SEARCH & OBSERVATION LOGIC ---
 
     def search_for_matches(self, query_image_path, sheet_name=None):
@@ -661,27 +695,41 @@ class TurtleManager:
                 meta_path = os.path.join(target_dir, 'find_metadata.json')
                 with open(meta_path, 'w') as f:
                     json.dump(find_metadata, f)
-            # Copy additional_images from packet to turtle's additional_images folder
+            # Merge additional_images from packet into turtle's additional_images folder (do not overwrite existing)
             packet_dir = os.path.join(self.review_queue_dir, request_id)
             if os.path.isdir(packet_dir):
                 src_additional = os.path.join(packet_dir, 'additional_images')
                 if os.path.isdir(src_additional):
                     dest_additional = os.path.join(target_dir, 'additional_images')
                     os.makedirs(dest_additional, exist_ok=True)
-                    manifest_path = os.path.join(src_additional, 'manifest.json')
-                    if os.path.isfile(manifest_path):
-                        with open(manifest_path, 'r') as f:
-                            manifest = json.load(f)
-                        for entry in manifest:
+                    dest_manifest_path = os.path.join(dest_additional, 'manifest.json')
+                    existing_manifest = []
+                    if os.path.isfile(dest_manifest_path):
+                        try:
+                            with open(dest_manifest_path, 'r') as f:
+                                existing_manifest = json.load(f)
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                    existing_filenames = {e.get('filename') for e in existing_manifest if e.get('filename')}
+                    src_manifest_path = os.path.join(src_additional, 'manifest.json')
+                    if os.path.isfile(src_manifest_path):
+                        try:
+                            with open(src_manifest_path, 'r') as f:
+                                packet_manifest = json.load(f)
+                        except (json.JSONDecodeError, OSError):
+                            packet_manifest = []
+                        for entry in packet_manifest:
                             fn = entry.get('filename')
                             if fn and os.path.isfile(os.path.join(src_additional, fn)):
                                 shutil.copy2(
                                     os.path.join(src_additional, fn),
                                     os.path.join(dest_additional, fn)
                                 )
-                        dest_manifest = os.path.join(dest_additional, 'manifest.json')
-                        with open(dest_manifest, 'w') as f:
-                            json.dump(manifest, f)
+                                if fn not in existing_filenames:
+                                    existing_manifest.append(entry)
+                                    existing_filenames.add(fn)
+                        with open(dest_manifest_path, 'w') as f:
+                            json.dump(existing_manifest, f)
 
         # Clean up the review packet (only if it exists in review queue)
         if os.path.exists(packet_dir):

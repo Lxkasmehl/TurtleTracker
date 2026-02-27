@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react';
 import {
+  Box,
   Button,
   Card,
   Center,
   Divider,
   Grid,
+  Group,
+  Image,
   Paper,
   ScrollArea,
   Select,
@@ -11,12 +15,22 @@ import {
   Text,
   TextInput,
 } from '@mantine/core';
-import { IconDatabase, IconMapPin, IconSearch } from '@tabler/icons-react';
+import { IconDatabase, IconMapPin, IconPhoto, IconSearch } from '@tabler/icons-react';
+import { getImageUrl, getTurtleImages, getTurtlePrimariesBatch, type TurtleImagesResponse } from '../../services/api';
 import { TurtleSheetsDataForm } from '../../components/TurtleSheetsDataForm';
+import { AdditionalImagesSection } from '../../components/AdditionalImagesSection';
 import { useAdminTurtleRecordsContext } from './AdminTurtleRecordsContext';
+
+function turtleKey(turtle: { primary_id?: string | null; id?: string | null; sheet_name?: string | null }) {
+  const id = turtle.primary_id || turtle.id || '';
+  const sheet = turtle.sheet_name ?? '';
+  return `${id}|${sheet}`;
+}
 
 export function SheetsBrowserTab() {
   const ctx = useAdminTurtleRecordsContext();
+  const [turtleImages, setTurtleImages] = useState<TurtleImagesResponse | null>(null);
+  const [primaryImages, setPrimaryImages] = useState<Record<string, string | null>>({});
   const {
     selectedSheetFilter,
     sheetsListLoading,
@@ -32,6 +46,45 @@ export function SheetsBrowserTab() {
     handleSaveTurtleFromBrowser: onSaveTurtle,
     setSelectedSheetFilterAndLoad: onSheetFilterChange,
   } = ctx;
+
+  const turtleId = selectedTurtle?.primary_id || selectedTurtle?.id;
+  const sheetName = selectedTurtle?.sheet_name ?? null;
+
+  useEffect(() => {
+    if (!turtleId) {
+      setTurtleImages(null);
+      return;
+    }
+    getTurtleImages(turtleId, sheetName)
+      .then(setTurtleImages)
+      .catch(() => setTurtleImages(null));
+  }, [turtleId, sheetName]);
+
+  // Load primary (plastron) images for the turtle list so we can show them in cards
+  useEffect(() => {
+    if (filteredTurtles.length === 0) {
+      setPrimaryImages({});
+      return;
+    }
+    const turtles = filteredTurtles.map((t) => ({
+      turtle_id: t.primary_id || t.id || '',
+      sheet_name: t.sheet_name ?? null,
+    })).filter((t) => t.turtle_id);
+    if (turtles.length === 0) {
+      setPrimaryImages({});
+      return;
+    }
+    getTurtlePrimariesBatch(turtles)
+      .then((res) => {
+        const map: Record<string, string | null> = {};
+        res.images.forEach((img) => {
+          const key = `${img.turtle_id}|${img.sheet_name ?? ''}`;
+          map[key] = img.primary;
+        });
+        setPrimaryImages(map);
+      })
+      .catch(() => setPrimaryImages({}));
+  }, [filteredTurtles]);
 
   return (
     <Grid gutter='lg'>
@@ -100,48 +153,73 @@ export function SheetsBrowserTab() {
                     }}
                     onClick={() => setSelectedTurtle(turtle)}
                   >
-                    <Stack gap={4}>
-                      {turtle.name ? (
-                        <Text fw={600} size='md' c='blue'>
-                          {turtle.name}
-                        </Text>
-                      ) : (
-                        <Text fw={500} size='sm' c='dimmed' fs='italic'>
-                          No name
-                        </Text>
-                      )}
+                    <Group justify='space-between' align='flex-start' wrap='nowrap' gap='sm'>
+                      <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                        {turtle.name ? (
+                          <Text fw={600} size='md' c='blue'>
+                            {turtle.name}
+                          </Text>
+                        ) : (
+                          <Text fw={500} size='sm' c='dimmed' fs='italic'>
+                            No name
+                          </Text>
+                        )}
 
-                      <Stack gap={2}>
-                        {turtle.location && (
-                          <Text size='sm' fw={500}>
-                            📍 {turtle.location}
-                          </Text>
-                        )}
-                        {turtle.species && (
-                          <Text size='sm' c='dimmed'>
-                            🐢 {turtle.species}
-                          </Text>
-                        )}
-                      </Stack>
+                        <Stack gap={2}>
+                          {turtle.location && (
+                            <Text size='sm' fw={500}>
+                              📍 {turtle.location}
+                            </Text>
+                          )}
+                          {turtle.species && (
+                            <Text size='sm' c='dimmed'>
+                              🐢 {turtle.species}
+                            </Text>
+                          )}
+                        </Stack>
 
-                      <Stack gap={2} mt='xs'>
-                        {turtle.primary_id && (
-                          <Text size='xs' c='dimmed'>
-                            Primary ID: <strong>{turtle.primary_id}</strong>
-                          </Text>
-                        )}
-                        {turtle.id && turtle.id !== turtle.primary_id && (
-                          <Text size='xs' c='dimmed'>
-                            ID: {turtle.id}
-                          </Text>
-                        )}
-                        {!turtle.primary_id && !turtle.id && (
-                          <Text size='xs' c='red' fs='italic'>
-                            No ID
-                          </Text>
-                        )}
+                        <Stack gap={2} mt='xs'>
+                          {turtle.primary_id && (
+                            <Text size='xs' c='dimmed'>
+                              Primary ID: <strong>{turtle.primary_id}</strong>
+                            </Text>
+                          )}
+                          {turtle.id && turtle.id !== turtle.primary_id && (
+                            <Text size='xs' c='dimmed'>
+                              ID: {turtle.id}
+                            </Text>
+                          )}
+                          {!turtle.primary_id && !turtle.id && (
+                            <Text size='xs' c='red' fs='italic'>
+                              No ID
+                            </Text>
+                          )}
+                        </Stack>
                       </Stack>
-                    </Stack>
+                      <Box
+                        style={{
+                          width: 112,
+                          flexShrink: 0,
+                          borderRadius: 6,
+                          overflow: 'hidden',
+                          backgroundColor: 'var(--mantine-color-gray-1)',
+                          minHeight: 84,
+                        }}
+                      >
+                        {primaryImages[turtleKey(turtle)] ? (
+                          <Image
+                            src={getImageUrl(primaryImages[turtleKey(turtle)]!)}
+                            alt='Plastron'
+                            fit='contain'
+                            style={{ width: '100%', height: 'auto', display: 'block' }}
+                          />
+                        ) : (
+                          <Center w='100%' h='100%' style={{ minHeight: 84 }}>
+                            <IconPhoto size={28} stroke={1.2} style={{ opacity: 0.4 }} />
+                          </Center>
+                        )}
+                      </Box>
+                    </Group>
                   </Card>
                 ))}
               </Stack>
@@ -152,9 +230,27 @@ export function SheetsBrowserTab() {
 
       <Grid.Col span={{ base: 12, md: 8 }}>
         {selectedTurtle ? (
-          <Paper shadow='sm' p='md' radius='md' withBorder>
-            <ScrollArea h={700}>
-              <TurtleSheetsDataForm
+          <Stack gap='md'>
+            {turtleId && (
+              <AdditionalImagesSection
+                title='Turtle photos (Microhabitat / Condition)'
+                images={(turtleImages?.additional ?? []).map((a) => ({
+                  imagePath: a.path,
+                  filename: a.path.split(/[/\\]/).pop() ?? a.path,
+                  type: a.type,
+                }))}
+                turtleId={turtleId}
+                sheetName={sheetName}
+                onRefresh={async () => {
+                  if (!turtleId) return;
+                  const res = await getTurtleImages(turtleId, sheetName);
+                  setTurtleImages(res);
+                }}
+              />
+            )}
+            <Paper shadow='sm' p='md' radius='md' withBorder>
+              <ScrollArea h={700}>
+                <TurtleSheetsDataForm
                 initialData={selectedTurtle}
                 sheetName={selectedTurtle.sheet_name}
                 initialAvailableSheets={
@@ -168,8 +264,9 @@ export function SheetsBrowserTab() {
                 mode='edit'
                 onSave={onSaveTurtle}
               />
-            </ScrollArea>
-          </Paper>
+              </ScrollArea>
+            </Paper>
+          </Stack>
         ) : (
           <Paper shadow='sm' p='xl' radius='md' withBorder>
             <Center py='xl'>

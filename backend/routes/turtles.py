@@ -4,8 +4,11 @@ Turtle data endpoints (e.g. list images for a turtle folder)
 
 import os
 import json
+import time
 from flask import request, jsonify
+from werkzeug.utils import secure_filename
 from auth import require_admin
+from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 from services import manager_service
 
 
@@ -94,6 +97,42 @@ def register_turtle_routes(app):
             'loose': loose,
         })
 
+    @app.route('/api/turtles/images/primaries', methods=['POST'])
+    @require_admin
+    def get_turtle_primaries_batch():
+        """
+        Get primary (plastron) image path for multiple turtles in one request.
+        Body: { "turtles": [ { "turtle_id": "...", "sheet_name": "..." | null }, ... ] }
+        Returns: { "images": [ { "turtle_id", "sheet_name", "primary": path | null }, ... ] }
+        """
+        if not manager_service.manager_ready.wait(timeout=5):
+            return jsonify({'error': 'TurtleManager is still initializing'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager not available'}), 500
+        data = request.get_json(silent=True) or {}
+        turtles = data.get('turtles') or []
+        if not isinstance(turtles, list):
+            return jsonify({'error': 'turtles must be an array'}), 400
+        manager = manager_service.manager
+        results = []
+        for item in turtles[:200]:  # limit to avoid overload
+            tid = (item.get('turtle_id') or '').strip()
+            sheet = (item.get('sheet_name') or '').strip() or None
+            if not tid:
+                results.append({'turtle_id': tid, 'sheet_name': sheet, 'primary': None})
+                continue
+            turtle_dir = manager._get_turtle_folder(tid, sheet)
+            primary_path = None
+            if turtle_dir and os.path.isdir(turtle_dir):
+                ref_dir = os.path.join(turtle_dir, 'ref_data')
+                if os.path.isdir(ref_dir):
+                    for f in sorted(os.listdir(ref_dir)):
+                        if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                            primary_path = os.path.join(ref_dir, f)
+                            break
+            results.append({'turtle_id': tid, 'sheet_name': sheet, 'primary': primary_path})
+        return jsonify({'images': results})
+
     @app.route('/api/turtles/images/additional', methods=['DELETE'])
     @require_admin
     def delete_turtle_additional_image():
@@ -118,3 +157,73 @@ def register_turtle_routes(app):
         if not success:
             return jsonify({'error': err or 'Failed to delete image'}), 400
         return jsonify({'success': True})
+
+    @app.route('/api/turtles/images/additional', methods=['POST'])
+    @require_admin
+    def add_turtle_additional_images():
+        """
+        Add microhabitat/condition images to an existing turtle folder (Admin only).
+        Form: file_0, type_0, file_1, type_1, ... (type: microhabitat | condition | other), optional sheet_name.
+        """
+        if not manager_service.manager_ready.wait(timeout=5):
+            return jsonify({'error': 'TurtleManager is still initializing'}), 503
+        if manager_service.manager is None:
+            return jsonify({'error': 'TurtleManager not available'}), 500
+        turtle_id = (request.form.get('turtle_id') or request.args.get('turtle_id') or '').strip()
+        sheet_name = (request.form.get('sheet_name') or request.args.get('sheet_name') or '').strip() or None
+        if not turtle_id:
+            return jsonify({'error': 'turtle_id required'}), 400
+        files_with_types = []
+        try:
+            for key in list(request.files.keys()):
+                if not key.startswith('file_'):
+                    continue
+                f = request.files[key]
+                if not f or not f.filename:
+                    continue
+                idx = key.replace('file_', '')
+                typ = (request.form.get(f'type_{idx}') or 'other').strip().lower()
+                if typ not in ('microhabitat', 'condition', 'other'):
+                    typ = 'other'
+                if not allowed_file(f.filename):
+                    continue
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(0)
+                if size > MAX_FILE_SIZE:
+                    continue
+                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                temp_path = os.path.join(
+                    UPLOAD_FOLDER,
+                    f"turtle_extra_{turtle_id}_{idx}_{int(time.time())}{ext}".replace(os.sep, '_'),
+                )
+                f.save(temp_path)
+                files_with_types.append({
+                    'path': temp_path,
+                    'type': typ,
+                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                })
+            if not files_with_types:
+                return jsonify({'error': 'No valid image files provided'}), 400
+            success, msg = manager_service.manager.add_additional_images_to_turtle(
+                turtle_id, files_with_types, sheet_name
+            )
+            for item in files_with_types:
+                p = item.get('path')
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            if not success:
+                return jsonify({'error': msg or 'Failed to add images'}), 400
+            return jsonify({'success': True, 'message': f'Added {len(files_with_types)} image(s).'})
+        except Exception as e:
+            for item in files_with_types:
+                p = item.get('path')
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            return jsonify({'error': str(e)}), 500

@@ -13,6 +13,7 @@ import {
   Stack,
   Text,
 } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import {
   IconCheck,
   IconList,
@@ -21,14 +22,16 @@ import {
   IconPlus,
   IconTrash,
 } from '@tabler/icons-react';
-import { getImageUrl } from '../../services/api';
+import { getImageUrl, getTurtleImages, type TurtleImagesResponse } from '../../services/api';
 import { TurtleSheetsDataForm } from '../../components/TurtleSheetsDataForm';
 import { MapDisplay } from '../../components/MapDisplay';
 import { DeleteQueueItemModal } from './DeleteQueueItemModal';
+import { AdditionalImagesSection } from '../../components/AdditionalImagesSection';
 import { useAdminTurtleRecordsContext } from './AdminTurtleRecordsContext';
 
 export function ReviewQueueTab() {
   const ctx = useAdminTurtleRecordsContext();
+  const [selectedCandidateTurtleImages, setSelectedCandidateTurtleImages] = useState<TurtleImagesResponse | null>(null);
   const {
     queueLoading,
     queueItems,
@@ -54,7 +57,23 @@ export function ReviewQueueTab() {
     handleSaveAndApprove: onSaveAndApprove,
     handleCombinedButtonClick: onCombinedButtonClick,
     handleCreateNewTurtle: onCreateNewTurtle,
+    refreshQueueItem,
   } = ctx;
+
+  const state = selectedItem?.metadata.state || '';
+  const location = selectedItem?.metadata.location || '';
+
+  // Load selected candidate turtle's existing additional images when a match is selected (must run before any early return)
+  useEffect(() => {
+    if (!selectedCandidate || !selectedItem) {
+      setSelectedCandidateTurtleImages(null);
+      return;
+    }
+    const sheetNameHint = state || null;
+    getTurtleImages(selectedCandidate, sheetNameHint)
+      .then(setSelectedCandidateTurtleImages)
+      .catch(() => setSelectedCandidateTurtleImages(null));
+  }, [selectedCandidate, selectedItem?.request_id, state]);
 
   if (queueLoading) {
     return (
@@ -78,9 +97,6 @@ export function ReviewQueueTab() {
       </Paper>
     );
   }
-
-  const state = selectedItem?.metadata.state || '';
-  const location = selectedItem?.metadata.location || '';
 
   return (
     <>
@@ -234,6 +250,51 @@ export function ReviewQueueTab() {
                 </Stack>
               </Grid.Col>
             </Grid>
+          </Paper>
+
+          <Paper shadow='sm' p='md' radius='md' withBorder>
+            <Stack gap='md'>
+              <div>
+                <Text fw={600} size='sm' mb={4}>
+                  Microhabitat / Condition photos
+                </Text>
+                <Text size='xs' c='dimmed' mb='sm'>
+                  From this upload and, when a match is selected, already stored for that turtle.
+                </Text>
+              </div>
+              <AdditionalImagesSection
+                title="From this upload"
+                embedded
+                images={(selectedItem.additional_images ?? []).map((a) => ({
+                  imagePath: a.image_path,
+                  filename: a.filename,
+                  type: a.type,
+                }))}
+                requestId={selectedItem.request_id}
+                onRefresh={() => refreshQueueItem(selectedItem.request_id)}
+                disabled={!!processing}
+              />
+              {selectedCandidate && (
+                <AdditionalImagesSection
+                  title="Already in system for this turtle"
+                  embedded
+                  hideAddButtons
+                  images={(selectedCandidateTurtleImages?.additional ?? []).map((a) => ({
+                    imagePath: a.path,
+                    filename: a.path.split(/[/\\]/).pop() ?? a.path,
+                    type: a.type,
+                  }))}
+                  turtleId={selectedCandidate}
+                  sheetName={state || null}
+                  onRefresh={async () => {
+                    if (!selectedCandidate) return;
+                    const res = await getTurtleImages(selectedCandidate, state || null);
+                    setSelectedCandidateTurtleImages(res);
+                  }}
+                  disabled={!!processing}
+                />
+              )}
+            </Stack>
           </Paper>
 
           {selectedItem.metadata.location_hint_lat != null &&
