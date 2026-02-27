@@ -161,8 +161,17 @@ export const TurtleSheetsDataForm = forwardRef<
                 Cancel
               </Button>
             )}
-            <Button onClick={hook.handleSubmit} loading={hook.loading}>
-              {mode === 'create' ? 'Create' : 'Update'} Turtle Data
+            <Button
+              onClick={hook.handleSubmit}
+              loading={hook.loading}
+              disabled={mode === 'create' && hook.loadingTurtleNames}
+            >
+              {mode === 'create' && hook.loadingTurtleNames
+                ? 'Loading names...'
+                : mode === 'create'
+                  ? 'Create'
+                  : 'Update'}{' '}
+              Turtle Data
             </Button>
           </Group>
         )}

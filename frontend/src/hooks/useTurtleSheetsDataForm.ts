@@ -35,6 +35,8 @@ export interface UseTurtleSheetsDataFormReturn {
   handleChange: (field: keyof TurtleSheetsData, value: string) => void;
   handleCreateNewSheet: (sheetName: string) => Promise<void>;
   handleSubmit: () => Promise<void>;
+  /** In create mode, true until existing turtle names have been loaded (for duplicate check). */
+  loadingTurtleNames: boolean;
 }
 
 export function useTurtleSheetsDataForm(
@@ -75,6 +77,8 @@ export function useTurtleSheetsDataForm(
     { name: string; primary_id: string }[] | null
   >(null);
 
+  const duplicateNameMessage = 'This name is already used by another turtle';
+
   const isFieldModeRestricted = addOnlyMode && mode === 'edit';
   const isFieldUnlocked = (field: keyof TurtleSheetsData) => unlockedFields.has(field);
   const requestUnlock = (field: keyof TurtleSheetsData) => setUnlockConfirmField(field);
@@ -97,7 +101,7 @@ export function useTurtleSheetsDataForm(
     }
   }, [initialData, initialSheetName]);
 
-  // In create mode, fetch turtle names for duplicate-name validation
+  // In create mode, fetch turtle names for duplicate-name validation (across all sheets)
   useEffect(() => {
     if (mode !== 'create') return;
     let cancelled = false;
@@ -105,6 +109,7 @@ export function useTurtleSheetsDataForm(
       .then((res) => {
         if (cancelled) return;
         if (res.success && res.names) setExistingTurtleNames(res.names);
+        else setExistingTurtleNames([]);
       })
       .catch(() => {
         if (!cancelled) setExistingTurtleNames([]);
@@ -113,6 +118,18 @@ export function useTurtleSheetsDataForm(
       cancelled = true;
     };
   }, [mode]);
+
+  // When turtle names finish loading in create mode, re-validate name field (user may have typed before load)
+  useEffect(() => {
+    if (mode !== 'create' || existingTurtleNames === null) return;
+    if (!formData.name?.trim()) return;
+    const isDuplicate = existingTurtleNames.some(
+      (n) => n.name.trim().toLowerCase() === formData.name!.trim().toLowerCase(),
+    );
+    if (isDuplicate) {
+      setErrors((prev) => ({ ...prev, name: duplicateNameMessage }));
+    }
+  }, [mode, existingTurtleNames, formData.name, duplicateNameMessage]);
 
   // In create mode, when sheet and sex are set, generate biology ID and set id field
   useEffect(() => {
@@ -213,8 +230,6 @@ export function useTurtleSheetsDataForm(
     }
   };
 
-  const duplicateNameMessage = 'This name is already used by another turtle';
-
   const checkDuplicateName = (name: string): boolean => {
     if (!existingTurtleNames || !name.trim()) return false;
     const lower = name.trim().toLowerCase();
@@ -242,12 +257,17 @@ export function useTurtleSheetsDataForm(
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (mode === 'create' && formData.name && checkDuplicateName(formData.name)) {
+    if (mode === 'create' && existingTurtleNames === null) {
+      newErrors.name =
+        'Loading existing names to check for duplicates. Please wait a moment.';
+    } else if (mode === 'create' && formData.name && checkDuplicateName(formData.name)) {
       newErrors.name = duplicateNameMessage;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
+
+  const loadingTurtleNames = mode === 'create' && existingTurtleNames === null;
 
   const handleSubmit = async () => {
     if (!selectedSheetName) {
@@ -339,5 +359,6 @@ export function useTurtleSheetsDataForm(
     handleChange,
     handleCreateNewSheet,
     handleSubmit,
+    loadingTurtleNames,
   };
 }

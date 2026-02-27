@@ -2,6 +2,7 @@
 Google Sheets API endpoints
 """
 
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -11,6 +12,10 @@ from services.manager_service import get_sheets_service
 
 # Timeout for single attempt to find sheet + get turtle data (avoids hanging on SSL/slow API)
 SHEETS_TURTLE_DATA_TIMEOUT_SEC = 25
+
+# Lock for list_turtle_names so concurrent requests don't trigger SSL errors (WRONG_VERSION_NUMBER)
+# when making many Google API calls in parallel.
+_turtle_names_lock = threading.Lock()
 
 
 def _is_ssl_or_connection_error(e):
@@ -587,61 +592,61 @@ def register_sheets_routes(app):
             sheets_to_search = [s for s in sheets_to_search if s not in backup_sheet_names]
 
             all_names = []
-            for sheet in sheets_to_search:
-                sheet_ok = False
-                for name_attempt in range(2):
-                    try:
-                        service._ensure_primary_id_column(sheet)
-                        escaped_sheet = sheet
-                        if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
-                            escaped_sheet = f"'{sheet}'"
-                        range_name = f"{escaped_sheet}!A:Z"
-                        result = service.service.spreadsheets().values().get(
-                            spreadsheetId=service.spreadsheet_id,
-                            range=range_name
-                        ).execute()
+            with _turtle_names_lock:
+                for sheet in sheets_to_search:
+                    sheet_ok = False
+                    for name_attempt in range(2):
+                        try:
+                            escaped_sheet = sheet
+                            if any(char in sheet for char in [' ', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=']):
+                                escaped_sheet = f"'{sheet}'"
+                            range_name = f"{escaped_sheet}!A:Z"
+                            result = service.service.spreadsheets().values().get(
+                                spreadsheetId=service.spreadsheet_id,
+                                range=range_name
+                            ).execute()
 
-                        values = result.get('values', [])
-                        if len(values) < 2:
+                            values = result.get('values', [])
+                            if len(values) < 2:
+                                sheet_ok = True
+                                break
+
+                            headers = values[0]
+                            column_indices = {}
+                            for idx, header in enumerate(headers):
+                                if header and header.strip():
+                                    column_indices[header.strip()] = idx
+
+                            primary_id_idx = column_indices.get('Primary ID')
+                            name_idx = column_indices.get('Name')
+                            if primary_id_idx is None and 'ID' in column_indices:
+                                primary_id_idx = column_indices.get('ID')
+                            if name_idx is None or primary_id_idx is None:
+                                sheet_ok = True
+                                break
+
+                            for row_data in values[1:]:
+                                if not row_data:
+                                    continue
+                                max_idx = max(primary_id_idx if primary_id_idx is not None else -1, name_idx)
+                                if len(row_data) <= max_idx:
+                                    continue
+                                primary_id = (row_data[primary_id_idx] or '').strip() if primary_id_idx is not None else ''
+                                name = (row_data[name_idx] or '').strip() if name_idx is not None else ''
+                                if primary_id and name:
+                                    all_names.append({'name': name, 'primary_id': primary_id})
                             sheet_ok = True
                             break
-
-                        headers = values[0]
-                        column_indices = {}
-                        for idx, header in enumerate(headers):
-                            if header and header.strip():
-                                column_indices[header.strip()] = idx
-
-                        primary_id_idx = column_indices.get('Primary ID')
-                        name_idx = column_indices.get('Name')
-                        if primary_id_idx is None and 'ID' in column_indices:
-                            primary_id_idx = column_indices.get('ID')
-                        if name_idx is None:
-                            sheet_ok = True
+                        except Exception as e:
+                            print(f"Error reading sheet {sheet} for turtle names: {e}")
+                            if name_attempt == 0 and _is_ssl_or_connection_error(e):
+                                try:
+                                    service._reinitialize_service()
+                                    time.sleep(1.0)
+                                except Exception as reinit_err:
+                                    print(f"Reinit failed: {reinit_err}")
+                                continue
                             break
-
-                        for row_data in values[1:]:
-                            if not row_data:
-                                continue
-                            max_idx = max(primary_id_idx if primary_id_idx is not None else -1, name_idx)
-                            if len(row_data) <= max_idx:
-                                continue
-                            primary_id = (row_data[primary_id_idx] or '').strip() if primary_id_idx is not None else ''
-                            name = (row_data[name_idx] or '').strip() if name_idx is not None else ''
-                            if primary_id and name:
-                                all_names.append({'name': name, 'primary_id': primary_id})
-                        sheet_ok = True
-                        break
-                    except Exception as e:
-                        print(f"Error reading sheet {sheet} for turtle names: {e}")
-                        if name_attempt == 0 and _is_ssl_or_connection_error(e):
-                            try:
-                                service._reinitialize_service()
-                                time.sleep(1.0)
-                            except Exception as reinit_err:
-                                print(f"Reinit failed: {reinit_err}")
-                            continue
-                        break
 
             return jsonify({
                 'success': True,

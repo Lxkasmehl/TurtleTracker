@@ -215,4 +215,156 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     // No duplicate error should appear
     await expect(dialog.getByText('This name is already used by another turtle')).not.toBeVisible();
   });
+
+  test('Submit is blocked until turtle names are loaded (no bypass)', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // Delay turtle-names so we can assert loading state and that submit is blocked before load
+    await page.route('**/api/sheets/turtle-names', async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          names: MOCK_EXISTING_NAMES,
+        }),
+      });
+    });
+    await page.route('**/api/sheets/sheets**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ sheets: ['Kansas'], success: true }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await loginAsAdmin(page);
+
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'loading-names-e2e.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await clickUploadPhotoButton(page);
+    await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: /Turtle Match Review/ })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole('button', { name: 'Create New Turtle' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
+
+    // Button must be disabled while names are loading (would fail if we allowed submit before load)
+    await expect(
+      dialog.getByRole('button', { name: /Loading names/ }),
+    ).toBeVisible({ timeout: 3000 });
+    await expect(dialog.getByRole('button', { name: /Loading names/ })).toBeDisabled();
+
+    // Wait for turtle-names response so form enables submit
+    await page.waitForResponse(
+      (resp) => resp.url().includes('turtle-names') && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+
+    // Now button should be enabled
+    const createDataBtn = dialog.getByRole('button', { name: 'Create Turtle Data' });
+    await expect(createDataBtn).toBeVisible({ timeout: 3000 });
+    await expect(createDataBtn).toBeEnabled();
+
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
+    await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).click();
+
+    const nameInput = dialog.getByLabel('Name', { exact: true });
+    await nameInput.fill('Master Oogway');
+    await nameInput.blur();
+
+    await expect(dialog.getByText('This name is already used by another turtle')).toBeVisible({
+      timeout: 5000,
+    });
+    await createDataBtn.click();
+    await expect(page.getByText('Please fix the errors in the form')).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(dialog).toBeVisible();
+  });
+
+  test('Clicking submit before names load shows validation (no silent bypass)', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // Slow turtle-names: user can try to submit before it finishes
+    await page.route('**/api/sheets/turtle-names', async (route) => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          names: MOCK_EXISTING_NAMES,
+        }),
+      });
+    });
+    await page.route('**/api/sheets/sheets**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ sheets: ['Kansas'], success: true }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await loginAsAdmin(page);
+
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'submit-before-load-e2e.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await clickUploadPhotoButton(page);
+    await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: /Turtle Match Review/ })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole('button', { name: 'Create New Turtle' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Do NOT wait for turtle-names. Select sheet, fill duplicate name, click submit immediately.
+    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
+    await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).click();
+    const nameInput = dialog.getByLabel('Name', { exact: true });
+    await nameInput.fill('Master Oogway');
+    await nameInput.blur();
+
+    // Submit button should still be disabled (Loading names...) so we can't click it.
+    // If it were enabled and we clicked, we must see validation (loading or duplicate error).
+    const submitBtn = dialog.getByRole('button', { name: /Create Turtle Data|Loading names/ });
+    await expect(submitBtn).toBeVisible({ timeout: 2000 });
+    const isDisabled = await submitBtn.isDisabled();
+    if (isDisabled) {
+      await expect(submitBtn).toContainText('Loading names');
+    } else {
+      submitBtn.click();
+      await expect(
+        page.getByText(/Please fix the errors|Loading existing names/),
+      ).toBeVisible({ timeout: 5000 });
+      await expect(dialog).toBeVisible();
+    }
+  });
 });
