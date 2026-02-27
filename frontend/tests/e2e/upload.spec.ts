@@ -53,4 +53,23 @@ test.describe('Photo Upload', () => {
 
     await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
   });
+
+  test('Admin: Additional photos (optional) section with Microhabitat/Condition buttons is visible after selecting file', async ({
+    page,
+  }) => {
+    test.setTimeout(30_000);
+    await loginAsAdmin(page);
+
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'e2e-extra.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await expect(page.getByText('Additional photos (optional)')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Microhabitat' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Condition' })).toBeVisible();
+  });
 });

@@ -158,3 +158,106 @@ def test_remove_additional_image_success(client, review_packet_dir, tmp_path):
     r4 = client.get(f"/api/review-queue/{request_id}")
     remaining = r4.json()["item"]["additional_images"]
     assert not any(a.get("filename") == filename for a in remaining)
+
+
+def test_add_two_images_then_remove_both(client, review_packet_dir, tmp_path):
+    """Add microhabitat and condition image, verify both appear; remove one, verify; remove other, verify empty."""
+    request_id, _ = review_packet_dir
+    micro_path = str(tmp_path / "micro.jpg")
+    cond_path = str(tmp_path / "cond.jpg")
+    _make_dummy_image(micro_path)
+    _make_dummy_image(cond_path)
+    with open(micro_path, "rb") as f:
+        micro_data = f.read()
+    with open(cond_path, "rb") as f:
+        cond_data = f.read()
+
+    r = client.post(
+        f"/api/review-queue/{request_id}/additional-images",
+        data={
+            "file_0": ("micro.jpg", BytesIO(micro_data)),
+            "type_0": "microhabitat",
+            "file_1": ("cond.jpg", BytesIO(cond_data)),
+            "type_1": "condition",
+        },
+    )
+    assert r.status_code == 200
+    r2 = client.get(f"/api/review-queue/{request_id}")
+    item = r2.json()["item"]
+    additional = item["additional_images"]
+    assert len(additional) >= 2
+    types = {a.get("type") for a in additional}
+    assert "microhabitat" in types
+    assert "condition" in types
+
+    # Remove first (microhabitat)
+    micro_entry = next((a for a in additional if a.get("type") == "microhabitat"), None)
+    assert micro_entry is not None
+    r3 = client.delete(
+        f"/api/review-queue/{request_id}/additional-images",
+        json={"filename": micro_entry["filename"]},
+        content_type="application/json",
+    )
+    assert r3.status_code == 200
+    r4 = client.get(f"/api/review-queue/{request_id}")
+    remaining = r4.json()["item"]["additional_images"]
+    assert not any(a.get("filename") == micro_entry["filename"] for a in remaining)
+    assert len(remaining) >= 1
+
+    # Remove second (condition)
+    cond_entry = next((a for a in remaining if a.get("type") == "condition"), None)
+    assert cond_entry is not None
+    r5 = client.delete(
+        f"/api/review-queue/{request_id}/additional-images",
+        json={"filename": cond_entry["filename"]},
+        content_type="application/json",
+    )
+    assert r5.status_code == 200
+    r6 = client.get(f"/api/review-queue/{request_id}")
+    final = r6.json()["item"]["additional_images"]
+    assert not any(a.get("filename") == cond_entry["filename"] for a in final)
+
+
+def test_z_approve_merges_packet_additional_into_turtle(client, review_packet_dir, tmp_path):
+    """
+    Add additional image to packet, approve to existing turtle T42; turtle's additional_images
+    must contain the merged image. Runs last (z_) so packet test_req_001 is still present.
+    After this test the packet is deleted by the approve flow.
+    """
+    request_id, _ = review_packet_dir
+    # Add one additional image to the packet
+    img_path = str(tmp_path / "merge_test.jpg")
+    _make_dummy_image(img_path)
+    with open(img_path, "rb") as f:
+        img_data = f.read()
+    r = client.post(
+        f"/api/review-queue/{request_id}/additional-images",
+        data={
+            "file_0": ("merge_test.jpg", BytesIO(img_data)),
+            "type_0": "microhabitat",
+        },
+    )
+    assert r.status_code == 200
+    r2 = client.get(f"/api/review-queue/{request_id}")
+    packet_additional = r2.json()["item"]["additional_images"]
+    assert len(packet_additional) >= 1
+    merged_filename = packet_additional[0]["filename"]
+
+    # Resolve query image path (fixture has query.jpg in packet dir); backend finds it
+    # Approve to T42 (fixture Kansas/Topeka/T42)
+    approve_payload = {
+        "match_turtle_id": "T42",
+        "uploaded_image_path": None,  # backend will find query.jpg in packet_dir
+    }
+    r3 = client.post(
+        f"/api/review/{request_id}/approve",
+        json=approve_payload,
+    )
+    assert r3.status_code == 200, r3.json()
+
+    # Turtle T42 should have the packet's additional image merged in (plus any existing)
+    r4 = client.get("/api/turtles/images?turtle_id=T42&sheet_name=Kansas/Topeka")
+    assert r4.status_code == 200
+    turtle_additional = r4.json()["additional"]
+    filenames = [a.get("filename") for a in turtle_additional if a.get("filename")]
+    assert merged_filename in filenames, f"Expected {merged_filename} in turtle additional_images: {filenames}"

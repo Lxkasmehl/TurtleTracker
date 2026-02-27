@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAdmin, loginAsCommunity, navClick, openMobileMenu } from './fixtures';
+import { loginAsAdmin, loginAsCommunity, navClick, openMobileMenu, getTestImageBuffer } from './fixtures';
 
 test.describe('Admin Turtle Records (Review Queue)', () => {
   test('Admin sees Turtle Records in nav', async ({ page }) => {
@@ -53,5 +53,98 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
     } else {
       await expect(page.getByText('No pending reviews')).toBeVisible();
     }
+  });
+
+  test('When a queue item is selected, Microhabitat / Condition photos section is visible', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await navClick(page, 'Turtle Records');
+    await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
+
+    const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
+    const matchLink = tabPanel.getByText(/\d+ matches/).first();
+    const hasItems = (await matchLink.count()) > 0;
+    if (hasItems) {
+      await matchLink.click();
+      await expect(page.getByText('Microhabitat / Condition photos')).toBeVisible({ timeout: 5000 });
+    } else {
+      await expect(page.getByText('No pending reviews')).toBeVisible();
+    }
+  });
+
+  test('On selected queue item: add additional image then remove it', async ({ page }) => {
+    test.setTimeout(60_000);
+    await loginAsAdmin(page);
+    await navClick(page, 'Turtle Records');
+    await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
+
+    const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
+    const matchLink = tabPanel.getByText(/\d+ matches/).first();
+    const hasItems = (await matchLink.count()) > 0;
+    if (!hasItems) {
+      await expect(page.getByText('No pending reviews')).toBeVisible();
+      return;
+    }
+    await matchLink.click();
+    await expect(page.getByText('From this upload')).toBeVisible({ timeout: 5000 });
+    const fromUploadSection = page.getByText('From this upload').locator('..').locator('..');
+    const fileInputs = fromUploadSection.locator('input[type="file"]');
+    const microInput = fileInputs.first();
+    await microInput.setInputFiles({
+      name: 'e2e-review-extra.jpg',
+      mimeType: 'image/jpeg',
+      buffer: getTestImageBuffer(),
+    });
+    await expect(page.getByText('Added')).toBeVisible({ timeout: 10_000 });
+    await expect(fromUploadSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
+
+    const removeBtn = fromUploadSection.getByRole('button', { name: 'Remove' }).first();
+    await removeBtn.click();
+    await expect(page.getByText('Removed')).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+test.describe('Admin Turtle Records (Sheets Browser)', () => {
+  test('Sheets tab: select turtle, add then remove additional image', async ({ page }) => {
+    test.setTimeout(90_000);
+    await loginAsAdmin(page);
+    await navClick(page, 'Turtle Records');
+    await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
+    await page.getByRole('tab', { name: /Google Sheets Browser/ }).click();
+    const tabPanels = page.getByRole('tabpanel');
+    await expect(tabPanels.nth(1)).toBeVisible();
+    const tabPanel = tabPanels.nth(1);
+    const sheetSelect = tabPanel.getByLabel(/Location \(Spreadsheet\)/i);
+    await sheetSelect.click();
+    const firstOption = page.getByRole('option').first();
+    const hasSheets = (await firstOption.count()) > 0;
+    if (hasSheets) {
+      await firstOption.click();
+    }
+    await page.waitForTimeout(500);
+    const turtleCards = tabPanel.locator('[style*="cursor: pointer"]');
+    const hasTurtles = (await turtleCards.count()) > 0;
+    if (!hasTurtles) {
+      await expect(tabPanel.getByText('Select a turtle to edit')).toBeVisible();
+      return;
+    }
+    await turtleCards.first().click();
+    await expect(tabPanel.getByText('Turtle photos (Microhabitat / Condition)')).toBeVisible({
+      timeout: 5000,
+    });
+    const photosSection = tabPanel.getByText('Turtle photos (Microhabitat / Condition)').locator('..').locator('..');
+    const fileInput = photosSection.locator('input[type="file"]').first();
+    await fileInput.setInputFiles({
+      name: 'e2e-sheets-extra.jpg',
+      mimeType: 'image/jpeg',
+      buffer: getTestImageBuffer(),
+    });
+    await expect(page.getByText('Added')).toBeVisible({ timeout: 10_000 });
+    await expect(photosSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
+
+    const removeBtn = photosSection.getByRole('button', { name: 'Remove' }).first();
+    await removeBtn.click();
+    await expect(page.getByText('Removed')).toBeVisible({ timeout: 10_000 });
   });
 });
