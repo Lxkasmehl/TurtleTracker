@@ -96,12 +96,12 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
       mimeType: 'image/jpeg',
       buffer: getTestImageBuffer(),
     });
-    await expect(page.getByText('Added')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Added', { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(fromUploadSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
 
     const removeBtn = fromUploadSection.getByRole('button', { name: 'Remove' }).first();
     await removeBtn.click();
-    await expect(page.getByText('Removed')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Removed', { exact: true })).toBeVisible({ timeout: 10_000 });
   });
 });
 
@@ -112,10 +112,11 @@ test.describe('Admin Turtle Records (Sheets Browser)', () => {
     await navClick(page, 'Turtle Records');
     await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
     await page.getByRole('tab', { name: /Google Sheets Browser/ }).click();
-    // Wait for Sheets tab content (panel may not have a stable index)
-    await expect(page.getByLabel(/Location \(Spreadsheet\)/i)).toBeVisible({ timeout: 5000 });
-    const tabPanel = page.locator('[role="tabpanel"]').filter({ has: page.getByLabel(/Location \(Spreadsheet\)/i) });
-    const sheetSelect = tabPanel.getByLabel(/Location \(Spreadsheet\)/i);
+    // Wait for Sheets tab content (panel may not have a stable index). Use role=textbox so we match only the input, not the listbox.
+    const locationInput = page.getByRole('textbox', { name: /Location \(Spreadsheet\)/i });
+    await expect(locationInput).toBeVisible({ timeout: 5000 });
+    const tabPanel = page.locator('[role="tabpanel"]').filter({ has: locationInput });
+    const sheetSelect = tabPanel.getByRole('textbox', { name: /Location \(Spreadsheet\)/i });
     await sheetSelect.click();
     const firstOption = page.getByRole('option').first();
     const hasSheets = (await firstOption.count()) > 0;
@@ -140,11 +141,11 @@ test.describe('Admin Turtle Records (Sheets Browser)', () => {
       mimeType: 'image/jpeg',
       buffer: getTestImageBuffer(),
     });
-    await expect(page.getByText('Added')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Added', { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(photosSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
 
     const removeBtn = photosSection.getByRole('button', { name: 'Remove' }).first();
     await removeBtn.click();
-    await expect(page.getByText('Removed')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Removed', { exact: true })).toBeVisible({ timeout: 10_000 });
   });
 });
