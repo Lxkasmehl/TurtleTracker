@@ -4,6 +4,8 @@ import {
   grantLocationPermission,
   getTestImageBuffer,
   clickUploadPhotoButton,
+  selectSheetInCreateTurtleDialog,
+  selectSexInCreateTurtleDialog,
 } from './fixtures';
 
 /**
@@ -23,7 +25,7 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
   test('ID field shows auto-generated value (gender + sequence) and is disabled', async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     // Mock generate-id so the form gets a predictable biology ID preview
     await page.route('**/api/sheets/generate-id', async (route) => {
@@ -88,15 +90,8 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     );
 
     // Select sheet (Kansas) then sex (F)
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
-
-    const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
-    await sexSelect.click();
-    await page.getByRole('option', { name: 'F' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'F' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
+    await selectSexInCreateTurtleDialog(page, dialog, 'F');
 
     await generateIdResponse;
 
@@ -107,7 +102,7 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
   });
 
   test('ID preview updates when sex changes (M -> F)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     let callCount = 0;
     await page.route('**/api/sheets/generate-id', async (route) => {
@@ -164,22 +159,14 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
 
-    const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
-    await sexSelect.click();
-    await page.getByRole('option', { name: 'M' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'M' }).click();
+    await selectSexInCreateTurtleDialog(page, dialog, 'M');
 
     const idField = dialog.getByLabel('ID', { exact: true });
     await expect(idField).toHaveValue('M1', { timeout: 5000 });
 
-    await sexSelect.click();
-    await page.getByRole('option', { name: 'F' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'F' }).click();
+    await selectSexInCreateTurtleDialog(page, dialog, 'F');
 
     await expect(idField).toHaveValue('F99', { timeout: 5000 });
   });

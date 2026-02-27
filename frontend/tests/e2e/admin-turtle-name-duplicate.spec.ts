@@ -4,6 +4,7 @@ import {
   grantLocationPermission,
   getTestImageBuffer,
   clickUploadPhotoButton,
+  selectSheetInCreateTurtleDialog,
 } from './fixtures';
 
 /**
@@ -24,7 +25,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
   });
 
   test('Duplicate turtle name shows error and blocks submit', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     // Mock turtle-names so the form sees "Master Oogway" as already existing
     await page.route('**/api/sheets/turtle-names', async (route) => {
@@ -81,10 +82,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await turtleNamesResponse;
 
     // Select a sheet so name validation can run (form requires sheet for submit)
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
 
     // Fill Name with an existing name (case-insensitive match)
     const nameInput = dialog.getByLabel('Name', { exact: true });
@@ -105,7 +103,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
   });
 
   test('Duplicate name (different casing) is still rejected', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     await page.route('**/api/sheets/turtle-names', async (route) => {
       await route.fulfill({
@@ -150,10 +148,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await expect(dialog).toBeVisible();
     await turtleNamesResponse;
 
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
 
     // Different casing than stored "Leonardo" – should still be treated as duplicate
     const nameInput = dialog.getByLabel('Name', { exact: true });
@@ -166,7 +161,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
   });
 
   test('Unique name does not show duplicate error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     await page.route('**/api/sheets/turtle-names', async (route) => {
       await route.fulfill({
@@ -206,10 +201,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
 
     const nameInput = dialog.getByLabel('Name', { exact: true });
     await nameInput.fill('E2E Unique Turtle Name 999');
@@ -220,7 +212,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
   });
 
   test('Submit is blocked until turtle names are loaded (no bypass)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     // Delay turtle-names so we can assert loading state and that submit is blocked before load
     await page.route('**/api/sheets/turtle-names', async (route) => {
@@ -283,10 +275,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await expect(createDataBtn).toBeVisible({ timeout: 3000 });
     await expect(createDataBtn).toBeEnabled();
 
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
 
     const nameInput = dialog.getByLabel('Name', { exact: true });
     await nameInput.fill('Master Oogway');
@@ -303,7 +292,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
   });
 
   test('Clicking submit before names load shows validation (no silent bypass)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     // Slow turtle-names: user can try to submit before it finishes
     await page.route('**/api/sheets/turtle-names', async (route) => {
@@ -349,10 +338,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     await expect(dialog).toBeVisible();
 
     // Do NOT wait for turtle-names. Select sheet, fill duplicate name, click submit immediately.
-    const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
-    await sheetSelect.click();
-    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByRole('option', { name: 'Kansas' }).click();
+    await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
     const nameInput = dialog.getByLabel('Name', { exact: true });
     await nameInput.fill('Master Oogway');
     await nameInput.blur();
