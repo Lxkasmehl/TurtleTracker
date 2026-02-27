@@ -83,6 +83,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     // Select a sheet so name validation can run (form requires sheet for submit)
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     // Fill Name with an existing name (case-insensitive match)
@@ -151,6 +152,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
 
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     // Different casing than stored "Leonardo" – should still be treated as duplicate
@@ -206,6 +208,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
 
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     const nameInput = dialog.getByLabel('Name', { exact: true });
@@ -282,6 +285,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
 
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     const nameInput = dialog.getByLabel('Name', { exact: true });
@@ -347,6 +351,7 @@ test.describe('Admin Create New Turtle – duplicate name validation', () => {
     // Do NOT wait for turtle-names. Select sheet, fill duplicate name, click submit immediately.
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
     const nameInput = dialog.getByLabel('Name', { exact: true });
     await nameInput.fill('Master Oogway');

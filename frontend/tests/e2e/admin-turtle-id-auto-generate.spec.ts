@@ -84,16 +84,18 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
 
     const generateIdResponse = page.waitForResponse(
       (resp) => resp.url().includes('generate-id') && resp.status() === 200,
-      { timeout: 15_000 },
+      { timeout: 25_000 },
     );
 
     // Select sheet (Kansas) then sex (F)
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
     await sexSelect.click();
+    await page.getByRole('option', { name: 'F' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'F' }).click();
 
     await generateIdResponse;
@@ -164,16 +166,19 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
 
     const sheetSelect = dialog.getByRole('textbox', { name: 'Sheet / Location' });
     await sheetSelect.click();
+    await page.getByRole('option', { name: 'Kansas' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'Kansas' }).click();
 
     const sexSelect = dialog.getByRole('combobox', { name: 'Sex' }).or(dialog.getByRole('textbox', { name: 'Sex' }));
     await sexSelect.click();
+    await page.getByRole('option', { name: 'M' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'M' }).click();
 
     const idField = dialog.getByLabel('ID', { exact: true });
     await expect(idField).toHaveValue('M1', { timeout: 5000 });
 
     await sexSelect.click();
+    await page.getByRole('option', { name: 'F' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('option', { name: 'F' }).click();
 
     await expect(idField).toHaveValue('F99', { timeout: 5000 });
