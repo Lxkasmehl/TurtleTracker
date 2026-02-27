@@ -52,7 +52,10 @@ def test_get_turtle_images_success(client, turtle_with_images):
     additional_filenames = [os.path.basename(a.get("path", "")) for a in data["additional"]]
     assert turtle_with_images["additional_filename"] in additional_filenames
     assert any(a["type"] == "microhabitat" for a in data["additional"])
-    assert len(data["loose"]) == 1
+    # At least one loose (fixture has obs1.jpg); may have more if review approve test ran first
+    assert len(data["loose"]) >= 1
+    loose_basenames = [os.path.basename(p) for p in data["loose"]]
+    assert "obs1.jpg" in loose_basenames
 
 
 def test_delete_turtle_additional_no_turtle_id(client):
