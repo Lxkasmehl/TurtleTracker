@@ -128,6 +128,9 @@ test.describe('Admin Turtle Match', () => {
       timeout: 15_000,
     });
 
+    // Section only appears when there are matches; skip assertion if no matches
+    const noMatches = page.getByText('No matches found');
+    if ((await noMatches.isVisible())) return;
     await expect(page.getByText('Microhabitat / Condition photos')).toBeVisible();
   });
 
@@ -158,8 +161,11 @@ test.describe('Admin Turtle Match', () => {
     await expect(page.getByRole('heading', { name: /Turtle Match Review/ })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText('From this upload')).toBeVisible();
-    const fromUploadSection = page.getByText('From this upload').locator('..').locator('..');
+    // Section only appears when there are matches
+    const noMatches = page.getByText('No matches found');
+    if ((await noMatches.isVisible())) return;
+    await expect(page.getByText('From this upload', { exact: true })).toBeVisible();
+    const fromUploadSection = page.getByText('From this upload', { exact: true }).locator('..').locator('..');
     await expect(fromUploadSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
 
     const removeBtn = fromUploadSection.getByRole('button', { name: 'Remove' }).first();

@@ -87,8 +87,8 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
       return;
     }
     await matchLink.click();
-    await expect(page.getByText('From this upload')).toBeVisible({ timeout: 5000 });
-    const fromUploadSection = page.getByText('From this upload').locator('..').locator('..');
+    await expect(page.getByText('From this upload', { exact: true })).toBeVisible({ timeout: 5000 });
+    const fromUploadSection = page.getByText('From this upload', { exact: true }).locator('..').locator('..');
     const fileInputs = fromUploadSection.locator('input[type="file"]');
     const microInput = fileInputs.first();
     await microInput.setInputFiles({
@@ -112,9 +112,9 @@ test.describe('Admin Turtle Records (Sheets Browser)', () => {
     await navClick(page, 'Turtle Records');
     await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
     await page.getByRole('tab', { name: /Google Sheets Browser/ }).click();
-    const tabPanels = page.getByRole('tabpanel');
-    await expect(tabPanels.nth(1)).toBeVisible();
-    const tabPanel = tabPanels.nth(1);
+    // Wait for Sheets tab content (panel may not have a stable index)
+    await expect(page.getByLabel(/Location \(Spreadsheet\)/i)).toBeVisible({ timeout: 5000 });
+    const tabPanel = page.locator('[role="tabpanel"]').filter({ has: page.getByLabel(/Location \(Spreadsheet\)/i) });
     const sheetSelect = tabPanel.getByLabel(/Location \(Spreadsheet\)/i);
     await sheetSelect.click();
     const firstOption = page.getByRole('option').first();

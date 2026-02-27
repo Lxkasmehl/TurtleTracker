@@ -69,7 +69,8 @@ test.describe('Photo Upload', () => {
 
     await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
     await expect(page.getByText('Additional photos (optional)')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Microhabitat' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Condition' })).toBeVisible();
+    // Microhabitat/Condition are <label> (Button component="label"), not role="button"
+    await expect(page.getByText('Microhabitat', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Condition', { exact: true }).first()).toBeVisible();
   });
 });
