@@ -62,6 +62,8 @@ export function ReviewQueueTab() {
 
   const state = selectedItem?.metadata.state || '';
   const location = selectedItem?.metadata.location || '';
+  const fullSheetName =
+    state && location ? `${state}/${location}` : state || location || null;
 
   // Load selected candidate turtle's existing additional images when a match is selected (must run before any early return)
   useEffect(() => {
@@ -69,11 +71,10 @@ export function ReviewQueueTab() {
       setSelectedCandidateTurtleImages(null);
       return;
     }
-    const sheetNameHint = state || null;
-    getTurtleImages(selectedCandidate, sheetNameHint)
+    getTurtleImages(selectedCandidate, fullSheetName)
       .then(setSelectedCandidateTurtleImages)
       .catch(() => setSelectedCandidateTurtleImages(null));
-  }, [selectedCandidate, selectedItem?.request_id, state]);
+  }, [selectedCandidate, selectedItem?.request_id, fullSheetName]);
 
   if (queueLoading) {
     return (
@@ -285,10 +286,10 @@ export function ReviewQueueTab() {
                     type: a.type,
                   }))}
                   turtleId={selectedCandidate}
-                  sheetName={state || null}
+                  sheetName={fullSheetName}
                   onRefresh={async () => {
                     if (!selectedCandidate) return;
-                    const res = await getTurtleImages(selectedCandidate, state || null);
+                    const res = await getTurtleImages(selectedCandidate, fullSheetName);
                     setSelectedCandidateTurtleImages(res);
                   }}
                   disabled={!!processing}
