@@ -5,6 +5,9 @@ import numpy as np
 import logging
 import os
 
+# --- ADD THIS LINE TO ENABLE TF32 CORES ---
+torch.set_float32_matmul_precision('high')
+
 # --- LOGGING SETUP ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TurtleBrain")
@@ -12,61 +15,96 @@ logger = logging.getLogger("TurtleBrain")
 
 class TurtleDeepMatcher:
     def __init__(self):
-        # 1. Hardware Check
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
+        # 1. Hardware Check & Device Routing
+        self.device_str = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(self.device_str)
+        self.use_amp = (self.device_str == "cuda")
+
+        if self.device_str == "cuda":
             logger.info(f"✅ GPU DETECTED: {torch.cuda.get_device_name(0)}")
         else:
-            self.device = torch.device("cpu")
             logger.warning("⚠️ GPU NOT DETECTED. Running in CPU slow mode.")
 
-        # 2. SuperPoint: INCREASED DETECTION THRESHOLD
-        # We increase 'nms_radius' slightly to force points to spread out
-        # We increase keypoints to 4096 to ensure we capture the turtle even with background noise
+        # 2. SuperPoint: Tunable Detection Parameters
         self.extractor = SuperPoint(max_num_keypoints=4096, nms_radius=3).eval().to(self.device)
 
-        # 3. LightGlue
+        # 3. LightGlue: Tunable Match Confidences
         self.matcher = LightGlue(features='superpoint', depth_confidence=0.9, width_confidence=0.95).eval().to(
             self.device)
-        # 4. Load Dataset into Ram
-        self.feature_cache = {}
 
+        # PyTorch 2.x Optimization: Compile ONLY the CNN
+        if hasattr(torch, 'compile'):
+            logger.info("⚡ Compiling SuperPoint CNN for optimized inference...")
+            self.extractor = torch.compile(self.extractor, dynamic=True)
+
+        self.feature_cache = {}
+        self.vram_cache = []  # Initialize the cache list
+
+    def set_device(self, device_mode):
+        """Switches device dynamically based on GUI selection."""
+        self.device_str = "cuda" if device_mode == "GPU" and torch.cuda.is_available() else "cpu"
+        self.device = torch.device(self.device_str)
+        self.use_amp = (self.device_str == "cuda")
+
+        self.extractor = self.extractor.to(self.device)
+        self.matcher = self.matcher.to(self.device)
+
+        # --- NEW: Migrate the Cache to the new hardware ---
+        if hasattr(self, 'vram_cache') and self.vram_cache:
+            for cand in self.vram_cache:
+                cand['feats'] = {k: v.to(self.device) for k, v in cand['feats'].items()}
+            logger.info(f"🔄 Migrated {len(self.vram_cache)} cached tensors to {self.device_str.upper()}.")
+
+        logger.info(f"🔄 Switched compute device to: {self.device_str.upper()}")
 
     def set_feature_cache(self, cache_dict):
-        """Called by TurtleManager to push CPU-loaded features into the brain."""
         self.feature_cache = cache_dict
         logger.info(f"🧠 Brain: Feature cache synchronized ({len(cache_dict)} items).")
 
+    # --- NEW: VRAM CACHE METHODS ---
+    def load_database_to_vram(self, db_index_list):
+        """Pre-loads the entire database into GPU VRAM for instant access."""
+        logger.info(f"⚡ Loading {len(db_index_list)} turtles into memory cache ({self.device_str})...")
+        self.vram_cache = []
+
+        for db_pt_path, turtle_id, location in db_index_list:
+            if not os.path.exists(db_pt_path): continue
+            try:
+                # Load securely and map directly to the active device
+                cand_data = torch.load(db_pt_path, map_location=self.device, weights_only=True)
+                cand_feats = {k: v.unsqueeze(0).to(self.device) for k, v in cand_data.items()}
+
+                self.vram_cache.append({
+                    'site_id': turtle_id,
+                    'location': location,
+                    'file_path': db_pt_path,
+                    'feats': cand_feats
+                })
+            except Exception as e:
+                logger.error(f"Failed to cache {turtle_id}: {e}")
+
+        logger.info(f"✅ Cached {len(self.vram_cache)} turtles securely.")
+
     def preprocess_image_robust(self, img):
-        """
-        Applies CLAHE and Scale normalization to handle 'Field Quality' images.
-        """
-        # 1. Resize if massive (Standardize scale)
         h, w = img.shape
-        max_dim = 1200  # Slightly smaller than before to reduce noise
+        max_dim = 1200
         if max(h, w) > max_dim:
             scale = max_dim / max(h, w)
             img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-        # 2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        # This cuts through the "Shiny" glare and boosts shadow details
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        img_enhanced = clahe.apply(img)
-
-        return img_enhanced
+        return clahe.apply(img)
 
     def process_and_save(self, image_path, output_pt_path):
-        """INGEST: Saves features for the 'Lab Quality' database images."""
         try:
             img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
             if img is None: return False
 
-            # Use robust preprocessing even on ingest to match the domain
             img = self.preprocess_image_robust(img)
-
             tensor_img = utils.numpy_image_to_torch(img).to(self.device)
 
-            with torch.inference_mode():
+            with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,
+                                                        enabled=self.use_amp):
                 feats = self.extractor.extract(tensor_img)
 
             feats_cpu = {k: v[0].cpu() for k, v in feats.items()}
@@ -77,54 +115,44 @@ class TurtleDeepMatcher:
             return False
 
     def match_query_robust(self, query_path, db_index_list):
-        """
-        SEARCH: Performs a Multi-Rotation Brute Force Search.
-        """
-        # 1. Load and Preprocess Query
+        """Standard disk-based search (kept as fallback)."""
         img_raw = cv2.imread(query_path, cv2.IMREAD_GRAYSCALE)
         if img_raw is None: return []
 
         img_base = self.preprocess_image_robust(img_raw)
 
-        # 2. Generate Rotations (0, 90, 180, 270)
-        # This solves the "Sideways Turtle" problem
         rotations = [
-            img_base,  # 0 deg
-            cv2.rotate(img_base, cv2.ROTATE_90_CLOCKWISE),  # 90 deg
-            cv2.rotate(img_base, cv2.ROTATE_180),  # 180 deg
-            cv2.rotate(img_base, cv2.ROTATE_90_COUNTERCLOCKWISE)  # 270 deg
+            img_base,
+            cv2.rotate(img_base, cv2.ROTATE_90_CLOCKWISE),
+            cv2.rotate(img_base, cv2.ROTATE_180),
+            cv2.rotate(img_base, cv2.ROTATE_90_COUNTERCLOCKWISE)
         ]
 
-        # 3. Extract Features for ALL rotations once
         query_feats_list = []
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,
+                                                    enabled=self.use_amp):
             for rot_img in rotations:
                 t_img = utils.numpy_image_to_torch(rot_img).to(self.device)
                 query_feats_list.append(self.extractor.extract(t_img))
 
         results = []
 
-        # 4. Search Loop
-        # We compare DB images against ALL 4 rotations of the query
         for db_pt_path, turtle_id, location in db_index_list:
             if not os.path.exists(db_pt_path): continue
-
             try:
-                # Load Candidate (Database is usually correctly oriented)
-                cand_data = torch.load(db_pt_path)
+                cand_data = torch.load(db_pt_path, map_location=self.device, weights_only=True)
                 cand_feats = {k: v.unsqueeze(0).to(self.device) for k, v in cand_data.items()}
 
                 best_score_for_turtle = 0
                 best_conf_for_turtle = 0
 
-                # Check against all 4 rotations
                 for q_feats in query_feats_list:
                     score, match_count = self._run_glue(q_feats, cand_feats)
                     if match_count > best_score_for_turtle:
                         best_score_for_turtle = match_count
                         best_conf_for_turtle = score
 
-                if best_score_for_turtle > 15:  # Noise threshold
+                if best_score_for_turtle > 15:
                     results.append({
                         'site_id': turtle_id,
                         'location': location,
@@ -132,16 +160,78 @@ class TurtleDeepMatcher:
                         'score': best_score_for_turtle,
                         'confidence': best_conf_for_turtle
                     })
-
             except Exception:
                 continue
 
         results.sort(key=lambda x: x['score'], reverse=True)
-        torch.cuda.empty_cache()
+        if self.device_str == "cuda":
+            torch.cuda.empty_cache()
+        return results
+
+    # --- NEW: VRAM FAST SEARCH METHOD ---
+    def match_query_robust_vram(self, query_path, location_filter="All Locations"):
+        """Bypasses disk I/O entirely by searching the pre-loaded cache."""
+        if not getattr(self, 'vram_cache', None):
+            logger.warning("⚠️ VRAM cache empty! Returning no matches.")
+            return []
+
+        img_raw = cv2.imread(query_path, cv2.IMREAD_GRAYSCALE)
+        if img_raw is None: return []
+
+        img_base = self.preprocess_image_robust(img_raw)
+
+        rotations = [
+            img_base,
+            cv2.rotate(img_base, cv2.ROTATE_90_CLOCKWISE),
+            cv2.rotate(img_base, cv2.ROTATE_180),
+            cv2.rotate(img_base, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        ]
+
+        query_feats_list = []
+        with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,
+                                                    enabled=self.use_amp):
+            for rot_img in rotations:
+                t_img = utils.numpy_image_to_torch(rot_img).to(self.device)
+                query_feats_list.append(self.extractor.extract(t_img))
+
+        results = []
+
+        for cand in self.vram_cache:
+            # Apply location filter early to skip unnecessary math
+            if location_filter != "All Locations" and cand['location'] != location_filter:
+                continue
+
+            # --- NEW: Bulletproof device alignment check ---
+            cand_feats_safe = {k: v.to(self.device) for k, v in cand['feats'].items()}
+
+            best_score = 0
+            best_conf = 0
+
+            for q_feats in query_feats_list:
+                # Pass the safe, aligned features into the matcher
+                score, match_count = self._run_glue(q_feats, cand_feats_safe)
+
+                if match_count > best_score:
+                    best_score = match_count
+                    best_conf = score
+
+            if best_score > 15:
+                results.append({
+                    'site_id': cand['site_id'],
+                    'location': cand['location'],
+                    'file_path': cand['file_path'],
+                    'score': best_score,
+                    'confidence': best_conf
+                })
+
+        results.sort(key=lambda x: x['score'], reverse=True)
+        if self.device_str == "cuda":
+            torch.cuda.empty_cache()
         return results
 
     def _run_glue(self, feats0, feats1):
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,
+                                                    enabled=self.use_amp):
             data = {'image0': feats0, 'image1': feats1}
             pred = self.matcher(data)
             matches = pred['matches0'][0]
@@ -155,7 +245,6 @@ class TurtleDeepMatcher:
 brain = TurtleDeepMatcher()
 
 
-# COMPATIBILITY STUBS
 def load_or_generate_persistent_data(data_dir): return True
 
 

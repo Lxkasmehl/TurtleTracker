@@ -216,26 +216,27 @@ def require_admin(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def convert_npz_to_image_path(npz_path):
+# ARCHITECT NOTE: Renamed and updated to strictly handle PyTorch .pt tensors
+def convert_pt_to_image_path(pt_path):
     """
-    Convert a .npz file path to the corresponding image file path.
+    Convert a .pt file path to the corresponding image file path.
     Tries common image extensions (.jpg, .jpeg, .png).
-    Returns the image path if found, otherwise returns the original npz_path.
+    Returns the image path if found, otherwise returns the original pt_path.
     """
-    if not npz_path or not npz_path.endswith('.npz'):
-        return npz_path
-    
+    if not pt_path or not pt_path.endswith('.pt'):
+        return pt_path
+
     # Try to find the corresponding image file
-    base_path = npz_path[:-4]  # Remove .npz extension
+    base_path = pt_path[:-3]  # Remove .pt extension
     image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-    
+
     for ext in image_extensions:
         image_path = base_path + ext
         if os.path.exists(image_path) and os.path.isfile(image_path):
             return image_path
-    
+
     # If no image found, return original (might be an error case)
-    return npz_path
+    return pt_path
 
 @app.route('/api/upload', methods=['POST'])
 @optional_auth
@@ -244,20 +245,20 @@ def upload_photo():
     Upload photo endpoint
     - Admin: Process immediately and return top 5 matches
     - Community/Anonymous: Save to review queue with top 5 matches
-    
+
     Authentication is optional. If no token is provided, upload is treated as anonymous.
     """
     # Wait for manager to be ready (with timeout)
     if not manager_ready.wait(timeout=30):
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-    
+
     if manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-    
+
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
-        
+
         # Get user data from verified JWT token (if provided)
         user_data = request.user
         if user_data:
@@ -267,61 +268,64 @@ def upload_photo():
             # Anonymous upload
             user_role = 'community'
             user_email = 'anonymous'
-        
+
         file = request.files['file']
         state = request.form.get('state', '')  # Optional: State where turtle was found
         location = request.form.get('location', '')  # Optional: Specific location
-        
+
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-        
+
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type'}), 400
-        
+
         # Check file size
         file.seek(0, os.SEEK_END)
         file_size = file.tell()
         file.seek(0)
-        
+
         if file_size > MAX_FILE_SIZE:
             return jsonify({'error': 'File too large (max 5MB)'}), 400
-        
+
         # Save file temporarily
         filename = secure_filename(file.filename)
         temp_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(temp_path)
-        
+
         if not os.path.exists(temp_path):
             return jsonify({'error': 'Failed to save file'}), 500
-        
+
         if user_role == 'admin':
             # Admin: Process immediately and return matches
-            matches = manager.search_for_matches(temp_path)
-            
+            # search_for_matches now returns (results, time_elapsed) in the new manager
+            matches, _ = manager.search_for_matches(temp_path)
+
             # Format matches for frontend
             formatted_matches = []
             for match in matches:
-                # Convert .npz path to image path
-                npz_path = match.get('file_path', '')
-                image_path = convert_npz_to_image_path(npz_path)
-                
+                # Convert .pt path to image path
+                pt_path = match.get('file_path', '')
+                image_path = convert_pt_to_image_path(pt_path)
+
+                # ARCHITECT NOTE: Updated to use Deep Learning metrics (score/confidence) instead of distance
                 formatted_matches.append({
                     'turtle_id': match.get('site_id', 'Unknown'),
                     'location': match.get('location', 'Unknown'),
-                    'distance': float(match.get('distance', 0)),
-                    'file_path': image_path,  # Now contains image path, not .npz path
-                    'filename': match.get('filename', '')
+                    'score': int(match.get('score', 0)),
+                    'confidence': float(match.get('confidence', 0.0)),
+                    'file_path': image_path,  # Now contains image path, not .pt path
+                    'filename': os.path.basename(image_path) if image_path else ''
                 })
-            
+
             # Create a temporary request ID for this admin upload
             request_id = f"admin_{int(time.time())}_{filename}"
-            
+
             # Adjust message based on number of matches
             if len(formatted_matches) > 0:
                 message = f'Photo processed successfully. {len(formatted_matches)} matches found.'
             else:
                 message = 'Photo processed successfully. No matches found. You can create a new turtle.'
-            
+
             return jsonify({
                 'success': True,
                 'request_id': request_id,
@@ -329,14 +333,14 @@ def upload_photo():
                 'uploaded_image_path': temp_path,
                 'message': message
             })
-        
+
         else:
             # Community or Anonymous: Save to review queue
             if user_email == 'anonymous':
                 finder_name = 'Anonymous User'
             else:
                 finder_name = user_email.split('@')[0] if '@' in user_email else 'anonymous'
-            
+
             user_info = {
                 'finder': finder_name,
                 'email': user_email,
@@ -346,18 +350,18 @@ def upload_photo():
             if state and location:
                 user_info['state'] = state
                 user_info['location'] = location
-            
+
             request_id = manager.create_review_packet(
                 temp_path,
                 user_info=user_info
             )
-            
+
             return jsonify({
                 'success': True,
                 'request_id': request_id,
                 'message': 'Photo uploaded successfully. Waiting for admin review.'
             })
-    
+
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -370,7 +374,7 @@ def upload_photo():
             'error': f'Processing failed: {str(e)}',
             'details': error_trace if app.debug else None
         }), 500
-    
+
     finally:
         # Keep temp file for now (will be cleaned up later)
         pass
@@ -387,30 +391,30 @@ def get_review_queue():
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
     if manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-    
+
     try:
         queue_items = manager.get_review_queue()
-        
+
         # Load metadata and candidate matches for each item
         formatted_items = []
         for item in queue_items:
             request_id = item['request_id']
             packet_dir = item['path']
-            
+
             # Load metadata
             metadata_path = os.path.join(packet_dir, 'metadata.json')
             metadata = {}
             if os.path.exists(metadata_path):
                 with open(metadata_path, 'r') as f:
                     metadata = json.load(f)
-            
+
             # Find the uploaded image
             uploaded_image = None
             for f in os.listdir(packet_dir):
                 if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json':
                     uploaded_image = os.path.join(packet_dir, f)
                     break
-            
+
             # Get candidate matches
             candidates_dir = os.path.join(packet_dir, 'candidate_matches')
             candidates = []
@@ -422,7 +426,7 @@ def get_review_queue():
                         rank = 0
                         turtle_id = 'Unknown'
                         score = 0
-                        
+
                         for part in parts:
                             if part.startswith('Rank'):
                                 rank = int(part.replace('Rank', ''))
@@ -430,14 +434,14 @@ def get_review_queue():
                                 turtle_id = part.replace('ID', '')
                             elif part.startswith('Score'):
                                 score = int(part.replace('Score', ''))
-                        
+
                         candidates.append({
                             'rank': rank,
                             'turtle_id': turtle_id,
                             'score': score,
                             'image_path': os.path.join(candidates_dir, candidate_file)
                         })
-            
+
             formatted_items.append({
                 'request_id': request_id,
                 'uploaded_image': uploaded_image,
@@ -445,12 +449,12 @@ def get_review_queue():
                 'candidates': sorted(candidates, key=lambda x: x['rank']),
                 'status': 'pending'
             })
-        
+
         return jsonify({
             'success': True,
             'items': formatted_items
         })
-    
+
     except Exception as e:
         return jsonify({'error': f'Failed to load review queue: {str(e)}'}), 500
 
@@ -466,13 +470,13 @@ def approve_review(request_id):
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
     if manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-    
+
     data = request.json
     match_turtle_id = data.get('match_turtle_id')  # The turtle ID that was selected
     new_location = data.get('new_location')  # Optional: if creating new turtle (format: "State/Location")
     new_turtle_id = data.get('new_turtle_id')  # Optional: Turtle ID for new turtle (e.g., "T101")
     uploaded_image_path = data.get('uploaded_image_path')  # Optional: direct path for admin uploads
-    
+
     try:
         success, message = manager.approve_review_packet(
             request_id,
@@ -481,7 +485,7 @@ def approve_review(request_id):
             new_turtle_id=new_turtle_id,
             uploaded_image_path=uploaded_image_path
         )
-        
+
         if success:
             return jsonify({
                 'success': True,
@@ -489,7 +493,7 @@ def approve_review(request_id):
             })
         else:
             return jsonify({'error': message}), 400
-    
+
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -510,27 +514,27 @@ def serve_image():
     image_path = request.args.get('path')
     if not image_path:
         return jsonify({'error': 'No path provided'}), 400
-    
+
     # Decode the path
     try:
         from urllib.parse import unquote
         decoded_path = unquote(image_path)
     except:
         decoded_path = image_path
-    
+
     # Security: Only serve images from allowed directories
     safe_path = os.path.normpath(decoded_path)
-    
+
     # Check if path is within data directory or temp directory
     # Wait for manager to be ready
     if not manager_ready.wait(timeout=5):
         return jsonify({'error': 'TurtleManager is still initializing'}), 503
     if manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-    
+
     data_dir = os.path.abspath(os.path.normpath(manager.base_dir))
     temp_dir = os.path.abspath(os.path.normpath(UPLOAD_FOLDER))
-    
+
     def is_path_within_base(file_path, base_dir):
         """
         Safely check if file_path is within base_dir using os.path.commonpath.
@@ -546,7 +550,7 @@ def serve_image():
             # ValueError can occur if paths are on different drives (Windows)
             # OSError can occur for invalid paths
             return False
-    
+
     full_path = None
     # Check if path is absolute and within allowed directories
     if os.path.isabs(safe_path):
@@ -562,10 +566,10 @@ def serve_image():
                 if is_path_within_base(potential_path, base_dir):
                     full_path = potential_path
                     break
-    
+
     if not full_path or not os.path.exists(full_path):
         return jsonify({'error': 'Image not found'}), 404
-    
+
     return send_file(full_path)
 
 if __name__ == '__main__':
@@ -573,7 +577,7 @@ if __name__ == '__main__':
     # Disable debug mode for tests to avoid reload issues
     debug_mode = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
     port = int(os.environ.get('PORT', '5000'))
-    
+
     try:
         print("🐢 Starting Turtle API Server...", flush=True)
         print(f"🌐 Server will be available at http://localhost:{port}", flush=True)
@@ -586,7 +590,7 @@ if __name__ == '__main__':
         if manager is not None:
             print(f"[DIR] Data directory: {manager.base_dir}", flush=True)
         sys.stdout.flush()
-    
+
     try:
         # Use Werkzeug's development server which prints when ready
         # This ensures we can see when the server actually starts
@@ -597,4 +601,3 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         sys.stderr.flush()
-

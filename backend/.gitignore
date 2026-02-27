@@ -1,6 +1,13 @@
 data/
 turtles/media
 
+# 🐢 Turtle Data & AI Tensors
+data/
+Temp Data/
+*.pt
+*.npz
+*.jpg
+
 # Python cache files
 __pycache__/
 *.pyc
@@ -27,3 +34,15 @@ venv/
 *.swo
 *~
 .DS_Store
+
+# Credentials and sensitive files
+credentials/
+*.json
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+**/db.sqlite3
+turtles/db.sqlite3
+backend/turtles/db.sqlite3

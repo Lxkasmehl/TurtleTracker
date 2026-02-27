@@ -1,5 +1,7 @@
 import sys
 import os
+import time
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
@@ -16,12 +18,13 @@ manager = TurtleManager()
 
 
 class IdentifyWindow:
-    def __init__(self, master):
+    def __init__(self, master, current_device):
         self.top = tk.Toplevel(master)
         self.top.title("Identify & Add Observation")
         self.top.geometry("1600x1000")
 
         self.query_path = None
+        self.current_device = current_device
 
         # --- LEFT PANEL: CONTROLS & LOG ---
         frame_left = tk.Frame(self.top, width=450, bg="#ecf0f1")
@@ -51,19 +54,18 @@ class IdentifyWindow:
                                fg="white", font=("Arial", 11))
         btn_browse.pack(fill="x", pady=5)
 
-        btn_search = tk.Button(frame_left, text="🔍 Search Single", command=self.run_search, bg="#e67e22", fg="white",
-                               font=("Arial", 11, "bold"))
-        btn_search.pack(fill="x", pady=5)
+        self.btn_search = tk.Button(frame_left, text="🔍 Search Single", command=self.run_search, bg="#e67e22",
+                                    fg="white", font=("Arial", 11, "bold"))
+        self.btn_search.pack(fill="x", pady=5)
 
-        # --- NEW BULK BUTTON ---
+        # 4. Bulk Button
         tk.Label(frame_left, text="Bulk Testing (No Save):", bg="#ecf0f1", font=("Arial", 10, "bold")).pack(
             pady=(15, 2), anchor="w")
-        btn_bulk = tk.Button(frame_left, text="🧪 Bulk Test Folder (Log Only)", command=self.run_bulk_test, bg="#8e44ad",
-                             fg="white", font=("Arial", 11, "bold"))
-        btn_bulk.pack(fill="x", pady=5)
-        # -----------------------
+        self.btn_bulk = tk.Button(frame_left, text="🧪 Bulk Test Folder (Log Only)", command=self.run_bulk_test,
+                                  bg="#8e44ad", fg="white", font=("Arial", 11, "bold"))
+        self.btn_bulk.pack(fill="x", pady=5)
 
-        # 4. Session Log
+        # 5. Session Log
         tk.Label(frame_left, text="Session History:", bg="#ecf0f1", font=("Arial", 10, "bold")).pack(pady=(20, 5),
                                                                                                      anchor="w")
 
@@ -88,11 +90,7 @@ class IdentifyWindow:
         scrollbar = tk.Scrollbar(self.frame_results, orient="vertical", command=canvas.yview)
         self.scrollable_frame = tk.Frame(canvas)
 
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
+        self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
@@ -104,7 +102,8 @@ class IdentifyWindow:
         t_str = f"[{time_taken:.2f}s]" if time_taken is not None else ""
         msg = f"{status_icon} {filename} {t_str} {note}"
         self.log_list.insert(0, msg)
-        self.top.update()  # Force UI update
+        self.log_list.see(0)
+        self.top.update()
 
     def browse_image(self):
         path = filedialog.askopenfilename(filetypes=[("Images", "*.jpg *.png *.jpeg")], parent=self.top)
@@ -124,18 +123,27 @@ class IdentifyWindow:
         except Exception as e:
             print(f"Error loading image: {e}")
 
-    # --- SINGLE SEARCH ---
+    # --- THREADED SINGLE SEARCH ---
     def run_search(self):
         if not self.query_path: return
-
-        fname = os.path.basename(self.query_path)
-        loc_filter = self.combo_location.get()
+        self.btn_search.config(state="disabled")
 
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        results, time_taken = manager.search_for_matches(self.query_path, location_filter=loc_filter)
+        # Dispatch to background thread
+        threading.Thread(target=self._thread_search, args=(self.query_path, self.combo_location.get()),
+                         daemon=True).start()
 
+    def _thread_search(self, query_path, loc_filter):
+        fname = os.path.basename(query_path)
+        results, time_taken = manager.search_for_matches(query_path, location_filter=loc_filter)
+
+        # Route results back to the main UI thread safely
+        self.top.after(0, self._process_single_results, fname, results, time_taken)
+
+    def _process_single_results(self, fname, results, time_taken):
+        self.btn_search.config(state="normal")
         if not results:
             tk.Label(self.scrollable_frame, text="No matches found.", font=("Arial", 12)).pack(pady=20)
             self.log_message("❌", fname, "(No Matches)", time_taken)
@@ -148,60 +156,79 @@ class IdentifyWindow:
         for i, res in enumerate(results):
             self.create_match_card(res, i + 1)
 
-    # --- UPDATED: BULK TEST (VISUAL) ---
+    # --- THREADED BULK TEST ---
     def run_bulk_test(self):
-        # 1. Select Folder (Parent set to self.top to keep context)
         folder_path = filedialog.askdirectory(title="Select Folder to Test", parent=self.top)
-
-        # 2. Re-focus the Identify Window immediately
         self.top.lift()
         self.top.focus_force()
 
         if not folder_path: return
 
-        # --- CONFIG ---
-        BULK_THRESHOLD = 400
-        loc_filter = self.combo_location.get()
+        # 🚀 FIX: Lock the UI buttons to prevent concurrent actions
+        self.btn_bulk.config(state="disabled")
+        self.btn_search.config(state="disabled")
 
+        # 🚀 FIX: Destroy any lingering match cards so they can't be clicked
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        # Add a friendly indicator that the right panel is intentionally blank
+        tk.Label(self.scrollable_frame, text="🧪 Bulk Test Running...\nSee the Left Panel for live logs.",
+                 font=("Arial", 12, "bold"), fg="#7f8c8d").pack(pady=40)
+
+        threading.Thread(target=self._thread_bulk, args=(folder_path, self.combo_location.get()), daemon=True).start()
+
+    def _thread_bulk(self, folder_path, loc_filter):
+        BULK_THRESHOLD = 400
         files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total = len(files)
-
-        self.log_message("🧪", "TEST START", f"Testing {total} images...")
-
         count_good = 0
+        total_time = 0.0
 
-        for i, filename in enumerate(files):
+        self.top.after(0, self.log_message, "🧪", "TEST START", f"Testing {total} images...")
+
+        for filename in files:
             file_path = os.path.join(folder_path, filename)
 
-            # 3. VISUAL UPDATE: Show the image being processed
-            self.query_path = file_path
-            self.show_image(file_path, self.lbl_query_img, size=(300, 300))
+            # VISUAL UPDATE
+            self.top.after(0, self.show_image, file_path, self.lbl_query_img, (300, 300))
 
-            # Run the search
             results, time_taken = manager.search_for_matches(file_path, location_filter=loc_filter)
+            total_time += time_taken
 
             if results:
                 top_score = results[0]['score']
                 top_id = results[0]['site_id']
 
                 if top_score >= BULK_THRESHOLD:
-                    self.log_message("✅", filename, f"-> {top_id} ({top_score})", time_taken)
+                    self.top.after(0, self.log_message, "✅", filename, f"-> {top_id} ({top_score})", time_taken)
                     count_good += 1
                 else:
-                    self.log_message("⚠️", filename, f"Weak Match ({top_score})", time_taken)
+                    self.top.after(0, self.log_message, "⚠️", filename, f"Weak Match ({top_score})", time_taken)
             else:
-                self.log_message("❌", filename, "No Matches", time_taken)
+                self.top.after(0, self.log_message, "❌", filename, "No Matches", time_taken)
 
-            # Keep logs scrolling
-            self.log_list.see(0)
+        # Trigger benchmark saving
+        manager.save_benchmark(self.current_device, total_time)
 
-            # Force UI refresh
-            self.top.update()
+        # Notify completion
+        self.top.after(0, self._bulk_test_complete, count_good, total, total_time)
 
-        self.log_message("🏁", "TEST DONE", f"Passing: {count_good}/{total} (> {BULK_THRESHOLD})")
-        messagebox.showinfo("Bulk Test Complete", f"Processed {total} images.\n{count_good} passed the threshold.",
+    def _bulk_test_complete(self, count_good, total, total_time):
+        # 🚀 FIX: Unlock the UI when the thread finishes
+        self.btn_bulk.config(state="normal")
+        self.btn_search.config(state="normal")
+
+        # Clear the placeholder text
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        self.log_message("🏁", "TEST DONE", f"Passing: {count_good}/{total} | Time: {total_time:.2f}s")
+        messagebox.showinfo("Bulk Test Complete",
+                            f"Processed {total} images.\n{count_good} passed the threshold.\nBenchmark saved.",
                             parent=self.top)
 
+    # --- FULLY RESTORED ORIGINAL LOGIC ---
     def create_match_card(self, result, rank):
         frame_card = tk.Frame(self.scrollable_frame, bd=2, relief="groove", padx=10, pady=10)
         frame_card.pack(fill="x", pady=5)
@@ -233,8 +260,8 @@ class IdentifyWindow:
         chk_upgrade.pack(pady=5)
 
         btn_confirm = tk.Button(frame_actions, text="✅ Confirm",
-                                command=lambda r=result, v=var_upgrade: self.confirm_match(r, v.get()),
-                                bg="#2ecc71", fg="white", font=("Arial", 11, "bold"), width=15)
+                                command=lambda r=result, v=var_upgrade: self.confirm_match(r, v.get()), bg="#2ecc71",
+                                fg="white", font=("Arial", 11, "bold"), width=15)
         btn_confirm.pack(pady=5)
 
         lbl_img = tk.Label(frame_card, text="Image not found", bg="#dadada")
@@ -256,6 +283,7 @@ class IdentifyWindow:
         action = "Upgrade Reference" if upgrade_reference else "Add Observation"
 
         if messagebox.askyesno("Confirm", f"{action} for {turtle_id}?", parent=self.top):
+            # Using your existing logic hook here
             req_id = manager.create_review_packet(self.query_path, user_info={'manual_admin': True})
             success, msg = manager.approve_review_packet(
                 request_id=req_id,
@@ -273,31 +301,36 @@ class AdminDashboard:
     def __init__(self, root):
         self.root = root
         self.root.title("🐢 Turtle Project Admin Dashboard")
-        self.root.geometry("600x500")
+        self.root.geometry("600x600")
         self.root.configure(bg="#f0f0f0")
 
         header = tk.Label(root, text="TurtleVision ID System", font=("Arial", 18, "bold"), bg="#f0f0f0", fg="#2c3e50")
         header.pack(pady=20)
 
-        sub = tk.Label(root, text="GPU Deep Learning Engine Active", font=("Arial", 10), bg="#f0f0f0", fg="green")
-        sub.pack(pady=(0, 20))
+        # --- DEVICE TOGGLE UI ---
+        frame_dev = tk.LabelFrame(root, text="Compute Device", font=("Arial", 10, "bold"), bg="white", padx=10, pady=10)
+        frame_dev.pack(fill="x", padx=20, pady=5)
+
+        self.device_var = tk.StringVar(value="GPU")
+        tk.Radiobutton(frame_dev, text="GPU (Fast Processing)", variable=self.device_var, value="GPU",
+                       command=self.change_device, bg="white").pack(side="left", padx=10)
+        tk.Radiobutton(frame_dev, text="CPU (Slow Mode)", variable=self.device_var, value="CPU",
+                       command=self.change_device, bg="white").pack(side="left", padx=10)
 
         frame_actions = tk.LabelFrame(root, text="Actions", font=("Arial", 10, "bold"), bg="white", padx=10, pady=10)
         frame_actions.pack(fill="both", expand=True, padx=20, pady=10)
 
-        btn_bulk = tk.Button(frame_actions, text="📂 Bulk Ingest (Flash Drive)",
-                             command=self.command_bulk_ingest,
+        btn_bulk = tk.Button(frame_actions, text="📂 Bulk Ingest (Flash Drive)", command=self.command_bulk_ingest,
                              bg="#3498db", fg="white", font=("Arial", 11), height=2)
         btn_bulk.pack(fill="x", pady=5)
 
-        btn_identify = tk.Button(frame_actions, text="🔍 Identify & Add Observation",
-                                 command=self.open_identify_window,
+        btn_identify = tk.Button(frame_actions, text="🔍 Identify & Add Observation", command=self.open_identify_window,
                                  bg="#9b59b6", fg="white", font=("Arial", 11), height=2)
         btn_identify.pack(fill="x", pady=5)
 
         btn_manual = tk.Button(frame_actions, text="➕ Manual Upload (New Turtle)",
-                               command=self.open_manual_upload_window,
-                               bg="#2ecc71", fg="white", font=("Arial", 11), height=2)
+                               command=self.open_manual_upload_window, bg="#2ecc71", fg="white", font=("Arial", 11),
+                               height=2)
         btn_manual.pack(fill="x", pady=5)
 
         self.status_var = tk.StringVar()
@@ -305,6 +338,13 @@ class AdminDashboard:
         tk.Label(root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W).pack(side=tk.BOTTOM,
                                                                                                fill=tk.X)
 
+    def change_device(self):
+        mode = self.device_var.get()
+        manager.set_device(mode)
+        self.status_var.set(f"Device switched to {mode}")
+        self.root.update()
+
+    # --- FULLY RESTORED ORIGINAL LOGIC ---
     def command_bulk_ingest(self):
         drive_path = filedialog.askdirectory(title="Select Flash Drive Root")
         if drive_path:
@@ -312,10 +352,10 @@ class AdminDashboard:
             self.root.update()
             manager.ingest_flash_drive(drive_path)
             messagebox.showinfo("Done", "Ingest Complete")
-            self.status_var.set("Ready")
+            self.status_var.set("System Ready")
 
     def open_identify_window(self):
-        IdentifyWindow(self.root)
+        IdentifyWindow(self.root, self.device_var.get())
 
     def open_manual_upload_window(self):
         messagebox.showinfo("Info", "Feature in development.")
