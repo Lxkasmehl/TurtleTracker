@@ -64,13 +64,13 @@ def register_sheets_routes(app):
             result_sheet = None
             result_data = None
             for attempt in range(2):
+                executor = ThreadPoolExecutor(max_workers=1)
                 try:
-                    with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(
-                            _fetch_turtle_sheets_data_impl,
-                            service, primary_id, sheet_name, state, location
-                        )
-                        result_sheet, result_data = future.result(timeout=SHEETS_TURTLE_DATA_TIMEOUT_SEC)
+                    future = executor.submit(
+                        _fetch_turtle_sheets_data_impl,
+                        service, primary_id, sheet_name, state, location
+                    )
+                    result_sheet, result_data = future.result(timeout=SHEETS_TURTLE_DATA_TIMEOUT_SEC)
                     break
                 except FuturesTimeoutError:
                     print(f"Timeout loading turtle data for {primary_id} (attempt {attempt + 1}/2)")
@@ -99,6 +99,8 @@ def register_sheets_routes(app):
                     result_sheet = None
                     result_data = None
                     break
+                finally:
+                    executor.shutdown(wait=False)
             
             if result_data:
                 return jsonify({
