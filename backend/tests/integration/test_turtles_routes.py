@@ -47,8 +47,11 @@ def test_get_turtle_images_success(client, turtle_with_images):
     data = r.json()
     assert data["primary"] is not None
     assert "ref_data" in data["primary"] and "ref.jpg" in data["primary"]
-    assert len(data["additional"]) == 1
-    assert data["additional"][0]["type"] == "microhabitat"
+    # At least one additional (fixture); may have more if review approve test ran first
+    assert len(data["additional"]) >= 1
+    additional_filenames = [os.path.basename(a.get("path", "")) for a in data["additional"]]
+    assert turtle_with_images["additional_filename"] in additional_filenames
+    assert any(a["type"] == "microhabitat" for a in data["additional"])
     assert len(data["loose"]) == 1
 
 
@@ -79,7 +82,9 @@ def test_delete_turtle_additional_success(client, turtle_with_images):
     assert data["success"] is True
     r2 = client.get(f"/api/turtles/images?turtle_id={tid}&sheet_name={loc}")
     assert r2.status_code == 200
-    assert len(r2.json()["additional"]) == 0
+    remaining = r2.json()["additional"]
+    remaining_filenames = [os.path.basename(a.get("path", "")) for a in remaining]
+    assert fn not in remaining_filenames, f"Deleted file {fn} should not be in {remaining_filenames}"
 
 
 # --- POST /api/turtles/images/primaries (batch) ---

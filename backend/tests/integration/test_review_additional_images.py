@@ -259,5 +259,6 @@ def test_z_approve_merges_packet_additional_into_turtle(client, review_packet_di
     r4 = client.get("/api/turtles/images?turtle_id=T42&sheet_name=Kansas/Topeka")
     assert r4.status_code == 200
     turtle_additional = r4.json()["additional"]
-    filenames = [a.get("filename") for a in turtle_additional if a.get("filename")]
+    # API returns path, not filename; derive filename from path
+    filenames = [os.path.basename(a.get("path", "")) for a in turtle_additional]
     assert merged_filename in filenames, f"Expected {merged_filename} in turtle additional_images: {filenames}"
