@@ -1,0 +1,426 @@
+/**
+ * Turtle API – photo upload, review queue, matching
+ */
+
+import { getToken, removeToken, TURTLE_API_BASE_URL } from './config';
+import type { TurtleSheetsData } from './sheets';
+
+export interface TurtleMatch {
+  turtle_id: string;
+  location: string;
+  distance: number;
+  file_path: string;
+  filename: string;
+}
+
+export interface UploadPhotoResponse {
+  success: boolean;
+  request_id?: string;
+  matches?: TurtleMatch[];
+  uploaded_image_path?: string;
+  message: string;
+}
+
+/** Location hint from community (never stored in sheets, queue/display only) */
+export interface LocationHint {
+  latitude: number;
+  longitude: number;
+  source: 'gps' | 'manual';
+}
+
+/** Additional image (microhabitat, condition) in a review packet */
+export interface AdditionalImage {
+  filename: string;
+  type: string;
+  timestamp?: string;
+  image_path: string;
+}
+
+export interface ReviewQueueItem {
+  request_id: string;
+  uploaded_image: string;
+  metadata: {
+    finder?: string;
+    email?: string;
+    uploaded_at?: number;
+    state?: string;
+    location?: string;
+    /** Hint only – never stored in sheets */
+    location_hint_lat?: number;
+    location_hint_lon?: number;
+    location_hint_source?: 'gps' | 'manual';
+    collected_to_lab?: string;
+    physical_flag?: string;
+    digital_flag_lat?: number;
+    digital_flag_lon?: number;
+    digital_flag_source?: 'gps' | 'manual';
+  };
+  /** Microhabitat / condition photos uploaded with this find */
+  additional_images?: AdditionalImage[];
+  candidates: Array<{
+    rank: number;
+    turtle_id: string;
+    score: number;
+    image_path: string;
+  }>;
+  status: string;
+}
+
+/** Flag/microhabitat data sent when approving a review (new or matched turtle) */
+export interface FindMetadata {
+  microhabitat_uploaded?: boolean;
+  other_angles_uploaded?: boolean;
+  collected_to_lab?: 'yes' | 'no';
+  physical_flag?: 'yes' | 'no' | 'no_flag';
+  digital_flag_lat?: number;
+  digital_flag_lon?: number;
+  digital_flag_source?: 'gps' | 'manual';
+}
+
+export interface ReviewQueueResponse {
+  success: boolean;
+  items: ReviewQueueItem[];
+}
+
+export interface ApproveReviewRequest {
+  match_turtle_id?: string;
+  new_location?: string;
+  new_turtle_id?: string;
+  uploaded_image_path?: string;
+  sheets_data?: TurtleSheetsData;
+  find_metadata?: FindMetadata;
+}
+
+/** Optional flag/collected-to-lab and extra images for upload (community flow) */
+export interface UploadFlagOptions {
+  collectedToLab?: 'yes' | 'no';
+  physicalFlag?: 'yes' | 'no' | 'no_flag';
+  digitalFlag?: LocationHint;
+}
+
+export interface UploadExtraFile {
+  type: 'microhabitat' | 'condition';
+  file: File;
+}
+
+export interface ApproveReviewResponse {
+  success: boolean;
+  message: string;
+}
+
+// Upload photo (Admin or Community)
+export const uploadTurtlePhoto = async (
+  file: File,
+  _role: 'admin' | 'community',
+  _email: string,
+  location?: { state: string; location: string },
+  /** Optional: coordinates as hint only (never stored in sheets) */
+  locationHint?: LocationHint,
+  /** Admin only: sheet name (location) to test against; '' or undefined = test against all locations */
+  matchSheet?: string,
+  /** Optional: collected to lab / physical flag / digital flag (community upload) */
+  flagOptions?: UploadFlagOptions,
+  /** Optional: microhabitat or condition photos (community upload, same request) */
+  extraFiles?: UploadExtraFile[],
+): Promise<UploadPhotoResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  if (location) {
+    formData.append('state', location.state);
+    formData.append('location', location.location);
+  }
+  if (matchSheet !== undefined) {
+    formData.append('match_sheet', matchSheet);
+  }
+  if (locationHint) {
+    formData.append('location_hint_lat', String(locationHint.latitude));
+    formData.append('location_hint_lon', String(locationHint.longitude));
+    formData.append('location_hint_source', locationHint.source);
+  }
+  if (flagOptions) {
+    if (flagOptions.collectedToLab) formData.append('collected_to_lab', flagOptions.collectedToLab);
+    if (flagOptions.physicalFlag) formData.append('physical_flag', flagOptions.physicalFlag);
+    if (flagOptions.digitalFlag) {
+      formData.append('digital_flag_lat', String(flagOptions.digitalFlag.latitude));
+      formData.append('digital_flag_lon', String(flagOptions.digitalFlag.longitude));
+      formData.append('digital_flag_source', flagOptions.digitalFlag.source);
+    }
+  }
+  if (extraFiles?.length) {
+    extraFiles.forEach((ef, i) => {
+      formData.append(`extra_${ef.type}_${i}`, ef.file);
+    });
+  }
+
+  const token = getToken();
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${TURTLE_API_BASE_URL}/upload`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      removeToken();
+      throw new Error('Authentication failed. Please try again.');
+    }
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    const message = error.error || 'Upload failed';
+    const details = error.details as string | undefined;
+    if (details && import.meta.env.DEV) {
+      console.error('Upload error details:', details);
+    }
+    throw new Error(message);
+  }
+
+  return await response.json();
+};
+
+// Get review queue (Admin only)
+export const getReviewQueue = async (): Promise<ReviewQueueResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${TURTLE_API_BASE_URL}/review-queue`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to load review queue');
+  }
+
+  return await response.json();
+};
+
+// Add additional images (microhabitat, condition) to a review packet (Admin only)
+export const uploadReviewPacketAdditionalImages = async (
+  requestId: string,
+  files: Array<{ type: 'microhabitat' | 'condition'; file: File }>,
+): Promise<{ success: boolean; message?: string }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const formData = new FormData();
+  files.forEach((f, i) => {
+    formData.append(`file_${i}`, f.file);
+    formData.append(`type_${i}`, f.type);
+  });
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}/additional-images`,
+    { method: 'POST', headers, body: formData },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error || 'Failed to add images');
+  }
+  return await response.json();
+};
+
+// Get single review packet (Admin only)
+export const getReviewPacket = async (
+  requestId: string,
+): Promise<{ success: boolean; item: ReviewQueueItem }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}`,
+    { method: 'GET', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load packet' }));
+    throw new Error(err.error || 'Failed to load packet');
+  }
+  return await response.json();
+};
+
+// Remove one additional image from a review packet (Admin only)
+export const removeReviewPacketAdditionalImage = async (
+  requestId: string,
+  filename: string,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review-queue/${encodeURIComponent(requestId)}/additional-images`,
+    { method: 'DELETE', headers, body: JSON.stringify({ filename }) },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to remove image' }));
+    throw new Error(err.error || 'Failed to remove image');
+  }
+};
+
+// Approve review item (Admin only)
+export const approveReview = async (
+  requestId: string,
+  data: ApproveReviewRequest,
+): Promise<ApproveReviewResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review/${requestId}/approve`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to approve review');
+  }
+
+  return await response.json();
+};
+
+// Delete review queue item (Admin only)
+export const deleteReviewItem = async (
+  requestId: string,
+): Promise<{ success: boolean; message: string }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/review/${encodeURIComponent(requestId)}`,
+    {
+      method: 'DELETE',
+      headers,
+    },
+  );
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ error: 'Failed to delete' }));
+    throw new Error(error.error || 'Failed to delete review item');
+  }
+  return await response.json();
+};
+
+// Get turtles with flag/find metadata (Admin only – for release page)
+export const getTurtlesWithFlags = async (): Promise<{
+  success: boolean;
+  items: Array<{
+    turtle_id: string;
+    location: string;
+    path: string;
+    find_metadata: FindMetadata & Record<string, unknown>;
+  }>;
+}> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/flags`, { method: 'GET', headers });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load flags' }));
+    throw new Error(err.error || 'Failed to load turtles with flags');
+  }
+  return await response.json();
+};
+
+/** Mark turtle as released back to nature (clear digital flag, set released_at). Admin only. */
+export const clearReleaseFlag = async (
+  turtleId: string,
+  location?: string | null,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/flags/release`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ turtle_id: turtleId, location: location || undefined }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to clear release flag' }));
+    throw new Error(err.error || 'Failed to clear release flag');
+  }
+};
+
+// Get image URL helper
+export const getImageUrl = (imagePath: string): string => {
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+  const encodedPath = encodeURIComponent(imagePath);
+  return `${TURTLE_API_BASE_URL.replace('/api', '')}/api/images?path=${encodedPath}`;
+};
+
+// Turtle images (Admin only) – primary plastron, additional (microhabitat/condition), loose
+export interface TurtleImageAdditional {
+  path: string;
+  type: string;
+  timestamp?: string | null;
+  uploaded_by?: string | null;
+}
+
+export interface TurtleImagesResponse {
+  primary: string | null;
+  additional: TurtleImageAdditional[];
+  loose: string[];
+}
+
+export const getTurtleImages = async (
+  turtleId: string,
+  sheetName?: string | null,
+): Promise<TurtleImagesResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const params = new URLSearchParams({ turtle_id: turtleId });
+  if (sheetName) params.set('sheet_name', sheetName);
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/turtles/images?${params.toString()}`,
+    { method: 'GET', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load images' }));
+    throw new Error(err.error || 'Failed to load turtle images');
+  }
+  return await response.json();
+};
+
+/** Delete one additional image from a turtle's folder (Admin only). */
+export const deleteTurtleAdditionalImage = async (
+  turtleId: string,
+  filename: string,
+  sheetName?: string | null,
+): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const params = new URLSearchParams({ turtle_id: turtleId, filename });
+  if (sheetName) params.set('sheet_name', sheetName);
+  const response = await fetch(
+    `${TURTLE_API_BASE_URL}/turtles/images/additional?${params.toString()}`,
+    { method: 'DELETE', headers },
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to delete image' }));
+    throw new Error(err.error || 'Failed to delete image');
+  }
+};

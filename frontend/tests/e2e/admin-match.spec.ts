@@ -80,9 +80,7 @@ test.describe('Admin Turtle Match', () => {
     ).toBeVisible();
   });
 
-  test('Match page shows Additional photos (microhabitat / condition) section and add buttons', async ({
-    page,
-  }) => {
+  test('Create New Turtle modal shows Google Sheets form', async ({ page }) => {
     test.setTimeout(60_000);
     await loginAsAdmin(page);
 
@@ -99,17 +97,15 @@ test.describe('Admin Turtle Match', () => {
       timeout: 15_000,
     });
 
-    // When there are 0 matches, the section lives in the Create New Turtle modal; when there are matches, it's in the right column after selecting one. Open the modal so the section is visible regardless of match count.
     await page.getByRole('button', { name: 'Create New Turtle' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
     await expect(
-      dialog.getByText('Additional photos (microhabitat / condition)', { exact: false }),
+      dialog.getByText('Create a new turtle entry for this uploaded image', { exact: false }),
     ).toBeVisible();
-    // Add controls are <Button component="label"> (render as <label>), so target by visible text
-    await expect(dialog.getByText('Microhabitat', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('Condition', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Google Sheets Data', { exact: false })).toBeVisible();
+    await expect(dialog.getByLabel('Sheet / Location')).toBeVisible();
   });
 
   test('Community cannot access match page', async ({ page }) => {
