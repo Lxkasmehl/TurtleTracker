@@ -346,7 +346,7 @@ class TurtleManager:
     def remove_additional_image_from_packet(self, request_id, filename):
         """
         Remove one image from a packet's additional_images by filename.
-        Scans through date folders to find and remove the target.
+        Scans root (legacy) and date folders to find and remove the target.
         """
         packet_dir = os.path.join(self.review_queue_dir, request_id)
         if not os.path.isdir(packet_dir):
@@ -359,29 +359,36 @@ class TurtleManager:
         if not filename or os.path.basename(filename) != filename:
             return False, "Invalid filename"
 
-        # Scan date folders
-        for date_folder in os.listdir(additional_dir):
-            date_dir = os.path.join(additional_dir, date_folder)
-            if not os.path.isdir(date_dir): continue
-
-            file_path = os.path.join(date_dir, filename)
+        # Helper to try deleting from a specific directory
+        def try_delete(target_dir):
+            file_path = os.path.join(target_dir, filename)
             if os.path.isfile(file_path):
-                manifest_path = os.path.join(date_dir, 'manifest.json')
-
+                manifest_path = os.path.join(target_dir, 'manifest.json')
                 if os.path.isfile(manifest_path):
                     with open(manifest_path, 'r') as f:
                         manifest = json.load(f)
                     new_manifest = [e for e in manifest if e.get('filename') != filename]
                     with open(manifest_path, 'w') as f:
                         json.dump(new_manifest, f, indent=4)
-
                 try:
                     os.remove(file_path)
-                    return True, None
-                except OSError as e:
-                    return False, str(e)
+                    return True
+                except OSError:
+                    return False
+            return False
 
-        return False, "Image not found in any date folder"
+        # 1. Check legacy root folder first
+        if try_delete(additional_dir):
+            return True, None
+
+        # 2. Scan date folders
+        for date_folder in os.listdir(additional_dir):
+            date_dir = os.path.join(additional_dir, date_folder)
+            if os.path.isdir(date_dir):
+                if try_delete(date_dir):
+                    return True, None
+
+        return False, "Image not found"
 
     def add_additional_images_to_turtle(self, turtle_id, files_with_types, sheet_name=None):
         """
@@ -424,7 +431,7 @@ class TurtleManager:
     def remove_additional_image_from_turtle(self, turtle_id, filename, sheet_name=None):
         """
         Remove one image from a turtle's additional_images folder by filename.
-        Scans through date folders to find and remove the target.
+        Scans root (legacy) and date folders to find and remove the target.
         """
         turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
         if not turtle_dir or not os.path.isdir(turtle_dir):
@@ -437,29 +444,36 @@ class TurtleManager:
         if not filename or os.path.basename(filename) != filename:
             return False, "Invalid filename"
 
-        # Scan date folders
-        for date_folder in os.listdir(additional_dir):
-            date_dir = os.path.join(additional_dir, date_folder)
-            if not os.path.isdir(date_dir): continue
-
-            file_path = os.path.join(date_dir, filename)
+        # Helper to try deleting from a specific directory
+        def try_delete(target_dir):
+            file_path = os.path.join(target_dir, filename)
             if os.path.isfile(file_path):
-                manifest_path = os.path.join(date_dir, 'manifest.json')
-
+                manifest_path = os.path.join(target_dir, 'manifest.json')
                 if os.path.isfile(manifest_path):
                     with open(manifest_path, 'r') as f:
                         manifest = json.load(f)
                     new_manifest = [e for e in manifest if e.get('filename') != filename]
                     with open(manifest_path, 'w') as f:
                         json.dump(new_manifest, f, indent=4)
-
                 try:
                     os.remove(file_path)
-                    return True, None
-                except OSError as e:
-                    return False, str(e)
+                    return True
+                except OSError:
+                    return False
+            return False
 
-        return False, "Image not found in any date folder"
+        # 1. Check legacy root folder first
+        if try_delete(additional_dir):
+            return True, None
+
+        # 2. Scan date folders
+        for date_folder in os.listdir(additional_dir):
+            date_dir = os.path.join(additional_dir, date_folder)
+            if os.path.isdir(date_dir):
+                if try_delete(date_dir):
+                    return True, None
+
+        return False, "Image not found"
 
     # --- SEARCH & OBSERVATION LOGIC ---
 
