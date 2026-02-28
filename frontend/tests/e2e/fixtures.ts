@@ -94,3 +94,77 @@ export function getTestImageBuffer(): Buffer {
 export async function clickUploadPhotoButton(page: Page): Promise<void> {
   await page.locator('button[data-size="md"]:has-text("Upload Photo")').click();
 }
+
+/**
+ * Selects an option from an open Mantine Select/Combobox by keyboard.
+ * Call after clicking the select input. Index 0 = first option.
+ * Works when the dropdown is portaled or not visible to Playwright (e.g. mobile).
+ */
+export async function selectComboboxOptionByIndex(
+  page: Page,
+  optionIndex: number,
+): Promise<void> {
+  for (let i = 0; i < optionIndex; i++) {
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
+}
+
+const SHEET_SELECT_LABEL = 'Sheet / Location';
+const SHEET_DROPDOWN_TIMEOUT = 20_000;
+
+/**
+ * In the Create New Turtle dialog, select a sheet (e.g. "Kansas").
+ * On mobile we use NativeSelect (native <select>); on desktop, Mantine Select (textbox + listbox).
+ * Uses getByLabel so the same helper works for both.
+ */
+export async function selectSheetInCreateTurtleDialog(
+  page: Page,
+  dialog: ReturnType<Page['getByRole']>,
+  sheetName: string,
+): Promise<void> {
+  const sheetSelect = dialog.getByLabel(SHEET_SELECT_LABEL);
+  await sheetSelect.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
+
+  const isNativeSelect = await sheetSelect.evaluate((el) => el.tagName === 'SELECT');
+  if (isNativeSelect) {
+    await sheetSelect.selectOption(sheetName);
+    return;
+  }
+
+  await sheetSelect.click();
+  await page
+    .getByRole('listbox', { name: SHEET_SELECT_LABEL })
+    .waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
+  const option = page.getByRole('option', { name: sheetName });
+  await option.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
+  await option.click();
+}
+
+const SEX_SELECT_LABEL = 'Sex';
+const SEX_DROPDOWN_TIMEOUT = 10_000;
+
+/**
+ * In the Create New Turtle dialog, select Sex (e.g. "F", "M").
+ * On mobile we use NativeSelect (native <select>); on desktop, Mantine Select (listbox).
+ */
+export async function selectSexInCreateTurtleDialog(
+  page: Page,
+  dialog: ReturnType<Page['getByRole']>,
+  value: string,
+): Promise<void> {
+  const sexSelect = dialog.getByLabel(SEX_SELECT_LABEL);
+  await sexSelect.waitFor({ state: 'visible', timeout: SEX_DROPDOWN_TIMEOUT });
+
+  const isNativeSelect = await sexSelect.evaluate((el) => el.tagName === 'SELECT');
+  if (isNativeSelect) {
+    await sexSelect.selectOption(value);
+    return;
+  }
+
+  await sexSelect.click();
+  await page
+    .getByRole('listbox', { name: SEX_SELECT_LABEL })
+    .waitFor({ state: 'visible', timeout: SEX_DROPDOWN_TIMEOUT });
+  await page.getByRole('option', { name: value }).click();
+}

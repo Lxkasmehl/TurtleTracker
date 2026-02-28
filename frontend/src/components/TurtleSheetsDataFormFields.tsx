@@ -54,6 +54,9 @@ export interface TurtleSheetsDataFormFieldsProps {
   primaryId?: string;
   hintLocationFromCommunity?: string;
   hintCoordinates?: { latitude: number; longitude: number; source?: 'gps' | 'manual' };
+  errors?: Record<string, string>;
+  /** In create mode the ID field is always disabled and filled by generate-id (sex + sequence per sheet). */
+  mode?: 'create' | 'edit';
 }
 
 function toSpan(span: FieldSpan) {
@@ -73,6 +76,8 @@ export function TurtleSheetsDataFormFields({
   primaryId,
   hintLocationFromCommunity,
   hintCoordinates,
+  errors,
+  mode,
 }: TurtleSheetsDataFormFieldsProps) {
   return (
     <>
@@ -179,7 +184,11 @@ export function TurtleSheetsDataFormFields({
               field={config.key}
               label={config.label}
               placeholder={config.placeholder}
-              description={config.description}
+              description={
+                config.key === 'id' && mode === 'create'
+                  ? 'Auto-generated from sex + sequence for this sheet (e.g. M1, F2)'
+                  : config.description
+              }
               value={value}
               onChange={(v) => handleChange(config.key, v)}
               type={config.type}
@@ -187,6 +196,8 @@ export function TurtleSheetsDataFormFields({
               isFieldModeRestricted={isFieldModeRestricted}
               isFieldUnlocked={isFieldUnlocked}
               requestUnlock={requestUnlock}
+              disabled={config.key === 'id' && mode === 'create'}
+              error={errors?.[config.key]}
             />
           </Grid.Col>
         );

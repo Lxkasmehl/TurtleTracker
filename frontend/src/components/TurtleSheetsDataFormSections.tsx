@@ -6,6 +6,7 @@ import {
   Stack,
   TextInput,
   Select,
+  NativeSelect,
   Group,
   Button,
   Alert,
@@ -15,6 +16,7 @@ import {
   Modal,
   Anchor,
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { IconInfoCircle, IconLockOpen, IconMapPin } from '@tabler/icons-react';
 import { MapDisplay } from './MapDisplay';
 import type { TurtleSheetsData } from '../services/api';
@@ -62,6 +64,16 @@ export function SheetSelectionRow({
   availableSheets: string[];
   setShowCreateSheetModal: (v: boolean) => void;
 }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const sheetOptionsForSelect = [
+    ...availableSheets.map((name) => ({ value: name, label: name })),
+    { value: '__create_new__', label: '+ Create New Sheet' },
+  ];
+  const sheetOptionsForNative = [
+    { value: '', label: 'Select a sheet or create new' },
+    ...sheetOptionsForSelect,
+  ];
+
   if (loadingSheets) {
     return (
       <Group gap='sm'>
@@ -96,27 +108,42 @@ export function SheetSelectionRow({
     );
   }
 
+  const handleSheetChange = (value: string | null) => {
+    const v = value ?? '';
+    if (v === '__create_new__') {
+      setShowCreateSheetModal(true);
+      setSelectedSheetName('');
+    } else {
+      setSelectedSheetName(v);
+    }
+  };
+
+  if (isMobile) {
+    return (
+      <NativeSelect
+        label='Sheet / Location'
+        data={sheetOptionsForNative}
+        value={selectedSheetName}
+        onChange={(e) => handleSheetChange(e.currentTarget.value || null)}
+        required
+        description='Select the Google Sheets tab where this turtle data should be stored'
+        error={!selectedSheetName ? 'Sheet selection is required' : undefined}
+      />
+    );
+  }
+
   return (
     <Select
       label='Sheet / Location'
       placeholder='Select a sheet or create new'
-      data={[
-        ...availableSheets,
-        { value: '__create_new__', label: '+ Create New Sheet' },
-      ]}
+      data={sheetOptionsForSelect}
       value={selectedSheetName}
-      onChange={(value) => {
-        if (value === '__create_new__') {
-          setShowCreateSheetModal(true);
-          setSelectedSheetName('');
-        } else {
-          setSelectedSheetName(value || '');
-        }
-      }}
+      onChange={handleSheetChange}
       required
       description='Select the Google Sheets tab where this turtle data should be stored'
       error={!selectedSheetName ? 'Sheet selection is required' : undefined}
       searchable
+      comboboxProps={{ keepMounted: true }}
     />
   );
 }
