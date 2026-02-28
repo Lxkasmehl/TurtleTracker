@@ -132,6 +132,36 @@ def register_upload_routes(app):
                 os.makedirs(additional_dir, exist_ok=True)
                 with open(os.path.join(additional_dir, 'manifest.json'), 'w') as f:
                     json.dump([], f)
+                # Optional: additional images (microhabitat, condition) uploaded with admin photo
+                files_with_types = []
+                for key in list(request.files.keys()):
+                    if key.startswith('extra_') and key != 'file':
+                        rest = key.replace('extra_', '', 1).strip().lower()
+                        if rest.startswith('microhabitat'):
+                            typ = 'microhabitat'
+                        elif rest.startswith('condition'):
+                            typ = 'condition'
+                        else:
+                            typ = 'other'
+                        f = request.files[key]
+                        if f and f.filename and allowed_file(f.filename):
+                            f.seek(0, os.SEEK_END)
+                            size = f.tell()
+                            f.seek(0)
+                            if size <= MAX_FILE_SIZE:
+                                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                                extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
+                                f.save(extra_temp)
+                                files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+                if files_with_types:
+                    manager_service.manager.add_additional_images_to_packet(request_id, files_with_types)
+                    for item in files_with_types:
+                        path = item.get('path')
+                        if path and os.path.isfile(path):
+                            try:
+                                os.remove(path)
+                            except OSError:
+                                pass
                 match_sheet = (request.form.get('match_sheet') or '').strip() or None
                 matches = manager_service.manager.search_for_matches(query_save_path, sheet_name=match_sheet)
                 if matches is None:
