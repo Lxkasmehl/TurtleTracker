@@ -43,6 +43,7 @@ def register_turtle_routes(app):
                 'loose': [],
             })
 
+        # --- PRIMARY IMAGE LOGIC ---
         primary_path = None
         ref_dir = os.path.join(turtle_dir, 'ref_data')
         if os.path.isdir(ref_dir):
@@ -51,10 +52,16 @@ def register_turtle_routes(app):
                     primary_path = os.path.join(ref_dir, f)
                     break
 
+        # --- NEW ADDITIONAL IMAGES LOGIC ---
         additional = []
         additional_dir = os.path.join(turtle_dir, 'additional_images')
-        if os.path.isdir(additional_dir):
-            manifest_path = os.path.join(additional_dir, 'manifest.json')
+
+        # Helper function to parse a folder containing a manifest.json
+        def parse_manifest_or_folder(target_dir):
+            results = []
+            manifest_path = os.path.join(target_dir, 'manifest.json')
+            processed_files = set()
+
             if os.path.isfile(manifest_path):
                 try:
                     with open(manifest_path, 'r') as f:
@@ -63,27 +70,41 @@ def register_turtle_routes(app):
                         fn = entry.get('filename')
                         kind = entry.get('type', 'other')
                         if fn:
-                            p = os.path.join(additional_dir, fn)
+                            p = os.path.join(target_dir, fn)
                             if os.path.isfile(p):
-                                additional.append({
+                                results.append({
                                     'path': p,
                                     'type': kind,
                                     'timestamp': entry.get('timestamp'),
                                     'uploaded_by': entry.get('uploaded_by'),
                                 })
+                                processed_files.add(fn)
                 except (json.JSONDecodeError, OSError):
                     pass
-            # Fallback: list images in folder if no manifest
-            if not additional:
-                for f in sorted(os.listdir(additional_dir)):
-                    if f != 'manifest.json' and f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
-                        additional.append({
-                            'path': os.path.join(additional_dir, f),
+
+            # Fallback: Catch any images in the folder that aren't in the manifest
+            if os.path.isdir(target_dir):
+                for f in sorted(os.listdir(target_dir)):
+                    if f != 'manifest.json' and f not in processed_files and f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                        results.append({
+                            'path': os.path.join(target_dir, f),
                             'type': 'other',
                             'timestamp': None,
                             'uploaded_by': None,
                         })
+            return results
 
+        if os.path.isdir(additional_dir):
+            # 1. Process root directory (Catches legacy flat-file uploads from before our update)
+            additional.extend(parse_manifest_or_folder(additional_dir))
+
+            # 2. Process our new Date-Stamped subfolders
+            for item in sorted(os.listdir(additional_dir)):
+                item_path = os.path.join(additional_dir, item)
+                if os.path.isdir(item_path):
+                    additional.extend(parse_manifest_or_folder(item_path))
+
+        # --- LOOSE IMAGES LOGIC ---
         loose = []
         loose_dir = os.path.join(turtle_dir, 'loose_images')
         if os.path.isdir(loose_dir):

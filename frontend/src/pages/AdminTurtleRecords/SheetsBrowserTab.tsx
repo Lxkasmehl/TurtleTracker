@@ -86,6 +86,25 @@ export function SheetsBrowserTab() {
       .catch(() => setPrimaryImages({}));
   }, [filteredTurtles]);
 
+  // --- NEW LOGIC: Filter for the most recent date folder ---
+  const allAdditionalImages = turtleImages?.additional ?? [];
+  let latestDate = '';
+  const dateRegex = /(\d{4}-\d{2}-\d{2})[/\\]/;
+
+  // 1. Find the highest (most recent) date in the paths
+  allAdditionalImages.forEach((img) => {
+    const match = img.path.match(dateRegex);
+    if (match && match[1] > latestDate) {
+      latestDate = match[1];
+    }
+  });
+
+  // 2. Filter images to only include those from the latest date
+  // Fallback to all images if no dates are found (e.g., legacy flat-directory uploads)
+  const recentAdditionalImages = latestDate
+    ? allAdditionalImages.filter((img) => img.path.includes(latestDate))
+    : allAdditionalImages;
+
   return (
     <Grid gutter='lg'>
       <Grid.Col span={{ base: 12, md: 4 }}>
@@ -233,8 +252,8 @@ export function SheetsBrowserTab() {
           <Stack gap='md'>
             {turtleId && (
               <AdditionalImagesSection
-                title='Turtle photos (Microhabitat / Condition)'
-                images={(turtleImages?.additional ?? []).map((a) => ({
+                title={`Turtle photos (Microhabitat / Condition)${latestDate ? ` - ${latestDate}` : ''}`}
+                images={recentAdditionalImages.map((a) => ({
                   imagePath: a.path,
                   filename: a.path.split(/[/\\]/).pop() ?? a.path,
                   type: a.type,
@@ -251,19 +270,19 @@ export function SheetsBrowserTab() {
             <Paper shadow='sm' p='md' radius='md' withBorder>
               <ScrollArea h={700}>
                 <TurtleSheetsDataForm
-                initialData={selectedTurtle}
-                sheetName={selectedTurtle.sheet_name}
-                initialAvailableSheets={
-                  availableSheets.length > 0 ? availableSheets : undefined
-                }
-                state={selectedTurtle.general_location || ''}
-                location={selectedTurtle.location || ''}
-                primaryId={
-                  selectedTurtle.primary_id || selectedTurtle.id || undefined
-                }
-                mode='edit'
-                onSave={onSaveTurtle}
-              />
+                  initialData={selectedTurtle}
+                  sheetName={selectedTurtle.sheet_name}
+                  initialAvailableSheets={
+                    availableSheets.length > 0 ? availableSheets : undefined
+                  }
+                  state={selectedTurtle.general_location || ''}
+                  location={selectedTurtle.location || ''}
+                  primaryId={
+                    selectedTurtle.primary_id || selectedTurtle.id || undefined
+                  }
+                  mode='edit'
+                  onSave={onSaveTurtle}
+                />
               </ScrollArea>
             </Paper>
           </Stack>

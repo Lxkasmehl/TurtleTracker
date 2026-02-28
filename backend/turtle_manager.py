@@ -1,4 +1,3 @@
-
 # --- PATH HACK: Allow importing from the 'turtles' package ---
 import os
 import shutil
@@ -20,12 +19,13 @@ try:
 except ImportError:
     # Fallback: Try local import if files are flat
     import image_processing
+
 # --- CONFIGURATION ---
 BASE_DATA_DIR = 'data'
 
 LOCATION_NAME_MAP = {
-    #"CBPS": "WT",
-    #"North Topeka": "NT",
+    # "CBPS": "WT",
+    # "North Topeka": "NT",
 }
 
 
@@ -99,7 +99,6 @@ class TurtleManager:
         print(f"Manual Upload: Processing {turtle_id} into {location_dir}...")
         return self._process_single_turtle(image_path, location_dir, turtle_id)
 
-
     def get_review_queue(self):
         """
         RECOVERS STATE ON RESTART.
@@ -121,8 +120,6 @@ class TurtleManager:
                     })
 
         return queue_items
-
-
 
     def create_new_location(self, state_name, location_name):
         """
@@ -175,7 +172,7 @@ class TurtleManager:
                 for filename in os.listdir(location_source_path):
                     if not filename.lower().endswith(('.jpg', '.jpeg', '.png')): continue
 
-                    # --- CHANGE 1: Extract only the first 4 chars (Letter + 3 Numbers) ---
+                    # Extract only the first 4 chars (Letter + 3 Numbers)
                     # Example: "T101_date.jpg" -> "T101"
                     turtle_id = filename[:4].strip().rstrip('_')
 
@@ -206,18 +203,12 @@ class TurtleManager:
         os.makedirs(ref_dir, exist_ok=True)
         os.makedirs(loose_dir, exist_ok=True)
 
-        # --- CHANGE 2: Rename files to match the ID exactly ---
-        # Get original extension (e.g. .jpg)
+        # Rename files to match the ID exactly
         ext = os.path.splitext(source_path)[1]
-
-        # Save as T101.jpg
         dest_image_path = os.path.join(ref_dir, f"{turtle_id}{ext}")
-        # Save as T101.npz
         dest_npz_path = os.path.join(ref_dir, f"{turtle_id}.npz")
 
-        # --- THE "SKIP DUPLICATE" CHECK ---
-        # If T101.npz exists, we assume this ID is already processed for this location.
-        # This handles both restarting the server AND multiple images for T101 in the source folder.
+        # THE "SKIP DUPLICATE" CHECK
         if os.path.exists(dest_npz_path):
             return "skipped"
 
@@ -232,8 +223,6 @@ class TurtleManager:
             print(f"   ⚠️ SIFT Failed: {turtle_id}")
             return "error"
 
-
-
     def handle_community_upload(self, image_path, finder_name="Anonymous"):
         """
         Saves an image to 'backend/data/Community_Uploads/FinderName/'.
@@ -246,8 +235,7 @@ class TurtleManager:
         shutil.copy2(image_path, saved_path)
         print(f"Saved community find by {finder_name}")
 
-        # --- NEW: Automatically Create a Review Packet for this upload ---
-        # This puts it into the Admin's "Inbox" (Queue) immediately
+        # Automatically Create a Review Packet for this upload
         self.create_review_packet(saved_path, user_info={"finder": finder_name})
 
     def create_review_packet(self, query_image_path, user_info=None):
@@ -273,16 +261,13 @@ class TurtleManager:
             with open(os.path.join(packet_dir, 'metadata.json'), 'w') as f:
                 json.dump(user_info, f)
 
-        # Create additional_images dir for optional microhabitat/condition photos
+        # Create additional_images dir
         additional_dir = os.path.join(packet_dir, 'additional_images')
         os.makedirs(additional_dir, exist_ok=True)
-        with open(os.path.join(additional_dir, 'manifest.json'), 'w') as f:
-            json.dump([], f)
 
         print(f"🐢 Analysis: Running Smart Search for {filename}...")
 
         # 4. Run AI Search
-        # Note: smart_search must return 'file_path' or 'filename' we can resolve
         results = image_processing.smart_search(query_save_path, k_results=5)
 
         # 5. Populate the Candidate Folder
@@ -291,16 +276,9 @@ class TurtleManager:
                 match_id = match.get('site_id', 'Unknown')
                 score = int(match.get('distance', 0) * 100)
 
-                # Logic to find the original file to copy
-                # Ideally, smart_search should return 'file_path' in the dict.
-                # If not, we might need to look it up.
-                # For now, we assume 'file_path' exists or we construct it from filename if possible.
                 original_path = match.get('file_path')
 
                 if original_path and os.path.exists(original_path):
-                    # We copy the .npz's corresponding .jpg if possible,
-                    # otherwise we just copy what we have.
-                    # Assumption: .npz and .jpg are in the same folder with same basename
                     base_path = os.path.splitext(original_path)[0]  # Remove .npz
                     possible_exts = ['.jpg', '.jpeg', '.png']
                     found_img = None
@@ -319,139 +297,171 @@ class TurtleManager:
     def add_additional_images_to_packet(self, request_id, files_with_types):
         """
         Add extra images (e.g. microhabitat, condition) to an existing review packet.
-        files_with_types: list of dicts with keys: path (str), type (str, e.g. 'microhabitat' or 'condition'), timestamp (optional ISO str).
+        Organizes files into date-stamped folders: additional_images/YYYY-MM-DD/
         """
         packet_dir = os.path.join(self.review_queue_dir, request_id)
         if not os.path.isdir(packet_dir):
             return False, "Request not found"
-        additional_dir = os.path.join(packet_dir, 'additional_images')
-        os.makedirs(additional_dir, exist_ok=True)
-        manifest_path = os.path.join(additional_dir, 'manifest.json')
+
+        today_str = time.strftime('%Y-%m-%d')
+        date_dir = os.path.join(packet_dir, 'additional_images', today_str)
+        os.makedirs(date_dir, exist_ok=True)
+
+        manifest_path = os.path.join(date_dir, 'manifest.json')
         manifest = []
         if os.path.exists(manifest_path):
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
+
         for item in files_with_types:
             src = item.get('path')
             typ = (item.get('type') or 'other').lower()
             if typ not in ('microhabitat', 'condition', 'other'):
                 typ = 'other'
+
             ts = item.get('timestamp') or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
             if not src or not os.path.isfile(src):
                 continue
+
             ext = os.path.splitext(src)[1] or '.jpg'
-            safe_name = f"{typ}_{int(time.time())}_{os.path.basename(src)}"
+            safe_name = f"{typ}_{int(time.time() * 1000)}_{os.path.basename(src)}"
             safe_name = "".join(c for c in safe_name if c.isalnum() or c in '._-')
-            dest = os.path.join(additional_dir, safe_name)
+
+            dest = os.path.join(date_dir, safe_name)
             shutil.copy2(src, dest)
-            manifest.append({"filename": safe_name, "type": typ, "timestamp": ts})
+
+            manifest.append({
+                "filename": safe_name,
+                "type": typ,
+                "timestamp": ts,
+                "original_source": os.path.basename(src)
+            })
+
         with open(manifest_path, 'w') as f:
-            json.dump(manifest, f)
+            json.dump(manifest, f, indent=4)
+
         return True, "OK"
 
     def remove_additional_image_from_packet(self, request_id, filename):
         """
         Remove one image from a packet's additional_images by filename.
-        Returns (True, None) on success, (False, error_message) on failure.
+        Scans through date folders to find and remove the target.
         """
         packet_dir = os.path.join(self.review_queue_dir, request_id)
         if not os.path.isdir(packet_dir):
             return False, "Request not found"
-        additional_dir = os.path.join(packet_dir, 'additional_images')
-        manifest_path = os.path.join(additional_dir, 'manifest.json')
-        if not os.path.isfile(manifest_path):
-            return False, "No additional images"
-        # Security: filename must not contain path separators
-        if not filename or os.path.basename(filename) != filename:
-            return False, "Invalid filename"
-        file_path = os.path.join(additional_dir, filename)
-        if not os.path.isfile(file_path):
-            return False, "Image not found"
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
-        new_manifest = [e for e in manifest if e.get('filename') != filename]
-        if len(new_manifest) == len(manifest):
-            return False, "Image not in manifest"
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            return False, str(e)
-        with open(manifest_path, 'w') as f:
-            json.dump(new_manifest, f)
-        return True, None
 
-    def remove_additional_image_from_turtle(self, turtle_id, filename, sheet_name=None):
-        """
-        Remove one image from a turtle's additional_images folder by filename.
-        Returns (True, None) on success, (False, error_message) on failure.
-        """
-        turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
-        if not turtle_dir or not os.path.isdir(turtle_dir):
-            return False, "Turtle folder not found"
-        additional_dir = os.path.join(turtle_dir, 'additional_images')
+        additional_dir = os.path.join(packet_dir, 'additional_images')
         if not os.path.isdir(additional_dir):
-            return False, "No additional images folder"
-        # Security: filename must not contain path separators
+            return False, "No additional images"
+
         if not filename or os.path.basename(filename) != filename:
             return False, "Invalid filename"
-        file_path = os.path.join(additional_dir, filename)
-        if not os.path.isfile(file_path):
-            return False, "Image not found"
-        manifest_path = os.path.join(additional_dir, 'manifest.json')
-        if not os.path.isfile(manifest_path):
-            try:
-                os.remove(file_path)
-                return True, None
-            except OSError as e:
-                return False, str(e)
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
-        new_manifest = [e for e in manifest if e.get('filename') != filename]
-        if len(new_manifest) == len(manifest):
-            return False, "Image not in manifest"
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            return False, str(e)
-        with open(manifest_path, 'w') as f:
-            json.dump(new_manifest, f)
-        return True, None
+
+        # Scan date folders
+        for date_folder in os.listdir(additional_dir):
+            date_dir = os.path.join(additional_dir, date_folder)
+            if not os.path.isdir(date_dir): continue
+
+            file_path = os.path.join(date_dir, filename)
+            if os.path.isfile(file_path):
+                manifest_path = os.path.join(date_dir, 'manifest.json')
+
+                if os.path.isfile(manifest_path):
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    new_manifest = [e for e in manifest if e.get('filename') != filename]
+                    with open(manifest_path, 'w') as f:
+                        json.dump(new_manifest, f, indent=4)
+
+                try:
+                    os.remove(file_path)
+                    return True, None
+                except OSError as e:
+                    return False, str(e)
+
+        return False, "Image not found in any date folder"
 
     def add_additional_images_to_turtle(self, turtle_id, files_with_types, sheet_name=None):
         """
-        Add extra images (e.g. microhabitat, condition) to an existing turtle folder.
-        files_with_types: list of dicts with keys: path (str), type (str), timestamp (optional ISO str).
-        Returns (True, "OK") on success, (False, error_message) on failure.
+        Add extra images to a permanent turtle folder, organized by upload date.
         """
         turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
         if not turtle_dir or not os.path.isdir(turtle_dir):
             return False, "Turtle folder not found"
-        additional_dir = os.path.join(turtle_dir, 'additional_images')
-        os.makedirs(additional_dir, exist_ok=True)
-        manifest_path = os.path.join(additional_dir, 'manifest.json')
+
+        today_str = time.strftime('%Y-%m-%d')
+        date_dir = os.path.join(turtle_dir, 'additional_images', today_str)
+        os.makedirs(date_dir, exist_ok=True)
+
+        manifest_path = os.path.join(date_dir, 'manifest.json')
         manifest = []
         if os.path.exists(manifest_path):
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
+
         for item in files_with_types:
             src = item.get('path')
             typ = (item.get('type') or 'other').lower()
-            if typ not in ('microhabitat', 'condition', 'other'):
-                typ = 'other'
             ts = item.get('timestamp') or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
             if not src or not os.path.isfile(src):
                 continue
-            ext = os.path.splitext(src)[1] or '.jpg'
-            safe_name = f"{typ}_{int(time.time())}_{os.path.basename(src)}"
+
+            safe_name = f"{typ}_{int(time.time() * 1000)}_{os.path.basename(src)}"
             safe_name = "".join(c for c in safe_name if c.isalnum() or c in '._-')
-            dest = os.path.join(additional_dir, safe_name)
+
+            dest = os.path.join(date_dir, safe_name)
             shutil.copy2(src, dest)
             manifest.append({"filename": safe_name, "type": typ, "timestamp": ts})
+
         with open(manifest_path, 'w') as f:
-            json.dump(manifest, f)
+            json.dump(manifest, f, indent=4)
+
         return True, "OK"
 
-    # --- NEW: SEARCH & OBSERVATION LOGIC ---
+    def remove_additional_image_from_turtle(self, turtle_id, filename, sheet_name=None):
+        """
+        Remove one image from a turtle's additional_images folder by filename.
+        Scans through date folders to find and remove the target.
+        """
+        turtle_dir = self._get_turtle_folder(turtle_id, sheet_name)
+        if not turtle_dir or not os.path.isdir(turtle_dir):
+            return False, "Turtle folder not found"
+
+        additional_dir = os.path.join(turtle_dir, 'additional_images')
+        if not os.path.isdir(additional_dir):
+            return False, "No additional images folder"
+
+        if not filename or os.path.basename(filename) != filename:
+            return False, "Invalid filename"
+
+        # Scan date folders
+        for date_folder in os.listdir(additional_dir):
+            date_dir = os.path.join(additional_dir, date_folder)
+            if not os.path.isdir(date_dir): continue
+
+            file_path = os.path.join(date_dir, filename)
+            if os.path.isfile(file_path):
+                manifest_path = os.path.join(date_dir, 'manifest.json')
+
+                if os.path.isfile(manifest_path):
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    new_manifest = [e for e in manifest if e.get('filename') != filename]
+                    with open(manifest_path, 'w') as f:
+                        json.dump(new_manifest, f, indent=4)
+
+                try:
+                    os.remove(file_path)
+                    return True, None
+                except OSError as e:
+                    return False, str(e)
+
+        return False, "Image not found in any date folder"
+
+    # --- SEARCH & OBSERVATION LOGIC ---
 
     def search_for_matches(self, query_image_path, sheet_name=None):
         """
@@ -459,9 +469,6 @@ class TurtleManager:
         1. Search Normal.
         2. If scores are low, flip image horizontal and search again.
         3. Return the best set of results.
-
-        sheet_name: If set, only compare against turtles from this location (Google Sheet tab name).
-                    None or empty = search across all locations.
         """
         total_search_start = time.time()
         location_filter = (sheet_name or '').strip() or None
@@ -473,12 +480,9 @@ class TurtleManager:
         print(f"🔍 Analyzing {filename} (Normal Orientation){scope}...")
 
         # 1. First Pass (Normal)
-        # Use existing smart_search; optionally restrict to one location
         candidates_normal = image_processing.smart_search(
             query_image_path, location_filter=location_filter, k_results=20
         )
-        # If location filter was used and we got no candidates, the filter may not match
-        # our index (index uses folder names, UI may send sheet tab names). Fall back to all.
         if location_filter and not candidates_normal:
             candidates_normal = image_processing.smart_search(
                 query_image_path, location_filter=None, k_results=20
@@ -487,7 +491,8 @@ class TurtleManager:
 
         # Rerank with RANSAC
         if candidates_normal:
-            results_normal = image_processing.rerank_results_with_spatial_verification(query_image_path, candidates_normal)
+            results_normal = image_processing.rerank_results_with_spatial_verification(query_image_path,
+                                                                                       candidates_normal)
 
         # Get best score
         best_score_normal = 0
@@ -509,7 +514,6 @@ class TurtleManager:
 
         img_mirrored = cv.flip(img, 1)  # 1 = Horizontal Flip
 
-        # Save temp file
         mirror_path = os.path.join(self.review_queue_dir, f"TEMP_MIRROR_{filename}")
         cv.imwrite(mirror_path, img_mirrored)
 
@@ -523,7 +527,8 @@ class TurtleManager:
                 )
             results_mirror = []
             if candidates_mirror:
-                results_mirror = image_processing.rerank_results_with_spatial_verification(mirror_path, candidates_mirror)
+                results_mirror = image_processing.rerank_results_with_spatial_verification(mirror_path,
+                                                                                           candidates_mirror)
 
             best_score_mirror = 0
             if results_mirror:
@@ -535,7 +540,6 @@ class TurtleManager:
             if best_score_mirror > best_score_normal:
                 print("🪞 Mirrored orientation yielded better results! Switching view.")
                 print(f"⏱️ Total Search & Verify Logic: {time.time() - total_search_start:.4f}s")
-                # Mark as mirrored for UI
                 for res in results_mirror:
                     res['is_mirrored'] = True
                 return results_mirror[:5]
@@ -545,7 +549,6 @@ class TurtleManager:
                 return results_normal[:5]
 
         finally:
-            # Cleanup temp file
             if os.path.exists(mirror_path):
                 os.remove(mirror_path)
 
@@ -555,7 +558,6 @@ class TurtleManager:
         Moves the uploaded image to that Turtle's 'loose_images' folder,
         processes it, and then DELETES the temporary NPZ file.
         """
-        # 1. Find the turtle's home folder (Logic remains the same)
         target_dir = None
         if location_hint and location_hint != "Unknown":
             possible_path = os.path.join(self.base_dir, location_hint, turtle_id)
@@ -571,7 +573,6 @@ class TurtleManager:
 
         if not target_dir: return False, f"Could not find folder for {turtle_id}"
 
-        # 2. Setup Paths
         loose_dir = os.path.join(target_dir, 'loose_images')
         os.makedirs(loose_dir, exist_ok=True)
 
@@ -580,14 +581,12 @@ class TurtleManager:
         dest_path = os.path.join(loose_dir, save_name)
 
         npz_name = os.path.splitext(save_name)[0] + ".npz"
-        npz_path = os.path.join(loose_dir, npz_name)  # Path to temporary NPZ
+        npz_path = os.path.join(loose_dir, npz_name)
 
         try:
-            # Copy the original image
             shutil.copy2(source_image_path, dest_path)
             print(f"📸 Image copied to {dest_path}")
 
-            # 3. Process SIFT (Necessary for temporary validation, but not persistent storage)
             success, _ = image_processing.process_image_through_SIFT(dest_path, npz_path)
 
             if success:
@@ -595,11 +594,9 @@ class TurtleManager:
             else:
                 print(f"⚠️ Warning: Image saved but SIFT processing failed for {os.path.basename(dest_path)}")
 
-            # --- CRITICAL FIX: DELETE THE NPZ ---
             if os.path.exists(npz_path):
                 os.remove(npz_path)
                 print(f"🗑️ Deleted temporary NPZ file: {os.path.basename(npz_path)}")
-            # -----------------------------------
 
             return True, dest_path
         except Exception as e:
@@ -616,35 +613,21 @@ class TurtleManager:
                 return root
         return None
 
-    def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None, uploaded_image_path=None, find_metadata=None):
+    def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None,
+                              uploaded_image_path=None, find_metadata=None):
         """
         Called when Admin approves a packet.
-        - If match_turtle_id is set: Adds image to that existing turtle's 'loose_images'.
-        - If new_location and new_turtle_id are set: Creates a NEW turtle folder there.
-        - find_metadata: optional dict with microhabitat_uploaded, other_angles_uploaded,
-          collected_to_lab, physical_flag, digital_flag_lat, digital_flag_lon, digital_flag_source.
-        - Copies packet's additional_images into turtle folder and writes find_metadata.json.
-        
-        Args:
-            request_id: The request ID (can be from review queue or admin upload)
-            match_turtle_id: Existing turtle ID to add observation to
-            new_location: Location for new turtle (format: "State/Location")
-            new_turtle_id: ID for new turtle (e.g., "T101")
-            uploaded_image_path: Direct path to uploaded image (for admin uploads not in queue)
-            find_metadata: Optional dict for flag/microhabitat confirmation and digital flag coords
+        - Merges date-stamped additional_images correctly.
         """
-        # Try to find image in review queue first
         query_image = None
         packet_dir = os.path.join(self.review_queue_dir, request_id)
-        
+
         if os.path.exists(packet_dir):
-            # Find the uploaded image inside the packet (ignoring subfolders)
             for f in os.listdir(packet_dir):
                 if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json':
                     query_image = os.path.join(packet_dir, f)
                     break
         elif uploaded_image_path and os.path.exists(uploaded_image_path):
-            # Admin upload: use the direct path provided
             query_image = uploaded_image_path
         else:
             return False, "Request not found and no image path provided"
@@ -652,9 +635,7 @@ class TurtleManager:
         if not query_image or not os.path.exists(query_image):
             return False, "Error: No image found."
 
-        # Logic: existing match vs new turtle
         if match_turtle_id:
-            # Add to existing turtle's loose_images folder
             print(f"📸 Adding observation to existing Turtle {match_turtle_id}...")
             success, message = self.add_observation_to_turtle(query_image, match_turtle_id)
             if not success:
@@ -662,19 +643,15 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
-            # Create new turtle. new_location is the sheet name (one folder level); never use form location/general_location for path.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
-            # Use only the first path segment (sheet name) so path is always data/<sheet_name>/<turtle_id>/ref_data
             sheet_name = new_location.split("/")[0].strip() or new_location
             location_dir = os.path.join(self.base_dir, sheet_name)
             os.makedirs(location_dir, exist_ok=True)
-            
-            # Process the new turtle (this will create the turtle folder and process the image)
+
             status = self._process_single_turtle(query_image, location_dir, new_turtle_id)
-            
+
             if status == "created":
                 print(f"✅ New turtle {new_turtle_id} created successfully at {new_location}")
-                # Rebuild search index so the new turtle is findable on the next upload
                 print("♻️  Rebuilding search index to include new turtle...")
                 image_processing.rebuild_index_and_reload(self.base_dir)
                 print("✅ Search index updated.")
@@ -685,63 +662,77 @@ class TurtleManager:
         else:
             return False, "Either match_turtle_id or both new_location and new_turtle_id must be provided"
 
-        # Resolve turtle folder and persist find_metadata + additional_images
         target_turtle_id = match_turtle_id if match_turtle_id else new_turtle_id
         location_hint = (new_location or "").split("/")[0].strip() if new_location else None
         target_dir = self._get_turtle_folder(target_turtle_id, location_hint)
+
         if target_dir:
-            # Write find_metadata.json (flag, microhabitat, collected_to_lab, digital flag)
             if find_metadata is not None and isinstance(find_metadata, dict):
                 meta_path = os.path.join(target_dir, 'find_metadata.json')
                 with open(meta_path, 'w') as f:
                     json.dump(find_metadata, f)
-            # Merge additional_images from packet into turtle's additional_images folder (do not overwrite existing)
-            packet_dir = os.path.join(self.review_queue_dir, request_id)
+
+            # Merge additional_images from packet into turtle's additional_images folder by Date
             if os.path.isdir(packet_dir):
                 src_additional = os.path.join(packet_dir, 'additional_images')
-                if os.path.isdir(src_additional):
-                    dest_additional = os.path.join(target_dir, 'additional_images')
-                    os.makedirs(dest_additional, exist_ok=True)
-                    dest_manifest_path = os.path.join(dest_additional, 'manifest.json')
-                    existing_manifest = []
-                    if os.path.isfile(dest_manifest_path):
-                        try:
-                            with open(dest_manifest_path, 'r') as f:
-                                existing_manifest = json.load(f)
-                        except (json.JSONDecodeError, OSError):
-                            pass
-                    existing_filenames = {e.get('filename') for e in existing_manifest if e.get('filename')}
-                    src_manifest_path = os.path.join(src_additional, 'manifest.json')
-                    if os.path.isfile(src_manifest_path):
-                        try:
-                            with open(src_manifest_path, 'r') as f:
-                                packet_manifest = json.load(f)
-                        except (json.JSONDecodeError, OSError):
-                            packet_manifest = []
-                        for entry in packet_manifest:
-                            fn = entry.get('filename')
-                            if fn and os.path.isfile(os.path.join(src_additional, fn)):
-                                shutil.copy2(
-                                    os.path.join(src_additional, fn),
-                                    os.path.join(dest_additional, fn)
-                                )
-                                if fn not in existing_filenames:
-                                    existing_manifest.append(entry)
-                                    existing_filenames.add(fn)
-                        with open(dest_manifest_path, 'w') as f:
-                            json.dump(existing_manifest, f)
+                dest_additional = os.path.join(target_dir, 'additional_images')
 
-        # Clean up the review packet (only if it exists in review queue)
+                if os.path.isdir(src_additional):
+                    os.makedirs(dest_additional, exist_ok=True)
+
+                    # Iterate over date folders in the packet
+                    for date_folder in os.listdir(src_additional):
+                        src_date_dir = os.path.join(src_additional, date_folder)
+                        if not os.path.isdir(src_date_dir): continue
+
+                        dest_date_dir = os.path.join(dest_additional, date_folder)
+                        os.makedirs(dest_date_dir, exist_ok=True)
+
+                        src_manifest_path = os.path.join(src_date_dir, 'manifest.json')
+                        dest_manifest_path = os.path.join(dest_date_dir, 'manifest.json')
+
+                        # Load existing target manifest for this date if it exists
+                        existing_manifest = []
+                        if os.path.isfile(dest_manifest_path):
+                            try:
+                                with open(dest_manifest_path, 'r') as f:
+                                    existing_manifest = json.load(f)
+                            except (json.JSONDecodeError, OSError):
+                                pass
+
+                        existing_filenames = {e.get('filename') for e in existing_manifest if e.get('filename')}
+
+                        # Read source manifest and copy files
+                        if os.path.isfile(src_manifest_path):
+                            try:
+                                with open(src_manifest_path, 'r') as f:
+                                    packet_manifest = json.load(f)
+                            except (json.JSONDecodeError, OSError):
+                                packet_manifest = []
+
+                            for entry in packet_manifest:
+                                fn = entry.get('filename')
+                                if fn and os.path.isfile(os.path.join(src_date_dir, fn)):
+                                    shutil.copy2(
+                                        os.path.join(src_date_dir, fn),
+                                        os.path.join(dest_date_dir, fn)
+                                    )
+                                    if fn not in existing_filenames:
+                                        existing_manifest.append(entry)
+                                        existing_filenames.add(fn)
+
+                            # Save merged manifest
+                            with open(dest_manifest_path, 'w') as f:
+                                json.dump(existing_manifest, f, indent=4)
+
         if os.path.exists(packet_dir):
             try:
                 shutil.rmtree(packet_dir)
                 print(f"🗑️ Queue Item {request_id} deleted (Processed).")
             except Exception as e:
                 print(f"⚠️ Error deleting packet: {e}")
-                # Still return success since the main operation completed
                 return True, f"Processed successfully (cleanup warning: {str(e)})"
         else:
-            # Admin upload: clean up temp file if it's in temp directory
             import tempfile
             temp_dir = tempfile.gettempdir()
             if query_image.startswith(temp_dir):
@@ -750,7 +741,7 @@ class TurtleManager:
                     print(f"🗑️ Temp file deleted: {os.path.basename(query_image)}")
                 except Exception as e:
                     print(f"⚠️ Error deleting temp file: {e}")
-        
+
         return True, "Processed successfully"
 
     def _add_turtle_flag_if_present(self, results, turtle_path, turtle_id, location_label):
@@ -763,7 +754,6 @@ class TurtleManager:
                 find_metadata = json.load(f)
         except (json.JSONDecodeError, OSError):
             return
-        # Exclude turtles already marked as released back to nature
         if find_metadata.get('released_at'):
             return
         results.append({
@@ -776,8 +766,6 @@ class TurtleManager:
     def clear_release_flag(self, turtle_id, location_hint=None):
         """
         Mark turtle as released back to nature: clear digital flag and set released_at.
-        Updates find_metadata.json so the turtle no longer appears on the release list.
-        Returns (True, None) on success, (False, error_message) on failure.
         """
         turtle_dir = self._get_turtle_folder(turtle_id, location_hint)
         if not turtle_dir or not os.path.isdir(turtle_dir):
@@ -790,10 +778,8 @@ class TurtleManager:
                 find_metadata = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             return False, str(e)
-        # Remove digital flag so it is no longer used for release
         for key in ('digital_flag_lat', 'digital_flag_lon', 'digital_flag_source'):
             find_metadata.pop(key, None)
-        # Mark as released (ISO timestamp)
         find_metadata['released_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         try:
             with open(meta_path, 'w') as f:
@@ -804,9 +790,7 @@ class TurtleManager:
 
     def get_turtles_with_flags(self):
         """
-        Scan data dir for turtles that have find_metadata.json (e.g. with digital_flag or collected_to_lab).
-        Handles both structures: data/State/TurtleID and data/State/Location/TurtleID.
-        Returns list of dicts: turtle_id, location (State or State/Location), path, find_metadata.
+        Scan data dir for turtles that have find_metadata.json.
         """
         results = []
         for state in sorted(os.listdir(self.base_dir)):
@@ -819,9 +803,7 @@ class TurtleManager:
                 sub_path = os.path.join(state_path, name)
                 if not os.path.isdir(sub_path) or name.startswith('.'):
                     continue
-                # Case 1: state/name is a turtle folder (e.g. data/Kansas/T101)
                 self._add_turtle_flag_if_present(results, sub_path, name, state)
-                # Case 2: state/name is a location folder; look for turtle folders inside
                 for turtle_id in sorted(os.listdir(sub_path)):
                     turtle_path = os.path.join(sub_path, turtle_id)
                     if not os.path.isdir(turtle_path) or turtle_id.startswith('.'):
@@ -832,12 +814,10 @@ class TurtleManager:
     def reject_review_packet(self, request_id):
         """
         Delete a review queue packet without processing (e.g. junk/spam).
-        Removes the packet folder from Review_Queue. Admin only.
         """
         packet_dir = os.path.join(self.review_queue_dir, request_id)
         if not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
             return False, "Request not found"
-        # Security: ensure we only delete inside review_queue_dir (no path traversal)
         real_packet = os.path.realpath(packet_dir)
         real_base = os.path.realpath(self.review_queue_dir)
         if not real_packet.startswith(real_base):
@@ -849,14 +829,13 @@ class TurtleManager:
         except Exception as e:
             return False, str(e)
 
+
 # --- TEST BLOCK ---
 if __name__ == "__main__":
     manager = TurtleManager()
-    # 1. Test Queue Persistence
     print("\n--- Checking Queue Status ---")
     manager.get_review_queue()
 
-    # 2. Test Ingest
     path = input("\n(Optional) Enter Flash Drive Path to test Ingest: ")
     if path:
         manager.ingest_flash_drive(path)
