@@ -5,9 +5,11 @@
 import { Grid, TextInput, Textarea } from '@mantine/core';
 import type { TurtleSheetsData } from '../services/api';
 import { TurtleFormField } from './TurtleFormField';
+import type { TurtleFormFieldProps } from './TurtleFormField.types';
 import { TURTLE_SHEETS_FORM_FIELDS } from './turtleSheetsDataFormFieldsConfig';
 import type { FieldSpan } from './turtleSheetsDataFormFieldsConfig';
 import { CommunityLocationHint } from './TurtleSheetsDataFormSections';
+import type { TurtleSheetsDataFormFieldsProps } from './TurtleSheetsDataForm.types';
 
 const FORM_FIELD_ORDER: (keyof TurtleSheetsData | '__dates_refound__' | '__community_hint__' | '__notes__')[] = [
   'id',
@@ -41,23 +43,7 @@ const configByKey = Object.fromEntries(
   TURTLE_SHEETS_FORM_FIELDS.map((c) => [c.key, c]),
 ) as Record<keyof TurtleSheetsData, (typeof TURTLE_SHEETS_FORM_FIELDS)[0]>;
 
-export interface TurtleSheetsDataFormFieldsProps {
-  formData: TurtleSheetsData;
-  handleChange: (field: keyof TurtleSheetsData, value: string) => void;
-  isFieldModeRestricted: boolean;
-  isFieldUnlocked: (field: keyof TurtleSheetsData) => boolean;
-  requestUnlock: (field: keyof TurtleSheetsData) => void;
-  additionalDatesRefound: string;
-  setAdditionalDatesRefound: (v: string) => void;
-  additionalNotes: string;
-  setAdditionalNotes: (v: string) => void;
-  primaryId?: string;
-  hintLocationFromCommunity?: string;
-  hintCoordinates?: { latitude: number; longitude: number; source?: 'gps' | 'manual' };
-  errors?: Record<string, string>;
-  /** In create mode the ID field is always disabled and filled by generate-id (sex + sequence per sheet). */
-  mode?: 'create' | 'edit';
-}
+export type { TurtleSheetsDataFormFieldsProps } from './TurtleSheetsDataForm.types';
 
 function toSpan(span: FieldSpan) {
   return typeof span === 'number' ? span : span;
@@ -178,27 +164,27 @@ export function TurtleSheetsDataFormFields({
         const span = toSpan(config.span);
         const value = formData[config.key] ?? '';
 
+        const fieldProps: TurtleFormFieldProps = {
+          field: config.key,
+          label: config.label,
+          placeholder: config.placeholder,
+          description:
+            config.key === 'id' && mode === 'create'
+              ? 'Auto-generated from sex + sequence for this sheet (e.g. M1, F2)'
+              : config.description,
+          value,
+          onChange: (v) => handleChange(config.key, v),
+          type: config.type,
+          selectData: config.selectData,
+          isFieldModeRestricted,
+          isFieldUnlocked,
+          requestUnlock,
+          disabled: config.key === 'id' && mode === 'create',
+          error: errors?.[config.key],
+        };
         return (
           <Grid.Col key={config.key} span={span}>
-            <TurtleFormField
-              field={config.key}
-              label={config.label}
-              placeholder={config.placeholder}
-              description={
-                config.key === 'id' && mode === 'create'
-                  ? 'Auto-generated from sex + sequence for this sheet (e.g. M1, F2)'
-                  : config.description
-              }
-              value={value}
-              onChange={(v) => handleChange(config.key, v)}
-              type={config.type}
-              selectData={config.selectData}
-              isFieldModeRestricted={isFieldModeRestricted}
-              isFieldUnlocked={isFieldUnlocked}
-              requestUnlock={requestUnlock}
-              disabled={config.key === 'id' && mode === 'create'}
-              error={errors?.[config.key]}
-            />
+            <TurtleFormField {...fieldProps} />
           </Grid.Col>
         );
       })}

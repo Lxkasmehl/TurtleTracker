@@ -7,37 +7,12 @@ import { notifications } from '@mantine/notifications';
 import { IconCheck, IconX } from '@tabler/icons-react';
 import type { TurtleSheetsData } from '../services/api';
 import { listSheets, createSheet, getTurtleNames, generateTurtleId } from '../services/api';
-import type { TurtleSheetsDataFormProps } from '../components/TurtleSheetsDataForm.types';
+import type {
+  TurtleSheetsDataFormProps,
+  UseTurtleSheetsDataFormReturn,
+} from '../components/TurtleSheetsDataForm.types';
 
-export interface UseTurtleSheetsDataFormReturn {
-  formData: TurtleSheetsData;
-  loading: boolean;
-  errors: Record<string, string>;
-  availableSheets: string[];
-  selectedSheetName: string;
-  setSelectedSheetName: (v: string) => void;
-  loadingSheets: boolean;
-  showCreateSheetModal: boolean;
-  setShowCreateSheetModal: (v: boolean) => void;
-  newSheetName: string;
-  setNewSheetName: (v: string) => void;
-  creatingSheet: boolean;
-  additionalNotes: string;
-  setAdditionalNotes: (v: string) => void;
-  additionalDatesRefound: string;
-  setAdditionalDatesRefound: (v: string) => void;
-  unlockConfirmField: keyof TurtleSheetsData | null;
-  setUnlockConfirmField: (v: keyof TurtleSheetsData | null) => void;
-  isFieldModeRestricted: boolean;
-  isFieldUnlocked: (field: keyof TurtleSheetsData) => boolean;
-  requestUnlock: (field: keyof TurtleSheetsData) => void;
-  confirmUnlock: () => void;
-  handleChange: (field: keyof TurtleSheetsData, value: string) => void;
-  handleCreateNewSheet: (sheetName: string) => Promise<void>;
-  handleSubmit: () => Promise<void>;
-  /** In create mode, true until existing turtle names have been loaded (for duplicate check). */
-  loadingTurtleNames: boolean;
-}
+export type { UseTurtleSheetsDataFormReturn } from '../components/TurtleSheetsDataForm.types';
 
 export function useTurtleSheetsDataForm(
   props: TurtleSheetsDataFormProps,
