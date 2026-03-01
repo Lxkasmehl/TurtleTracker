@@ -172,28 +172,65 @@ def register_review_routes(app):
         if os.path.exists(metadata_path):
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
+
         additional_images = []
         additional_dir = os.path.join(packet_dir, 'additional_images')
-        manifest_path = os.path.join(additional_dir, 'manifest.json')
-        if os.path.isfile(manifest_path):
-            try:
-                with open(manifest_path, 'r') as f:
-                    manifest = json.load(f)
-                for entry in manifest:
-                    fn = entry.get('filename')
-                    if fn and os.path.isfile(os.path.join(additional_dir, fn)):
-                        additional_images.append({
-                            'filename': fn, 'type': entry.get('type', 'other'),
-                            'timestamp': entry.get('timestamp'),
-                            'image_path': os.path.join(additional_dir, fn),
+
+        # --- NEW LOGIC: Helper to parse manifest or folder ---
+        def parse_manifest_or_folder(target_dir):
+            results = []
+            manifest_path = os.path.join(target_dir, 'manifest.json')
+            processed_files = set()
+
+            if os.path.isfile(manifest_path):
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    for entry in manifest:
+                        fn = entry.get('filename')
+                        kind = entry.get('type', 'other')
+                        if fn:
+                            p = os.path.join(target_dir, fn)
+                            if os.path.isfile(p):
+                                results.append({
+                                    'filename': fn,
+                                    'type': kind,
+                                    'timestamp': entry.get('timestamp'),
+                                    'image_path': p,
+                                })
+                                processed_files.add(fn)
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            # Fallback: catch images not in manifest (e.g., from tests or legacy uploads)
+            if os.path.isdir(target_dir):
+                for f in sorted(os.listdir(target_dir)):
+                    if f != 'manifest.json' and f not in processed_files and f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                        results.append({
+                            'filename': f,
+                            'type': 'other',
+                            'timestamp': None,
+                            'image_path': os.path.join(target_dir, f),
                         })
-            except (json.JSONDecodeError, OSError):
-                pass
+            return results
+
+        # Execute our folder scanning
+        if os.path.isdir(additional_dir):
+            # 1. Process legacy root folder
+            additional_images.extend(parse_manifest_or_folder(additional_dir))
+
+            # 2. Process our new Date-Stamped subfolders
+            for item in sorted(os.listdir(additional_dir)):
+                item_path = os.path.join(additional_dir, item)
+                if os.path.isdir(item_path):
+                    additional_images.extend(parse_manifest_or_folder(item_path))
+
         uploaded_image = None
         for f in os.listdir(packet_dir):
             if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json' and not f.startswith('.'):
                 uploaded_image = os.path.join(packet_dir, f)
                 break
+
         candidates_dir = os.path.join(packet_dir, 'candidate_matches')
         candidates = []
         if os.path.exists(candidates_dir):
@@ -209,6 +246,7 @@ def register_review_routes(app):
                         elif part.startswith('Score'):
                             score = int(part.replace('Score', ''))
                     candidates.append({'rank': rank, 'turtle_id': turtle_id, 'score': score, 'image_path': os.path.join(candidates_dir, candidate_file)})
+
         return {
             'request_id': request_id,
             'uploaded_image': uploaded_image,
@@ -295,7 +333,7 @@ def register_review_routes(app):
             return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
         if manager_service.manager is None:
             return jsonify({'error': 'TurtleManager failed to initialize'}), 500
-        
+
         data = request.json or {}
         match_turtle_id = data.get('match_turtle_id')  # The turtle ID that was selected
         new_location = data.get('new_location')  # Optional: if creating new turtle (format: "State/Location")
@@ -313,7 +351,7 @@ def register_review_routes(app):
                 uploaded_image_path=uploaded_image_path,
                 find_metadata=find_metadata
             )
-            
+
             if success:
                 # Admin uploads use request_id starting with "admin_"; only those go to research sheet.
                 # Community uploads (review queue) go to community spreadsheet only (new turtles) or sync match from research.
@@ -322,41 +360,73 @@ def register_review_routes(app):
                 # Research spreadsheet: only update for *matches* (existing turtle). New turtles from
                 # community uploads are created only in the community spreadsheet, not in research.
                 service = get_sheets_service()
-                if service and match_turtle_id:
+                if service:
                     try:
-                        # Match to existing turtle: research sheet is updated by frontend before approve.
-                        # No backend action needed here.
-                        pass
+                        if new_location and new_turtle_id:
+                            # New turtle created - create Sheets entry
+                            # new_location is the sheet name (backend path); row content uses sheets_data
+                            sheet_name = (isinstance(sheets_data, dict) and sheets_data.get('sheet_name')) or new_location
+                            state = (isinstance(sheets_data, dict) and sheets_data.get('general_location')) or ''
+                            location = (isinstance(sheets_data, dict) and sheets_data.get('location')) or ''
+
+                            # Check if frontend already created the entry (indicated by primary_id and sheet_name in sheets_data)
+                            # IMPORTANT: Only skip if primary_id is present - if createTurtleSheetsData failed,
+                            # primary_id won't be set, and we should create it in fallback mode
+                            if isinstance(sheets_data, dict) and sheets_data.get('primary_id') and sheets_data.get('sheet_name'):
+                                # Frontend already created the entry via createTurtleSheetsData
+                                # Skip creation here to avoid duplicates
+                                primary_id = sheets_data.get('primary_id')
+                                print(f"✅ Google Sheets entry already created by frontend for new turtle {new_turtle_id} with Primary ID {primary_id}")
+                                print(f"   Frontend data fields: {list(sheets_data.keys())}")
+                            elif isinstance(sheets_data, dict) and sheets_data.get('sheet_name') and not sheets_data.get('primary_id'):
+                                # Frontend tried to create but failed (no primary_id means createTurtleSheetsData failed)
+                                # Create it in fallback mode with all the form data
+                                print(f"⚠️ Frontend createTurtleSheetsData failed (no primary_id in sheets_data), creating in fallback mode")
+                            else:
+                                # Fallback: create Sheets entry if frontend didn't (for backwards compatibility)
+                                
+                                # Use primary_id from sheets_data if provided, otherwise generate new one
+                                if isinstance(sheets_data, dict) and sheets_data.get('primary_id'):
+                                    primary_id = sheets_data.get('primary_id')
+                                else:
+                                    primary_id = service.generate_primary_id(state, location)
+                                
+                                # Create Sheets entry with ALL data from sheets_data (preserve user input)
+                                turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
+                                # Remove sheet_name from turtle_data (it's metadata, not data)
+                                turtle_data.pop('sheet_name', None)
+                                
+                                # Set primary_id in the Primary ID column (globally unique)
+                                turtle_data['primary_id'] = primary_id
+                                # Determine sheet_name from the turtle data or use a default
+                                sheet_name = sheets_data.get('sheet_name') if isinstance(sheets_data, dict) else 'Location A'
+                                # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
+                                if not turtle_data.get('id'):
+                                    sex = (turtle_data.get('sex') or '').strip().upper()
+                                    gender = sex if sex in ('M', 'F', 'J') else 'U'
+                                    turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
+                                # Do not set general_location or location from state/location – leave empty if admin did not fill them; community location is for display only
+                                
+                                # Debug: Log what data we're creating
+                                
+                                service.create_turtle_data(turtle_data, sheet_name, state, location)
+                                print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
+                        elif match_turtle_id:
+                            # Existing turtle - ensure Sheets entry exists
+                            # Try to find location from turtle folder structure
+                            # For now, we'll handle this in the frontend when Sheets data is saved
+                            pass
                     except Exception as sheets_error:
-                        print(f"⚠️ Warning: Research Sheets: {sheets_error}")
-
-                # Sync to community spreadsheet only for community uploads (review queue).
-                # Admin uploads (match or new turtle) use the research/admin sheet only; no community sync.
-                if is_community_upload:
-                    try:
-                        _sync_confirmed_to_community(
-                            data=data,
-                            sheets_data=sheets_data,
-                            service=get_sheets_service() if success else None,
-                            new_location=new_location,
-                            new_turtle_id=new_turtle_id,
-                            match_turtle_id=match_turtle_id,
-                        )
-                    except (ValueError, RuntimeError) as sync_err:
-                        return jsonify({'error': str(sync_err)}), 503
-                    except Exception as sync_err:
-                        print(f"⚠️ Community spreadsheet sync failed: {sync_err}")
-                        return jsonify({
-                            'error': f"Community spreadsheet sync failed: {sync_err}. Check GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID and service account access."
-                        }), 503
-
+                        # Log but don't fail - Sheets is optional but should be created
+                        print(f"⚠️ Warning: Failed to create Google Sheets entry: {sheets_error}")
+                
                 return jsonify({
                     'success': True,
                     'message': message
                 })
             else:
                 return jsonify({'error': message}), 400
-        
+
         except Exception as e:
             error_trace = traceback.format_exc()
             try:

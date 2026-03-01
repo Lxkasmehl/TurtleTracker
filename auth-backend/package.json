@@ -1,6 +1,5 @@
 {
   "name": "turtle-auth-backend",
-  "version": "1.0.0",
   "description": "Authentication Backend API for Turtle Project",
   "main": "dist/index.js",
   "type": "module",

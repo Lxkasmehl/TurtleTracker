@@ -404,6 +404,53 @@ export const getTurtleImages = async (
   return await response.json();
 };
 
+/** Batch get primary (plastron) image paths for multiple turtles (Admin only). */
+export const getTurtlePrimariesBatch = async (
+  turtles: Array<{ turtle_id: string; sheet_name?: string | null }>,
+): Promise<{ images: Array<{ turtle_id: string; sheet_name: string | null; primary: string | null }> }> => {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${TURTLE_API_BASE_URL}/turtles/images/primaries`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ turtles }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load primaries' }));
+    throw new Error(err.error || 'Failed to load primaries');
+  }
+  return await response.json();
+};
+
+/** Add microhabitat/condition images to a turtle folder (Admin only). */
+export const uploadTurtleAdditionalImages = async (
+  turtleId: string,
+  files: Array<{ type: 'microhabitat' | 'condition'; file: File }>,
+  sheetName?: string | null,
+): Promise<{ success: boolean; message?: string }> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const formData = new FormData();
+  formData.append('turtle_id', turtleId);
+  if (sheetName) formData.append('sheet_name', sheetName);
+  files.forEach((f, i) => {
+    formData.append(`file_${i}`, f.file);
+    formData.append(`type_${i}`, f.type);
+  });
+  const response = await fetch(`${TURTLE_API_BASE_URL}/turtles/images/additional`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to add images' }));
+    throw new Error(err.error || 'Failed to add images');
+  }
+  return await response.json();
+};
+
 /** Delete one additional image from a turtle's folder (Admin only). */
 export const deleteTurtleAdditionalImage = async (
   turtleId: string,

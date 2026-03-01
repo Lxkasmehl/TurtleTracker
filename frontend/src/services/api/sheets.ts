@@ -136,6 +136,7 @@ export const getTurtleSheetsData = async (
   sheetName?: string,
   state?: string,
   location?: string,
+  signal?: AbortSignal,
 ): Promise<GetTurtleSheetsDataResponse> => {
   const token = getToken();
   const headers: Record<string, string> = {};
@@ -160,6 +161,7 @@ export const getTurtleSheetsData = async (
     {
       method: 'GET',
       headers,
+      signal,
     },
   );
 
