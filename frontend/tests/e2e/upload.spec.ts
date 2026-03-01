@@ -48,9 +48,34 @@ test.describe('Photo Upload', () => {
     await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
     await clickUploadPhotoButton(page);
 
+    // Either progress text appears or we navigate quickly to match page (fast CI/webkit)
     const progressOrLocation = page.getByText(/Getting location|Uploading/i);
-    await expect(progressOrLocation).toBeVisible({ timeout: 5000 });
+    const matchUrl = /\/admin\/turtle-match\/[^/]+/;
+    await Promise.race([
+      progressOrLocation.waitFor({ state: 'visible', timeout: 8000 }),
+      page.waitForURL(matchUrl, { timeout: 8000 }),
+    ]);
 
-    await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
+    await expect(page).toHaveURL(matchUrl, { timeout: 30_000 });
+  });
+
+  test('Admin: Additional photos (optional) section with Microhabitat/Condition buttons is visible after selecting file', async ({
+    page,
+  }) => {
+    test.setTimeout(30_000);
+    await loginAsAdmin(page);
+
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'e2e-extra.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await expect(page.getByText('Additional photos (optional)')).toBeVisible();
+    // Microhabitat/Condition are <label> (Button component="label"), not role="button"
+    await expect(page.getByText('Microhabitat', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Condition', { exact: true }).first()).toBeVisible();
   });
 });

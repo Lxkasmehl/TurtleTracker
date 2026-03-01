@@ -123,35 +123,36 @@ export const TurtleSheetsDataForm = forwardRef<
           </Alert>
         )}
 
-        <Grid gutter='md'>
-          <Grid.Col span={12}>
-            <SheetSelectionRow
-              loadingSheets={hook.loadingSheets}
+          <Grid gutter='md'>
+            <Grid.Col span={12}>
+              <SheetSelectionRow
+                loadingSheets={hook.loadingSheets}
+                isFieldModeRestricted={hook.isFieldModeRestricted}
+                isFieldUnlocked={hook.isFieldUnlocked}
+                requestUnlock={hook.requestUnlock}
+                selectedSheetName={hook.selectedSheetName}
+                setSelectedSheetName={hook.setSelectedSheetName}
+                availableSheets={hook.availableSheets}
+                setShowCreateSheetModal={hook.setShowCreateSheetModal}
+              />
+            </Grid.Col>
+            <TurtleSheetsDataFormFields
+              formData={hook.formData}
+              handleChange={hook.handleChange}
               isFieldModeRestricted={hook.isFieldModeRestricted}
               isFieldUnlocked={hook.isFieldUnlocked}
               requestUnlock={hook.requestUnlock}
-              selectedSheetName={hook.selectedSheetName}
-              setSelectedSheetName={hook.setSelectedSheetName}
-              availableSheets={hook.availableSheets}
-              setShowCreateSheetModal={hook.setShowCreateSheetModal}
+              additionalDatesRefound={hook.additionalDatesRefound}
+              setAdditionalDatesRefound={hook.setAdditionalDatesRefound}
+              additionalNotes={hook.additionalNotes}
+              setAdditionalNotes={hook.setAdditionalNotes}
+              primaryId={primaryId}
+              hintLocationFromCommunity={hintLocationFromCommunity}
+              hintCoordinates={hintCoordinates}
+              errors={hook.errors}
+              mode={mode}
             />
-          </Grid.Col>
-
-          <TurtleSheetsDataFormFields
-            formData={hook.formData}
-            handleChange={hook.handleChange}
-            isFieldModeRestricted={hook.isFieldModeRestricted}
-            isFieldUnlocked={hook.isFieldUnlocked}
-            requestUnlock={hook.requestUnlock}
-            additionalDatesRefound={hook.additionalDatesRefound}
-            setAdditionalDatesRefound={hook.setAdditionalDatesRefound}
-            additionalNotes={hook.additionalNotes}
-            setAdditionalNotes={hook.setAdditionalNotes}
-            primaryId={primaryId}
-            hintLocationFromCommunity={hintLocationFromCommunity}
-            hintCoordinates={hintCoordinates}
-          />
-        </Grid>
+          </Grid>
 
         {!hideSubmitButton && (
           <Group justify='flex-end' gap='md' mt='md'>
@@ -160,8 +161,17 @@ export const TurtleSheetsDataForm = forwardRef<
                 Cancel
               </Button>
             )}
-            <Button onClick={hook.handleSubmit} loading={hook.loading}>
-              {mode === 'create' ? 'Create' : 'Update'} Turtle Data
+            <Button
+              onClick={hook.handleSubmit}
+              loading={hook.loading}
+              disabled={mode === 'create' && hook.loadingTurtleNames}
+            >
+              {mode === 'create' && hook.loadingTurtleNames
+                ? 'Loading names...'
+                : mode === 'create'
+                  ? 'Create'
+                  : 'Update'}{' '}
+              Turtle Data
             </Button>
           </Group>
         )}

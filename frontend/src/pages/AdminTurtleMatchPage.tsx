@@ -24,6 +24,8 @@ import { useUser } from '../hooks/useUser';
 import {
   type TurtleMatch,
   getImageUrl,
+  getReviewPacket,
+  getTurtleImages,
   approveReview,
   updateTurtleSheetsData,
   createTurtleSheetsData,
@@ -31,12 +33,15 @@ import {
   getTurtleSheetsData,
   listSheets,
   type TurtleSheetsData,
+  type ReviewQueueItem,
+  type TurtleImagesResponse,
 } from '../services/api';
 import { notifications } from '@mantine/notifications';
 import {
   TurtleSheetsDataForm,
   type TurtleSheetsDataFormRef,
 } from '../components/TurtleSheetsDataForm';
+import { AdditionalImagesSection } from '../components/AdditionalImagesSection';
 
 interface MatchData {
   request_id: string;
@@ -49,6 +54,7 @@ export default function AdminTurtleMatchPage() {
   const { imageId } = useParams<{ imageId: string }>();
   const navigate = useNavigate();
   const [matchData, setMatchData] = useState<MatchData | null>(null);
+  const [packetItem, setPacketItem] = useState<ReviewQueueItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -62,12 +68,25 @@ export default function AdminTurtleMatchPage() {
   const [newTurtleSheetName, setNewTurtleSheetName] = useState('');
   const [loadingTurtleData, setLoadingTurtleData] = useState(false);
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+  const [selectedMatchTurtleImages, setSelectedMatchTurtleImages] = useState<TurtleImagesResponse | null>(null);
   const formRef = useRef<TurtleSheetsDataFormRef>(null);
   const isMobile = useMediaQuery('(max-width: 576px)');
 
   const selectedMatchData = selectedMatch && matchData
     ? matchData.matches.find((m) => m.turtle_id === selectedMatch)
     : undefined;
+
+  // Load selected match turtle's existing additional images (microhabitat/condition)
+  useEffect(() => {
+    if (!selectedMatch || !selectedMatchData) {
+      setSelectedMatchTurtleImages(null);
+      return;
+    }
+    const sheetNameHint = selectedMatchData.location?.split('/')[0]?.trim() || null;
+    getTurtleImages(selectedMatch, sheetNameHint)
+      .then(setSelectedMatchTurtleImages)
+      .catch(() => setSelectedMatchTurtleImages(null));
+  }, [selectedMatch, selectedMatchData?.location]);
 
   // Load sheets once when admin (avoids each TurtleSheetsDataForm calling listSheets)
   useEffect(() => {
@@ -86,7 +105,7 @@ export default function AdminTurtleMatchPage() {
       return;
     }
 
-    const loadMatchData = () => {
+    const loadMatchData = async () => {
       setLoading(true);
       try {
         if (imageId) {
@@ -94,7 +113,19 @@ export default function AdminTurtleMatchPage() {
           if (stored) {
             const data: MatchData = JSON.parse(stored);
             setMatchData(data);
+            try {
+              const { item } = await getReviewPacket(imageId);
+              setPacketItem(item);
+            } catch {
+              setPacketItem(null);
+            }
+          } else {
+            setMatchData(null);
+            setPacketItem(null);
           }
+        } else {
+          setMatchData(null);
+          setPacketItem(null);
         }
       } catch (error) {
         console.error('Error loading match data:', error);
@@ -110,69 +141,54 @@ export default function AdminTurtleMatchPage() {
     setSelectedMatch(turtleId);
     setLoadingTurtleData(true);
 
-    // Get match data to extract location for sheet name
     const match = matchData?.matches.find((m) => m.turtle_id === turtleId);
     const matchLocation = match?.location || '';
     const locationParts = matchLocation.split('/');
     const matchState = locationParts[0] || '';
     const matchLocationSpecific = locationParts.slice(1).join('/') || '';
 
-    try {
-      // First try without sheet name (backend will auto-find)
-      let response = await getTurtleSheetsData(turtleId);
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => abortController.abort(), 35000);
 
-      // If auto-find failed and we have a match location, try with sheet name
-      if (
-        !response.exists &&
-        matchState &&
-        (!response.data || Object.keys(response.data).length <= 3)
-      ) {
+    try {
+      // Prefer request WITH sheet name when we have it from the match – backend then skips
+      // slow find_turtle_sheet (searching all sheets) and loads data directly. Much faster.
+      let response: Awaited<ReturnType<typeof getTurtleSheetsData>>;
+      if (matchState) {
         try {
           response = await getTurtleSheetsData(
             turtleId,
             matchState,
             matchState,
             matchLocationSpecific,
+            abortController.signal,
           );
         } catch {
-          // Ignore, use first response
+          response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
         }
+      } else {
+        response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
       }
 
       if (response.success && response.data) {
-        const hasRealData =
-          response.exists ||
-          response.data.name ||
-          response.data.species ||
-          response.data.sex ||
-          response.data.transmitter_id ||
-          response.data.sheet_name ||
-          response.data.date_1st_found ||
-          response.data.notes ||
-          Object.keys(response.data).length > 3;
-
-        if (hasRealData) {
+        if (response.exists) {
           setSheetsData(response.data);
           setPrimaryId(response.data.primary_id || turtleId);
         } else {
           setPrimaryId(turtleId);
           setSheetsData({
-            id: turtleId,
-            // Do not pre-fill general_location or location from match – user fills these
+            primary_id: turtleId,
           });
         }
       } else {
         setPrimaryId(turtleId);
-        setSheetsData({
-          id: turtleId,
-        });
+        setSheetsData({ primary_id: turtleId });
       }
     } catch {
       setPrimaryId(turtleId);
-      setSheetsData({
-        id: turtleId,
-      });
+      setSheetsData({ primary_id: turtleId });
     } finally {
+      window.clearTimeout(timeoutId);
       setLoadingTurtleData(false);
     }
   };
@@ -523,6 +539,61 @@ export default function AdminTurtleMatchPage() {
                         width: '100%',
                       }}
                     />
+                  </Stack>
+                </Paper>
+
+                <Paper shadow='sm' p='md' radius='md' withBorder>
+                  <Stack gap='md'>
+                    <div>
+                      <Text fw={600} size='sm' mb={4}>
+                        Microhabitat / Condition photos
+                      </Text>
+                      <Text size='xs' c='dimmed' mb='sm'>
+                        From this upload and, when a match is selected, already stored for that turtle.
+                      </Text>
+                    </div>
+                    {imageId && (
+                      <AdditionalImagesSection
+                        title="From this upload"
+                        embedded
+                        images={(packetItem?.additional_images ?? []).map((a) => ({
+                          imagePath: a.image_path,
+                          filename: a.filename,
+                          type: a.type,
+                        }))}
+                        requestId={imageId}
+                        onRefresh={async () => {
+                          try {
+                            const { item } = await getReviewPacket(imageId);
+                            setPacketItem(item);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                        disabled={!!processing}
+                      />
+                    )}
+                      {selectedMatch && (
+                      <AdditionalImagesSection
+                        title="Already in system for this turtle"
+                        embedded
+                        hideAddButtons
+                        images={(selectedMatchTurtleImages?.additional ?? []).map((a) => ({
+                          imagePath: a.path,
+                          filename: a.path.split(/[/\\]/).pop() ?? a.path,
+                          type: a.type,
+                        }))}
+                        turtleId={selectedMatch}
+                        sheetName={selectedMatchData?.location?.split('/')[0]?.trim() ?? null}
+                        onRefresh={async () => {
+                          if (!selectedMatch || !selectedMatchData) return;
+                          const sheetNameHint = selectedMatchData.location?.split('/')[0]?.trim() || null;
+                          const res = await getTurtleImages(selectedMatch, sheetNameHint);
+                          setSelectedMatchTurtleImages(res);
+                        }}
+                        disabled={!!processing}
+                      />
+                    )}
                   </Stack>
                 </Paper>
 

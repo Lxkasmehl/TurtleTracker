@@ -251,6 +251,7 @@ Tests run against the real backends (no fake backends). Use Docker to run servic
 
 - See `auth-backend/README.md` for detailed auth backend documentation
 - See `backend/README.md` for detailed turtle backend documentation
+- See `docs/VERSION_AND_RELEASES.md` for versioning, changelog, and GitHub Releases
 
 ## Funding & Acknowledgments
 

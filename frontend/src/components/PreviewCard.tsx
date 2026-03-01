@@ -156,8 +156,8 @@ export function PreviewCard({
               </Text>
             )}
 
-            {/* Additional photos (microhabitat, condition) – multiple per type, remove one by one */}
-            {role === 'community' && uploadState === 'idle' && setExtraFiles && (
+            {/* Additional photos (microhabitat, condition) – for both community and admin */}
+            {uploadState === 'idle' && setExtraFiles && (
               <Paper p='sm' withBorder radius='md'>
                 <Text fw={600} size='sm' mb='xs'>
                   Additional photos (optional)
