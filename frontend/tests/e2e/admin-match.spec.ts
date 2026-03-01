@@ -74,7 +74,10 @@ test.describe('Admin Turtle Match', () => {
 
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
-    await expect(page.getByRole('dialog').getByLabel('Sheet / Location')).toBeVisible();
+    // Create New Turtle modal uses backend locations, so the field is "Sheet (State / Region)" not "Sheet / Location"
+    await expect(
+      page.getByRole('dialog').getByLabel(/Sheet.*(State \/ Region|Location)/),
+    ).toBeVisible();
   });
 
   test('Create New Turtle modal shows Google Sheets form', async ({ page }) => {

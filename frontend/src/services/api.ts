@@ -69,6 +69,7 @@ export {
   generatePrimaryId,
   generateTurtleId,
   listSheets,
+  getLocations,
   createSheet,
   getTurtleNames,
   listAllTurtlesFromSheets,
@@ -76,6 +77,7 @@ export {
 export type {
   TurtleSheetsData,
   GetTurtleSheetsDataResponse,
+  GetLocationsResponse,
   ListSheetsResponse,
   GeneratePrimaryIdRequest,
   GeneratePrimaryIdResponse,

@@ -29,17 +29,21 @@ import { usePhotoUpload } from '../hooks/usePhotoUpload';
 import { useAvailableSheets } from '../hooks/useAvailableSheets';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
+import { getLocations } from '../services/api';
 
 const MATCH_ALL_VALUE = '__all__';
+const SYSTEM_FOLDERS = ['Incidental_Finds', 'Community_Uploads', 'Review_Queue'];
 
 export default function HomePage() {
   const { role } = useUser();
-  const { sheets: availableSheets, loading: sheetsLoading } =
-    useAvailableSheets(role);
+  const { sheets: availableSheets } = useAvailableSheets(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [instructionsOpened, setInstructionsOpened] = useState(false);
+  // Admin: backend folder locations for match scope (State = first path segment)
+  const [availableLocations, setAvailableLocations] = useState<string[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
   const [selectedMatchSheet, setSelectedMatchSheet] = useState<string>(MATCH_ALL_VALUE);
 
   // Auto-open instructions on first visit
@@ -50,14 +54,38 @@ export default function HomePage() {
     }
   }, []);
 
-  // Admin: default to first location when sheets load
+  // Admin: load backend locations (states = first path segment) for match dropdown
   useEffect(() => {
-    if (role === 'admin' && availableSheets.length > 0) {
+    if (role !== 'admin') return;
+    setLocationsLoading(true);
+    getLocations()
+      .then((res) => {
+        if (!res.success || !res.locations?.length) {
+          setAvailableLocations([]);
+          return;
+        }
+        const states = new Set<string>();
+        for (const path of res.locations as string[]) {
+          const first = (path.split('/')[0] ?? '').trim();
+          if (first && !SYSTEM_FOLDERS.includes(first)) states.add(first);
+        }
+        const list = Array.from(states).sort();
+        setAvailableLocations(list);
+        setSelectedMatchSheet((prev) =>
+          prev === MATCH_ALL_VALUE && list.length ? list[0] : prev,
+        );
+      })
+      .catch(() => setAvailableLocations([]))
+      .finally(() => setLocationsLoading(false));
+  }, [role]);
+  // Admin: default to first location when sheets load (fallback if no backend locations)
+  useEffect(() => {
+    if (role === 'admin' && availableSheets.length > 0 && availableLocations.length === 0) {
       setSelectedMatchSheet((prev) =>
         prev === MATCH_ALL_VALUE ? availableSheets[0] : prev,
       );
     }
-  }, [role, availableSheets]);
+  }, [role, availableSheets, availableLocations.length]);
 
   const matchSheetForUpload =
     role === 'admin'
@@ -206,13 +234,13 @@ export default function HomePage() {
             </Stack>
           </Center>
 
-          {/* Admin: select which location/datasheet to test against (from Google Sheets) */}
+          {/* Admin: select which location (backend folder / state) to test against */}
           {role === 'admin' && (
             <Stack gap='xs'>
               <Text size='sm' fw={500}>
                 Which location to test against?
               </Text>
-              {sheetsLoading ? (
+              {locationsLoading ? (
                 <Group gap='xs'>
                   <Loader size='sm' />
                   <Text size='sm' c='dimmed'>
@@ -222,12 +250,12 @@ export default function HomePage() {
               ) : (
                 <Select
                   data={[
-                    ...availableSheets.map((s) => ({ value: s, label: s })),
+                    ...availableLocations.map((s) => ({ value: s, label: s })),
                     { value: MATCH_ALL_VALUE, label: 'All locations (exception)' },
                   ]}
                   value={selectedMatchSheet}
                   onChange={(v) => v != null && setSelectedMatchSheet(v)}
-                  placeholder='Select location'
+                  placeholder={availableLocations.length ? 'Select location' : 'No locations yet'}
                   allowDeselect={false}
                   disabled={uploadState === 'uploading'}
                 />

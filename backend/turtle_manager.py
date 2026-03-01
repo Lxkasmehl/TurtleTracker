@@ -657,9 +657,16 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
+            # Create new turtle. new_location can be "State" or "State/Location" for two-level paths.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
-            sheet_name = new_location.split("/")[0].strip() or new_location
-            location_dir = os.path.join(self.base_dir, sheet_name)
+            parts = [p.strip() for p in new_location.split("/") if p.strip()]
+            sheet_name = parts[0] if parts else new_location
+            if len(parts) >= 2:
+                # Two-level: data/<sheet>/<location>/<turtle_id>/
+                location_dir = os.path.join(self.base_dir, parts[0], parts[1])
+            else:
+                # Single-level (backward compatible): data/<sheet>/<turtle_id>/
+                location_dir = os.path.join(self.base_dir, sheet_name)
             os.makedirs(location_dir, exist_ok=True)
 
             status = self._process_single_turtle(query_image, location_dir, new_turtle_id)

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Location selection (sheet + location)**: Two-level location hierarchy for new turtles and community uploads. Users select a spreadsheet/sheet (e.g. Kansas, Nebraska) and then a location folder (e.g. Wichita, Lawrence). Backend paths are now `data/<sheet>/<location>/<turtle_id>/` instead of `data/<sheet>/<turtle_id>/`. New locations can be added under an existing sheet without creating a new Google Sheet tab. API `GET /api/locations` returns backend location paths (State/Location) for dropdowns. Resolves #96.
+- **Post-confirmation automation**: After the turtle team confirms an upload (match or new turtle), the backend now (1) relabels photos/records with the confirmed turtle ID (e.g. copies images into the turtle folder with timestamped filenames) and (2) syncs confirmed data to a **community-facing Google Spreadsheet** (separate from the research spreadsheet). Set `GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID` in backend `.env`; community spreadsheet is required for community-upload confirmations. Resolves #73.
 - **Docker**: Configurable frontend host port via `FRONTEND_PORT` in `.env` (default 80). When port 80 is in use, set `FRONTEND_PORT=8080` and `FRONTEND_URL=http://localhost:8080` so auth redirects work correctly. See `.env.docker.example` and comments in `docker-compose.yml`.
 
 ---
