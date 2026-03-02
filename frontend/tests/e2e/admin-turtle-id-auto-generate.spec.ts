@@ -61,7 +61,10 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     });
 
     await loginAsAdmin(page);
-    await page.getByText('Successfully logged in!').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+    await page
+      .getByText('Successfully logged in!')
+      .waitFor({ state: 'hidden', timeout: 8000 })
+      .catch(() => {});
 
     const fileInput = page.locator('input[type="file"]:not([capture])').first();
     await fileInput.setInputFiles({
@@ -84,20 +87,13 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
 
-    const generateIdResponse = page.waitForResponse(
-      (resp) => resp.url().includes('generate-id') && resp.status() === 200,
-      { timeout: 25_000 },
-    );
-
-    // Select sheet (Kansas) then sex (F)
+    // Select sheet (Kansas) then sex (F) – this triggers generate-id and fills the ID field
     await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
     await selectSexInCreateTurtleDialog(page, dialog, 'F');
 
-    await generateIdResponse;
-
-    // ID field should show the auto-generated value and be disabled (no manual entry)
+    // ID field should show the auto-generated value (from mocked generate-id) and be disabled
     const idField = dialog.getByLabel('ID', { exact: true });
-    await expect(idField).toHaveValue(MOCK_BIOLOGY_ID, { timeout: 5000 });
+    await expect(idField).toHaveValue(MOCK_BIOLOGY_ID, { timeout: 15_000 });
     await expect(idField).toBeDisabled();
   });
 
@@ -143,7 +139,10 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     });
 
     await loginAsAdmin(page);
-    await page.getByText('Successfully logged in!').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+    await page
+      .getByText('Successfully logged in!')
+      .waitFor({ state: 'hidden', timeout: 8000 })
+      .catch(() => {});
 
     const fileInput = page.locator('input[type="file"]:not([capture])').first();
     await fileInput.setInputFiles({

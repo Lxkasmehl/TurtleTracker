@@ -99,17 +99,16 @@ export async function clickUploadPhotoButton(page: Page): Promise<void> {
  * Selects an option from an open Mantine Select/Combobox by keyboard.
  * Call after clicking the select input. Index 0 = first option.
  * Works when the dropdown is portaled or not visible to Playwright (e.g. mobile).
- * In WebKit the first ArrowDown moves focus from input into the list (onto first option),
- * so we need one extra ArrowDown before stepping to the desired index.
+ * First ArrowDown moves focus from input into the list (onto first option); then we need
+ * optionIndex more steps to reach the desired option. So total = optionIndex + 1 for all browsers.
  */
 export async function selectComboboxOptionByIndex(
   page: Page,
   optionIndex: number,
 ): Promise<void> {
   await page.waitForTimeout(150);
-  const browserName = page.context().browser()?.browserType().name() ?? '';
-  // WebKit: first ArrowDown moves focus into list (to first option); then we need optionIndex steps.
-  const steps = browserName === 'webkit' ? optionIndex + 1 : optionIndex;
+  // One ArrowDown to move focus from input into list (onto first option), then optionIndex more.
+  const steps = optionIndex + 1;
   for (let i = 0; i < steps; i++) {
     await page.keyboard.press('ArrowDown');
   }
@@ -180,4 +179,6 @@ export async function selectSexInCreateTurtleDialog(
     throw new Error(`Unknown sex value: ${value}`);
   }
   await selectComboboxOptionByIndex(page, optionIndex);
+  // Wait for listbox to close so the value is committed and generate-id can run.
+  await listbox.waitFor({ state: 'hidden', timeout: SEX_DROPDOWN_TIMEOUT });
 }
