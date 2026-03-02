@@ -186,3 +186,202 @@ If `faiss-cpu` cannot be installed, try:
 ```bash
 pip install faiss-cpu --no-cache-dir
 ```
+
+### 500 Error on Photo Upload (POST /api/upload)
+
+If the server returns **500** when uploading a photo from the frontend, the cause is often a **missing or empty `data/` folder** or an **inconsistent state** of the search index files. The `data/` folder and generated index files are not in Git, so every developer machine needs them.
+
+**Root cause (fixed in current code):**  
+The crash happened when the backend had an **unfitted vocabulary** (`vlad_vocab.pkl`) but still an **existing search index** (`turtles.index`, `metadata.pkl`). That can occur if: (1) you had data and index before, (2) you cleared only `backend/data/` (no NPZ files left), (3) you deleted or overwrote only `vlad_vocab.pkl`. On restart, the rebuild finds no NPZ data, writes an **unfitted** vocab to disk, and does not overwrite the index (no data → index not rebuilt). The first upload then calls `predict()` on the unfitted model → 500. The code now prevents this by not saving an unfitted vocab when there is no NPZ data, and by treating an unfitted vocab at runtime as "no search" (return no matches instead of crashing).
+
+**Typical causes:**
+
+1. **No or empty `backend/data/`**  
+   The backend expects either:
+   - Pre-built index files in `backend/turtles/` (`vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`), or  
+   - Turtle reference data under `backend/data/` in the structure `data/<State>/<Location>/<TurtleID>/ref_data/` with `.jpg` and `.npz` files.  
+   If both are missing, the first upload can trigger an internal error (e.g. unfitted model) and result in 500.
+
+2. **Different or missing index files**  
+   Files like `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl` in `backend/turtles/` are in `.gitignore`.    If your colleague has no copy (e.g. fresh clone, different branch), the backend tries to rebuild from `data/`. If `data/` is empty, that used to leave the system in an invalid state and cause 500 on first upload.
+
+3. **Unfitted vocab + old index**  
+   If `data/` was cleared but only `vlad_vocab.pkl` was removed (and `turtles.index` / `metadata.pkl` were left in place), a restart could produce a new unfitted vocab while the old index remained, leading to 500 on first upload. With the current code this state is avoided; if you see it, remove **all** of `vlad_vocab.pkl`, `turtles.index`, and `metadata.pkl` (and optionally `global_vlad_array.npy`, `trained_kmeans_vocabulary.pkl`) so the next startup either rebuilds from data or runs with no index (uploads then return no matches, no 500).
+
+**What to do:**
+
+- **Option A – Use the same data as you:**  
+  Copy your `backend/data/` (and optionally the generated files in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`) to your colleague’s machine in the same relative paths. Then restart the backend.
+
+- **Option B – Empty setup (no matches):**  
+  Ensure `backend/data/` exists (e.g. `backend/data/Review_Queue`, `backend/data/Community_Uploads`, `backend/data/Incidental_Finds` are created on first run). With the current code, an empty `data/` no longer causes 500; uploads succeed and return **no matches** until reference data (and index) are added. If you had a 500 before, delete **all** index/vocab files in `backend/turtles/` (see Option C) so no stale unfitted vocab remains.
+
+- **Option C – Clear index/vocab together:**  
+  If you clear or replace `backend/data/`, also remove **all** of these in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`, `trained_kmeans_vocabulary.pkl`. That avoids the "unfitted vocab + old index" state. You can use `python reset_complete_backend.py` to reset everything (data + index + vocab) in one go.
+
+- **See the real error:**  
+  In the backend terminal, the exception and traceback are printed when a 500 occurs. The API response body may also include an `error` (and in debug mode `details`) field with the message. Check both to confirm the cause.
+
+## Google Sheets API Integration
+
+The backend supports integration with Google Sheets for turtle data management. This allows admins to sync turtle data directly to Google Sheets when approving matches or creating new turtles.
+
+### Prerequisites
+
+1. A Google Cloud Project
+2. A Google Sheets spreadsheet with the turtle data
+3. Service Account credentials
+
+### Setup Instructions
+
+#### Step 1: Create a Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the Google Sheets API:
+   - Go to "APIs & Services" > "Library"
+   - Search for "Google Sheets API"
+   - Click "Enable"
+
+#### Step 2: Create a Service Account
+
+1. Go to "APIs & Services" > "Credentials"
+2. Click "Create Credentials" > "Service Account"
+3. Fill in the service account details:
+   - Name: `turtle-sheets-service` (or any name you prefer)
+   - Description: `Service account for Turtle Project Google Sheets integration`
+4. Click "Create and Continue"
+5. Skip the optional steps and click "Done"
+
+#### Step 3: Create and Download Service Account Key
+
+1. Click on the service account you just created
+2. Go to the "Keys" tab
+3. Click "Add Key" > "Create new key"
+4. Select "JSON" format
+5. Click "Create" - this will download a JSON file
+6. Save this file securely (e.g., `backend/credentials/google-sheets-credentials.json`)
+
+#### Step 4: Share Google Sheet with Service Account
+
+1. Open your Google Sheets spreadsheet
+2. Click the "Share" button
+3. Add the service account email (found in the JSON file as `client_email`)
+4. Give it "Editor" permissions
+5. Click "Send"
+
+#### Step 5: Get Spreadsheet ID
+
+1. Open your Google Sheets spreadsheet
+2. Look at the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+3. Copy the `SPREADSHEET_ID` part
+
+#### Step 6: Configure Environment Variables
+
+Add the following variables to your `backend/.env` file:
+
+```env
+# Google Sheets API Configuration
+GOOGLE_SHEETS_SPREADSHEET_ID=your-spreadsheet-id-here
+GOOGLE_SHEETS_CREDENTIALS_PATH=./credentials/google-sheets-credentials.json
+```
+
+Replace `your-spreadsheet-id-here` with your actual spreadsheet ID and update the credentials path if you saved the JSON file in a different location.
+
+#### Step 7: Install Dependencies
+
+The Google Sheets API dependencies are already included in `requirements.txt`. If you haven't installed them yet:
+
+```bash
+pip install -r requirements.txt
+```
+
+This will install:
+- `google-api-python-client`
+- `google-auth`
+- `google-auth-oauthlib`
+- `google-auth-httplib2`
+
+#### Step 8: Verify Setup
+
+1. Start the backend server:
+   ```bash
+   python app.py
+   ```
+
+2. Check the console output - you should see no errors related to Google Sheets
+3. If there are errors, check:
+   - The credentials file path is correct
+   - The spreadsheet ID is correct
+   - The service account has access to the spreadsheet
+   - The Google Sheets API is enabled
+
+### Google Sheets Structure
+
+The Google Sheets spreadsheet should have:
+
+1. **Multiple sheets (tabs)**: One sheet per region/state
+   - Example: "Kansas", "Nebraska", etc.
+
+2. **Header row (Row 1)**: Contains column headers:
+   - Transmitter ID
+   - ID (Primary ID - this is the key field)
+   - ID2 (random sequence)
+   - Pit?
+   - Pic in 2024 Archive?
+   - Adopted?
+   - iButton?
+   - DNA Extracted?
+   - Date 1st found
+   - Species
+   - Name
+   - Sex
+   - iButton Last set
+   - Dates refound
+   - General Location
+   - Location
+   - Notes
+   - Transmitter put on by
+   - Transmitter On Date
+   - Transmitter type
+   - Transmitter lifespan
+   - Radio Replace Date
+   - OLD Frequencies
+
+3. **Data rows**: Each row represents one turtle
+
+### Important Notes
+
+- **Column headers must match exactly** (case-sensitive)
+- **The "ID" column is the primary key** - it should be unique across all sheets
+- **Sheet names should match state names** (e.g., "Kansas", "Nebraska")
+- The system automatically finds columns by header name, so column order can change
+- New columns can be added - just make sure the header name matches the expected format
+
+### Google Sheets API Endpoints
+
+- `GET /api/sheets/turtle/<primary_id>` - Get turtle data from Google Sheets (Admin only)
+- `POST /api/sheets/turtle` - Create new turtle data in Google Sheets (Admin only)
+- `PUT /api/sheets/turtle/<primary_id>` - Update turtle data in Google Sheets (Admin only)
+- `GET /api/sheets/sheets` - List all available sheets (Admin only)
+
+### Troubleshooting Google Sheets
+
+#### Error: "Google Sheets service not configured"
+- Check that `GOOGLE_SHEETS_SPREADSHEET_ID` and `GOOGLE_SHEETS_CREDENTIALS_PATH` are set in `.env`
+- Verify the credentials file exists at the specified path
+
+#### Error: "Failed to authenticate with Google Sheets"
+- Check that the credentials JSON file is valid
+- Verify the service account email has access to the spreadsheet
+- Make sure the Google Sheets API is enabled in your Google Cloud project
+
+#### Error: "Turtle not found in Google Sheets"
+- Verify the turtle's Primary ID exists in the spreadsheet
+- Check that you're looking in the correct sheet (state/region)
+- Ensure the "ID" column header is exactly "ID" (case-sensitive)
+
+#### Error: "Failed to create/update turtle data"
+- Check that the service account has "Editor" permissions on the spreadsheet
+- Verify the sheet name matches the state name
+- Check that all required columns exist in the header row

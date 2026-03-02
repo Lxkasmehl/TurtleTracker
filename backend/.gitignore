@@ -38,7 +38,6 @@ venv/
 # Credentials and sensitive files
 credentials/
 *.json
-
 # Database files
 *.sqlite
 *.sqlite3

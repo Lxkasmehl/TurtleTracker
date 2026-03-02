@@ -7,6 +7,8 @@ import {
   Stack,
   Center,
   Button,
+  Select,
+  Loader,
 } from '@mantine/core';
 import { Dropzone } from '@mantine/dropzone';
 import type { FileRejection, FileWithPath } from '@mantine/dropzone';
@@ -21,18 +23,24 @@ import {
   IconInfoCircle,
 } from '@tabler/icons-react';
 import { useRef, useState, useEffect } from 'react';
-import { validateFile } from '../services/mockBackend';
+import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
+import { useAvailableSheets } from '../hooks/useAvailableSheets';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
 
+const MATCH_ALL_VALUE = '__all__';
+
 export default function HomePage() {
   const { role } = useUser();
+  const { sheets: availableSheets, loading: sheetsLoading } =
+    useAvailableSheets(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [instructionsOpened, setInstructionsOpened] = useState(false);
+  const [selectedMatchSheet, setSelectedMatchSheet] = useState<string>(MATCH_ALL_VALUE);
 
   // Auto-open instructions on first visit
   useEffect(() => {
@@ -41,6 +49,22 @@ export default function HomePage() {
       setInstructionsOpened(true);
     }
   }, []);
+
+  // Admin: default to first location when sheets load
+  useEffect(() => {
+    if (role === 'admin' && availableSheets.length > 0) {
+      setSelectedMatchSheet((prev) =>
+        prev === MATCH_ALL_VALUE ? availableSheets[0] : prev,
+      );
+    }
+  }, [role, availableSheets]);
+
+  const matchSheetForUpload =
+    role === 'admin'
+      ? selectedMatchSheet === MATCH_ALL_VALUE
+        ? ''
+        : selectedMatchSheet
+      : undefined;
 
   const {
     files,
@@ -52,12 +76,20 @@ export default function HomePage() {
     isDuplicate,
     previousUploadDate,
     isGettingLocation,
-    locationData,
-    setLocationData,
+    locationPermissionDenied,
+    locationHint,
+    setLocationHint,
+    requestLocationHint,
+    collectedToLab,
+    setCollectedToLab,
+    physicalFlag,
+    setPhysicalFlag,
+    extraFiles,
+    setExtraFiles,
     handleDrop,
     handleUpload,
     handleRemove,
-  } = usePhotoUpload({ role });
+  } = usePhotoUpload({ role, matchSheet: matchSheetForUpload });
 
   const handleDropWithValidation = (acceptedFiles: FileWithPath[]): void => {
     if (acceptedFiles.length > 0) {
@@ -132,30 +164,80 @@ export default function HomePage() {
   };
 
   return (
-    <Container size='sm' py='xl'>
-      <Paper shadow='sm' p='xl' radius='md' withBorder>
+    <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+      <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md' withBorder>
         <Stack gap='lg'>
           <Center>
             <Stack gap='xs' align='center' style={{ width: '100%' }}>
-              <Group justify='space-between' style={{ width: '100%' }}>
-                <div style={{ flex: 1 }} /> {/* Spacer for centering */}
-                <Title order={1}>Photo Upload</Title>
-                <Group style={{ flex: 1 }} justify='flex-end'>
+              {isMobile ? (
+                <Stack gap='xs' align='center' style={{ width: '100%' }}>
+                  <Title order={1} ta='center'>
+                    Photo Upload
+                  </Title>
                   <Button
                     variant='light'
                     size='sm'
                     leftSection={<IconInfoCircle size={16} />}
                     onClick={() => setInstructionsOpened(true)}
+                    fullWidth
                   >
                     View Instructions
                   </Button>
+                </Stack>
+              ) : (
+                <Group justify='space-between' style={{ width: '100%' }}>
+                  <div style={{ flex: 1 }} />
+                  <Title order={1}>Photo Upload</Title>
+                  <Group style={{ flex: 1 }} justify='flex-end'>
+                    <Button
+                      variant='light'
+                      size='sm'
+                      leftSection={<IconInfoCircle size={16} />}
+                      onClick={() => setInstructionsOpened(true)}
+                    >
+                      View Instructions
+                    </Button>
+                  </Group>
                 </Group>
-              </Group>
+              )}
               <Text size='sm' c='dimmed' ta='center'>
                 Upload a photo to save it in the backend
               </Text>
             </Stack>
           </Center>
+
+          {/* Admin: select which location/datasheet to test against (from Google Sheets) */}
+          {role === 'admin' && (
+            <Stack gap='xs'>
+              <Text size='sm' fw={500}>
+                Which location to test against?
+              </Text>
+              {sheetsLoading ? (
+                <Group gap='xs'>
+                  <Loader size='sm' />
+                  <Text size='sm' c='dimmed'>
+                    Loading locations…
+                  </Text>
+                </Group>
+              ) : (
+                <Select
+                  data={[
+                    ...availableSheets.map((s) => ({ value: s, label: s })),
+                    { value: MATCH_ALL_VALUE, label: 'All locations (exception)' },
+                  ]}
+                  value={selectedMatchSheet}
+                  onChange={(v) => v != null && setSelectedMatchSheet(v)}
+                  placeholder='Select location'
+                  allowDeselect={false}
+                  disabled={uploadState === 'uploading'}
+                />
+              )}
+              <Text size='xs' c='dimmed'>
+                Default: only turtles from this location. &quot;All locations&quot; only
+                in exceptional cases.
+              </Text>
+            </Stack>
+          )}
 
           {/* Hidden file inputs for mobile */}
           <input
@@ -257,9 +339,17 @@ export default function HomePage() {
             isDuplicate={isDuplicate}
             previousUploadDate={previousUploadDate}
             isGettingLocation={isGettingLocation}
+            locationPermissionDenied={locationPermissionDenied}
             role={role}
-            locationData={locationData}
-            setLocationData={setLocationData}
+            locationHint={locationHint}
+            setLocationHint={setLocationHint}
+            requestLocationHint={requestLocationHint}
+            collectedToLab={collectedToLab}
+            setCollectedToLab={setCollectedToLab}
+            physicalFlag={physicalFlag}
+            setPhysicalFlag={setPhysicalFlag}
+            extraFiles={extraFiles}
+            setExtraFiles={setExtraFiles}
             onUpload={handleUpload}
             onRemove={handleRemove}
           />

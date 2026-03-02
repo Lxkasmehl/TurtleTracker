@@ -1,7 +1,17 @@
-import { Card, Image, Group, Badge, Text, Stack, Button, Divider, Alert } from '@mantine/core';
+import {
+  Card,
+  Image,
+  Group,
+  Badge,
+  Text,
+  Stack,
+  Button,
+  Divider,
+  Alert,
+} from '@mantine/core';
 import { IconFile, IconClock, IconMapPin } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import type { UploadedPhoto } from '../services/mockBackend';
+import type { UploadedPhoto } from '../types/photo';
 import { formatFileSize, formatLocation, getGoogleMapsUrl } from '../utils/photoHelpers';
 
 interface PhotoCardProps {
@@ -11,7 +21,12 @@ interface PhotoCardProps {
   totalPhotos?: number;
 }
 
-export function PhotoCard({ photo, onPhotoClick, showViewAllButton, totalPhotos }: PhotoCardProps) {
+export function PhotoCard({
+  photo,
+  onPhotoClick: _onPhotoClick,
+  showViewAllButton,
+  totalPhotos,
+}: PhotoCardProps) {
   const navigate = useNavigate();
 
   return (
@@ -30,7 +45,12 @@ export function PhotoCard({ photo, onPhotoClick, showViewAllButton, totalPhotos 
 
         {/* Badges */}
         <Group gap='xs'>
-          <Badge size='xs' variant='light' color='gray' leftSection={<IconFile size={10} />}>
+          <Badge
+            size='xs'
+            variant='light'
+            color='gray'
+            leftSection={<IconFile size={10} />}
+          >
             {formatFileSize(photo.fileSize)}
           </Badge>
           <Badge
@@ -142,4 +162,3 @@ export function PhotoCard({ photo, onPhotoClick, showViewAllButton, totalPhotos 
     </Card>
   );
 }
-

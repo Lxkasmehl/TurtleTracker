@@ -1,4 +1,4 @@
-import type { UploadedPhoto } from '../services/mockBackend';
+import type { UploadedPhoto } from '../types/photo';
 
 /**
  * Format file size in bytes to human-readable string

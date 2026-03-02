@@ -1,0 +1,291 @@
+"""
+Complete Backend Reset Script
+Clears ALL data from the backend:
+- Database (all Turtle and TurtleImage records)
+- Official turtle data (State/Location folders)
+- Uploaded data (Review Queue, Community Uploads)
+- Training data (.npz files)
+- Model files (vocabulary, indexes)
+
+Important: All index/vocab files in backend/turtles/ are removed together. That avoids
+the "unfitted vocab + old index" state which used to cause 500 on photo upload when
+data/ was cleared but only vlad_vocab.pkl was deleted (old turtles.index remained).
+"""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+# Add turtles directory to path for Django imports
+base_dir = os.path.dirname(os.path.abspath(__file__))
+turtles_dir = os.path.join(base_dir, 'turtles')
+if turtles_dir not in sys.path:
+    sys.path.insert(0, turtles_dir)
+
+# Setup Django environment
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'turtles.settings')
+
+import django
+django.setup()
+
+from django.db import connection
+from django.db.utils import OperationalError
+from identification.models import Turtle, TurtleImage
+
+
+def _table_exists(table_name):
+    """Return True if the given table exists in the database."""
+    with connection.cursor() as cursor:
+        if connection.vendor == 'sqlite':
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
+                [table_name],
+            )
+        else:
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = %s",
+                [table_name],
+            )
+        return cursor.fetchone() is not None
+
+
+def _clear_media_if_present():
+    """Remove Django media directory if it exists."""
+    from django.conf import settings
+    media_root = getattr(settings, 'MEDIA_ROOT', None)
+    if media_root and os.path.exists(media_root):
+        print(f"   🗑️  Deleting Django media files from {media_root}...")
+        shutil.rmtree(media_root)
+        print("   ✅ Deleted Django media directory")
+    else:
+        media_dir = os.path.join(turtles_dir, 'media')
+        if os.path.exists(media_dir):
+            print("   🗑️  Deleting Django media files...")
+            shutil.rmtree(media_dir)
+            print("   ✅ Deleted Django media directory")
+
+
+def clear_database():
+    """Delete all Turtle and TurtleImage records from the database"""
+    print("🗄️  Clearing database...")
+    
+    turtle_table = Turtle._meta.db_table
+    image_table = TurtleImage._meta.db_table
+
+    if not _table_exists(image_table) and not _table_exists(turtle_table):
+        print("   ℹ️  Database tables do not exist (migrations not applied). Nothing to clear.")
+        _clear_media_if_present()
+        return
+
+    try:
+        # Delete all images first (due to foreign key constraint)
+        try:
+            if _table_exists(image_table):
+                image_count = TurtleImage.objects.count()
+                TurtleImage.objects.all().delete()
+                print(f"   ✅ Deleted {image_count} TurtleImage records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  TurtleImage table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
+        else:
+            print("   ℹ️  TurtleImage table does not exist. Skipping.")
+
+        # Delete all turtles
+        try:
+            if _table_exists(turtle_table):
+                turtle_count = Turtle.objects.count()
+                Turtle.objects.all().delete()
+                print(f"   ✅ Deleted {turtle_count} Turtle records")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("   ℹ️  Turtle table does not exist (migrations may not be applied); skipping.")
+            else:
+                raise
+        else:
+            print("   ℹ️  Turtle table does not exist. Skipping.")
+
+        _clear_media_if_present()
+
+    except Exception as e:
+        print(f"   ❌ Error clearing database: {e}")
+        raise
+
+
+def clear_official_turtle_data():
+    """Delete all official turtle data folders (State/Location/TurtleID)"""
+    print("\n🐢 Clearing official turtle data...")
+    
+    data_dir = os.path.join(base_dir, 'data')
+    if not os.path.exists(data_dir):
+        print("   ℹ️  Data directory does not exist (already empty)")
+        return
+    
+    deleted_folders = 0
+    deleted_files = 0
+    
+    # List of folders to keep (Review_Queue, Community_Uploads, Incidental_Finds)
+    keep_folders = {'Review_Queue', 'Community_Uploads', 'Incidental_Finds'}
+    
+    for item in os.listdir(data_dir):
+        item_path = os.path.join(data_dir, item)
+        
+        # Skip special folders (they'll be handled separately)
+        if item in keep_folders:
+            continue
+        
+        # Skip if it's not a directory
+        if not os.path.isdir(item_path):
+            continue
+        
+        try:
+            # Count files before deletion
+            file_count = sum([len(files) for r, d, files in os.walk(item_path)])
+            deleted_files += file_count
+            
+            # Delete the entire State/Location folder structure
+            shutil.rmtree(item_path)
+            deleted_folders += 1
+            print(f"   🗑️  Deleted: {item} ({file_count} files)")
+        except Exception as e:
+            print(f"   ❌ Error deleting {item}: {e}")
+    
+    print(f"   ✅ Deleted {deleted_folders} location folders ({deleted_files} files)")
+
+
+def clear_uploaded_data():
+    """Clear Review Queue, Community Uploads, and Incidental Finds"""
+    print("\n📤 Clearing uploaded data...")
+    
+    data_dir = os.path.join(base_dir, 'data')
+    upload_folders = ['Review_Queue', 'Community_Uploads', 'Incidental_Finds']
+    
+    total_deleted = 0
+    
+    for folder_name in upload_folders:
+        folder_path = os.path.join(data_dir, folder_name)
+        
+        if not os.path.exists(folder_path):
+            print(f"   ℹ️  {folder_name} does not exist (already empty)")
+            continue
+        
+        deleted_count = 0
+        try:
+            for item in os.listdir(folder_path):
+                item_path = os.path.join(folder_path, item)
+                try:
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"   ⚠️  Error deleting {item}: {e}")
+            
+            print(f"   ✅ Cleared {folder_name} ({deleted_count} items)")
+            total_deleted += deleted_count
+        except Exception as e:
+            print(f"   ❌ Error clearing {folder_name}: {e}")
+    
+    print(f"   ✅ Total uploaded items deleted: {total_deleted}")
+
+
+def clear_training_data():
+    """Delete all .npz files and model files"""
+    print("\n🧠 Clearing training data and models...")
+    
+    data_dir = os.path.join(base_dir, 'data')
+    turtles_dir_path = os.path.join(base_dir, 'turtles')
+    
+    # Delete .npz files
+    npz_count = 0
+    if os.path.exists(data_dir):
+        for root, dirs, files in os.walk(data_dir):
+            for file in files:
+                if file.endswith(".npz"):
+                    file_path = os.path.join(root, file)
+                    try:
+                        os.remove(file_path)
+                        npz_count += 1
+                    except Exception as e:
+                        print(f"   ⚠️  Error deleting {file_path}: {e}")
+    
+    print(f"   ✅ Deleted {npz_count} .npz files")
+    
+    # Delete all index/vocab files together (avoids "unfitted vocab + old index" → 500 on upload)
+    model_files = [
+        os.path.join(turtles_dir_path, 'vlad_vocab.pkl'),
+        os.path.join(turtles_dir_path, 'turtles.index'),
+        os.path.join(turtles_dir_path, 'global_vlad_array.npy'),
+        os.path.join(turtles_dir_path, 'metadata.pkl'),
+        os.path.join(turtles_dir_path, 'trained_kmeans_vocabulary.pkl'),
+    ]
+    
+    model_count = 0
+    for model_path in model_files:
+        if os.path.exists(model_path):
+            try:
+                os.remove(model_path)
+                model_count += 1
+                print(f"   🗑️  Deleted: {os.path.basename(model_path)}")
+            except Exception as e:
+                print(f"   ❌ Error deleting {os.path.basename(model_path)}: {e}")
+    
+    print(f"   ✅ Deleted {model_count} model files")
+
+
+def reset_complete_backend():
+    """Main function to reset everything"""
+    print("=" * 60)
+    print("⚠️  COMPLETE BACKEND RESET ⚠️")
+    print("=" * 60)
+    print("\nThis will delete:")
+    print("  ❌ All database records (Turtles, TurtleImages)")
+    print("  ❌ All official turtle data (State/Location folders)")
+    print("  ❌ All uploaded data (Review Queue, Community Uploads)")
+    print("  ❌ All training data (.npz files)")
+    print("  ❌ All model files (vocabulary, indexes)")
+    print("\n" + "=" * 60)
+    
+    confirmation = input("\n⚠️  Type 'RESET' (all caps) to confirm: ")
+    
+    if confirmation != 'RESET':
+        print("\n❌ Operation cancelled.")
+        return
+    
+    print("\n🚀 Starting reset...\n")
+    
+    try:
+        # 1. Clear database
+        clear_database()
+        
+        # 2. Clear official turtle data
+        clear_official_turtle_data()
+        
+        # 3. Clear uploaded data
+        clear_uploaded_data()
+        
+        # 4. Clear training data
+        clear_training_data()
+        
+        print("\n" + "=" * 60)
+        print("🎉 COMPLETE BACKEND RESET FINISHED!")
+        print("=" * 60)
+        print("\n✅ All data has been cleared.")
+        print("✅ You can now start fresh with uploading turtles.")
+        print("\n💡 Next steps:")
+        print("   1. Start the backend server")
+        print("   2. Upload new turtle images")
+        print("   3. The system will automatically rebuild indexes")
+        
+    except Exception as e:
+        print(f"\n❌ Error during reset: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+if __name__ == "__main__":
+    reset_complete_backend()

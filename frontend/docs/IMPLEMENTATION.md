@@ -400,7 +400,7 @@ graph TD
     D --> C
     D --> E[Location Service]
     
-    F[usePhotoGroups] --> G[Mock Backend]
+    F[usePhotoGroups] --> G[Photo data]
     
     style A fill:#4dabf7
     style D fill:#51cf66
@@ -578,7 +578,7 @@ frontend/
 │   │   └── LoginPage.tsx
 │   ├── services/            # API and service layer
 │   │   ├── api.ts
-│   │   └── mockBackend.ts
+│   │   └── geolocation.ts
 │   ├── store/               # Redux store
 │   │   ├── hooks.ts
 │   │   ├── index.ts
@@ -586,8 +586,10 @@ frontend/
 │   │       ├── themeSlice.ts
 │   │       └── userSlice.ts
 │   ├── types/               # TypeScript type definitions
-│   │   └── User.ts
+│   │   ├── User.ts
+│   │   └── photo.ts
 │   ├── utils/               # Utility functions
+│   │   ├── fileValidation.ts
 │   │   ├── imageCompression.ts
 │   │   └── photoHelpers.ts
 │   ├── App.tsx              # Root component

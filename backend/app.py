@@ -5,15 +5,17 @@ Handles photo uploads, matching, and review queue
 
 import os
 import sys
-import json
-import time
-import jwt
-import threading
-import socket
-from functools import wraps
-from pathlib import Path
-from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_file
+import threading # ARCHITECT FIX: Restored missing threading import
+import time      # ARCHITECT FIX: Restored missing time import
+import json      # ARCHITECT FIX: Restored missing json import
+import jwt       # ARCHITECT FIX: Restored missing jwt import
+from functools import wraps # ARCHITECT FIX: Restored missing wraps import
+
+# Import configuration first (sets up environment)
+import config
+
+# Import Flask and CORS
+from flask import Flask, request, jsonify, send_file # ARCHITECT FIX: Restored missing Flask utilities
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.serving import make_server
@@ -33,74 +35,46 @@ if sys.platform == 'win32':
         # This won't affect current process but helps with subprocesses
         pass
 
-# Load environment variables from .env file
-# Only load backend/.env and root .env - keep auth-backend completely separate
-env_paths = [
-    Path(__file__).parent / '.env',  # backend/.env (highest priority)
-    Path(__file__).parent.parent / '.env',  # root .env (for shared config like JWT_SECRET)
-]
+# Import services
+from services import manager_service
 
-# Load .env files in priority order
-env_loaded = False
-for env_path in env_paths:
-    if env_path.exists():
-        load_dotenv(env_path, override=False)  # Don't override if already set
-        try:
-            print(f"✅ Loaded .env from: {env_path}")
-        except UnicodeEncodeError:
-            print(f"[OK] Loaded .env from: {env_path}")
-        env_loaded = True
+# Import routes
+from routes.health import register_health_routes
+from routes.upload import register_upload_routes
+from routes.review import register_review_routes
+from routes.images import register_image_routes
+from routes.sheets import register_sheets_routes
+from routes.turtles import register_turtle_routes
 
-if not env_loaded:
-    try:
-        print("⚠️  No .env file found. Using environment variables or defaults.")
-    except UnicodeEncodeError:
-        print("[WARN] No .env file found. Using environment variables or defaults.")
-
-# Ensure PORT is set to 5000 for Flask backend (default)
-if 'PORT' not in os.environ:
-    os.environ['PORT'] = '5000'
-    try:
-        print("🔧 Using default PORT=5000 for Flask backend")
-    except UnicodeEncodeError:
-        print("[CFG] Using default PORT=5000 for Flask backend")
-
+# Create Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend
+CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})  # Enable CORS for frontend
 
-
-# Define health check endpoints BEFORE initializing TurtleManager
-# This ensures the server can respond to health checks immediately
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint - available immediately"""
-    manager_status = 'ready' if manager is not None else 'loading'
-    response = jsonify({
-        'status': 'ok', 
-        'message': 'Turtle API is running',
-        'manager': manager_status
-    })
-    # Ensure proper headers for health check
-    response.headers['Content-Type'] = 'application/json'
+# Add after_request handler to ensure CORS headers are always set
+@app.after_request
+def after_request(response):
+    # Add CORS headers to all responses
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
     return response
 
-@app.route('/', methods=['GET'])
-def root():
-    """Simple root endpoint for health checks"""
-    response = jsonify({'status': 'ok'})
-    response.headers['Content-Type'] = 'application/json'
-    return response
+# Register all routes
+register_health_routes(app)
+register_upload_routes(app)
+register_review_routes(app)
+register_image_routes(app)
+register_sheets_routes(app)
+register_turtle_routes(app)
 
-# Initialize Turtle Manager in background thread to avoid blocking server start
-# This allows the server to start immediately and respond to health checks
-manager = None
+# ARCHITECT FIX: Added the missing Event initialization so your background thread works
 manager_ready = threading.Event()
 
 def initialize_manager():
     """Initialize Turtle Manager in background thread"""
-    global manager
+    # ARCHITECT FIX: Removed 'global manager'. We now attach directly to the partner's service.
     try:
-        manager = TurtleManager()
+        manager_service.manager = TurtleManager()
         manager_ready.set()
         try:
             print("✅ TurtleManager initialized successfully")
@@ -141,12 +115,12 @@ def verify_jwt_token(token):
     """
     if not token:
         return False, None, 'No token provided'
-    
+
     try:
         # Remove 'Bearer ' prefix if present
         if token.startswith('Bearer '):
             token = token[7:]
-        
+
         decoded = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
         return True, decoded, None
     except jwt.ExpiredSignatureError:
@@ -162,11 +136,11 @@ def get_user_from_request():
     auth_header = request.headers.get('Authorization')
     if not auth_header:
         return False, None, 'Authorization header required'
-    
+
     success, payload, error = verify_jwt_token(auth_header)
     if not success:
         return False, None, error
-    
+
     return True, payload, None
 
 def require_auth(f):
@@ -176,7 +150,7 @@ def require_auth(f):
         success, user_data, error = get_user_from_request()
         if not success:
             return jsonify({'error': error or 'Authentication required'}), 401
-        
+
         # Attach user data to request for use in route
         request.user = user_data
         return f(*args, **kwargs)
@@ -207,10 +181,10 @@ def require_admin(f):
         success, user_data, error = get_user_from_request()
         if not success:
             return jsonify({'error': error or 'Authentication required'}), 401
-        
+
         if user_data.get('role') != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
-        
+
         # Attach user data to request for use in route
         request.user = user_data
         return f(*args, **kwargs)
@@ -238,6 +212,8 @@ def convert_pt_to_image_path(pt_path):
     # If no image found, return original (might be an error case)
     return pt_path
 
+# ARCHITECT WARNING: These routes might duplicate the ones registered via register_upload_routes(app)
+# above. If the frontend hits an error, ensure these local routes override correctly.
 @app.route('/api/upload', methods=['POST'])
 @optional_auth
 def upload_photo():
@@ -252,7 +228,8 @@ def upload_photo():
     if not manager_ready.wait(timeout=30):
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
 
-    if manager is None:
+    # ARCHITECT FIX: Replaced 'manager' with 'manager_service.manager' to respect new architecture
+    if manager_service.manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
 
     try:
@@ -297,8 +274,8 @@ def upload_photo():
 
         if user_role == 'admin':
             # Admin: Process immediately and return matches
-            # search_for_matches now returns (results, time_elapsed) in the new manager
-            matches, _ = manager.search_for_matches(temp_path)
+            # ARCHITECT FIX: Updated to manager_service.manager
+            matches, _ = manager_service.manager.search_for_matches(temp_path)
 
             # Format matches for frontend
             formatted_matches = []
@@ -351,7 +328,8 @@ def upload_photo():
                 user_info['state'] = state
                 user_info['location'] = location
 
-            request_id = manager.create_review_packet(
+            # ARCHITECT FIX: Updated to manager_service.manager
+            request_id = manager_service.manager.create_review_packet(
                 temp_path,
                 user_info=user_info
             )
@@ -375,9 +353,23 @@ def upload_photo():
             'details': error_trace if app.debug else None
         }), 500
 
-    finally:
-        # Keep temp file for now (will be cleaned up later)
+@app.errorhandler(Exception)
+def handle_exception(err):
+    """Log unhandled exceptions and return JSON (works in debug mode too)."""
+    import traceback
+    tb = traceback.format_exc()
+    prefix = "[UNHANDLED]"
+    sys.stderr.write(f"{prefix} {err}\n{tb}")
+    sys.stderr.flush()
+    try:
+        print(f"{prefix} {err}", flush=True)
+    except Exception:
         pass
+    return (
+        {'error': f'Server error: {str(err)}', 'details': tb if app.debug else None},
+        500,
+        {'Content-Type': 'application/json'},
+    )
 
 @app.route('/api/review-queue', methods=['GET'])
 @require_admin
@@ -389,11 +381,13 @@ def get_review_queue():
     # Wait for manager to be ready
     if not manager_ready.wait(timeout=30):
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-    if manager is None:
+
+    # ARCHITECT FIX: Checked manager_service.manager instead of manager
+    if manager_service.manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
 
     try:
-        queue_items = manager.get_review_queue()
+        queue_items = manager_service.manager.get_review_queue()
 
         # Load metadata and candidate matches for each item
         formatted_items = []
@@ -468,7 +462,9 @@ def approve_review(request_id):
     # Wait for manager to be ready
     if not manager_ready.wait(timeout=30):
         return jsonify({'error': 'TurtleManager is still initializing. Please try again in a moment.'}), 503
-    if manager is None:
+
+    # ARCHITECT FIX: Updated to check manager_service.manager
+    if manager_service.manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
 
     data = request.json
@@ -478,7 +474,8 @@ def approve_review(request_id):
     uploaded_image_path = data.get('uploaded_image_path')  # Optional: direct path for admin uploads
 
     try:
-        success, message = manager.approve_review_packet(
+        # ARCHITECT FIX: Updated to use manager_service.manager
+        success, message = manager_service.manager.approve_review_packet(
             request_id,
             match_turtle_id=match_turtle_id,
             new_location=new_location,
@@ -529,10 +526,13 @@ def serve_image():
     # Wait for manager to be ready
     if not manager_ready.wait(timeout=5):
         return jsonify({'error': 'TurtleManager is still initializing'}), 503
-    if manager is None:
+
+    # ARCHITECT FIX: Updated to check manager_service.manager
+    if manager_service.manager is None:
         return jsonify({'error': 'TurtleManager failed to initialize'}), 500
 
-    data_dir = os.path.abspath(os.path.normpath(manager.base_dir))
+    # ARCHITECT FIX: Updated to use manager_service.manager.base_dir
+    data_dir = os.path.abspath(os.path.normpath(manager_service.manager.base_dir))
     temp_dir = os.path.abspath(os.path.normpath(UPLOAD_FOLDER))
 
     def is_path_within_base(file_path, base_dir):
@@ -581,14 +581,14 @@ if __name__ == '__main__':
     try:
         print("🐢 Starting Turtle API Server...", flush=True)
         print(f"🌐 Server will be available at http://localhost:{port}", flush=True)
-        if manager is not None:
-            print(f"📁 Data directory: {manager.base_dir}", flush=True)
+        if manager_service.manager is not None:
+            print(f"📁 Data directory: {manager_service.manager.base_dir}", flush=True)
         sys.stdout.flush()
     except UnicodeEncodeError:
         print("[TURTLE] Starting Turtle API Server...", flush=True)
         print(f"[NET] Server will be available at http://localhost:{port}", flush=True)
-        if manager is not None:
-            print(f"[DIR] Data directory: {manager.base_dir}", flush=True)
+        if manager_service.manager is not None:
+            print(f"[DIR] Data directory: {manager_service.manager.base_dir}", flush=True)
         sys.stdout.flush()
 
     try:

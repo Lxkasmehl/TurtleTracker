@@ -1,0 +1,32 @@
+# Git and IDE
+.git
+.gitignore
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+venv
+env
+
+# Data (mounted as volume in Docker)
+data/
+
+# Credentials (mount at runtime)
+credentials/
+*.json
+!package.json
+
+# Tests and dev
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov

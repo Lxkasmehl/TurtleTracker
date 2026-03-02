@@ -10,7 +10,7 @@ import {
   Alert,
 } from '@mantine/core';
 import { IconX, IconMapPin } from '@tabler/icons-react';
-import type { UploadedPhoto } from '../services/mockBackend';
+import type { UploadedPhoto } from '../types/photo';
 import { formatFileSize, formatLocation, getGoogleMapsUrl } from '../utils/photoHelpers';
 
 interface PhotoDetailModalProps {

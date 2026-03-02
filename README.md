@@ -16,7 +16,43 @@ TurtleProject/
 
 ## Quick Start
 
-### Prerequisites
+### Option A: Run with Docker (recommended for deployment)
+
+You need **Docker** and **Docker Compose** installed.
+
+1. Copy the example environment file and adjust if needed:
+
+   ```bash
+   cp .env.docker.example .env
+   ```
+
+2. (Optional) For Google Sheets: create `backend/credentials/`, place your **Google Service Account** JSON there (e.g. `google-sheets-credentials.json`), and set `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env`. If the file has another name, set `GOOGLE_SHEETS_CREDENTIALS_PATH=/app/credentials/your-filename.json` in `.env` (path is inside the container; the folder `backend/credentials/` is mounted into the container).
+
+3. Build and start all services:
+
+   ```bash
+   docker compose up --build
+   ```
+
+4. Open **http://localhost** in your browser (frontend). Auth API: **http://localhost:3001**, Turtle API: **http://localhost:5000**.
+
+5. **Promote the first user to admin** (so you can use admin features like Turtle Records and photo matching). After signing up or logging in once, run this once (replace with your email and a password):
+
+   ```bash
+   docker compose run --rm -e INITIAL_ADMIN_EMAIL=your@email.com -e INITIAL_ADMIN_PASSWORD=your-password auth-backend node dist/scripts/create-initial-admin.js
+   ```
+
+   - Use the **exact email** you use to log in (e.g. your Google account email).
+   - If that user already exists, they are promoted to admin (password is ignored). If not, a new admin user is created with that email and password.
+   - Log out and log in again; you should see the Admin badge and admin menu items.
+
+Data (auth DB, review queue, uploads) is stored in Docker volumes and persists between runs. See `docs/DOCKER.md` for details.
+
+---
+
+### Option B: Run locally (development)
+
+#### Prerequisites
 
 - **Node.js** (v18+) for auth-backend and frontend
 - **Python** (3.8+) for turtle backend
@@ -28,16 +64,19 @@ TurtleProject/
 The auth backend handles user authentication, login, registration, and Google OAuth.
 
 1. Navigate to the auth-backend directory:
+
 ```bash
 cd auth-backend
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Create a `.env` file (see `auth-backend/README.md` for details):
+
 ```env
 PORT=3001
 NODE_ENV=development
@@ -48,6 +87,7 @@ FRONTEND_URL=http://localhost:5173
 ```
 
 4. Start the auth server:
+
 ```bash
 npm run dev
 ```
@@ -59,16 +99,19 @@ The auth backend runs on `http://localhost:3001`
 The turtle backend handles photo uploads, matching, and review queue.
 
 1. Navigate to the backend directory:
+
 ```bash
 cd backend
 ```
 
 2. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Start the Flask server:
+
 ```bash
 python app.py
 ```
@@ -78,22 +121,26 @@ The turtle backend runs on `http://localhost:5000`
 ### 3. Start Frontend
 
 1. Navigate to the frontend directory:
+
 ```bash
 cd frontend
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. (Optional) Create a `.env` file if you need to customize API URLs:
+
 ```env
 VITE_AUTH_API_URL=http://localhost:3001/api
 VITE_API_URL=http://localhost:5000/api
 ```
 
 4. Start the development server:
+
 ```bash
 npm run dev
 ```
@@ -105,11 +152,13 @@ The frontend runs on `http://localhost:5173` (or another port, depending on Vite
 You need to run **all three services** simultaneously:
 
 1. **Terminal 1**: Auth Backend (Port 3001)
+
    ```bash
    cd auth-backend && npm run dev
    ```
 
 2. **Terminal 2**: Turtle Backend (Port 5000)
+
    ```bash
    cd backend && python app.py
    ```
@@ -123,7 +172,8 @@ You need to run **all three services** simultaneously:
 
 ### Admin Users
 
-1. **Photo Upload**: 
+1. **Photo Upload**:
+
    - Admin uploads a photo
    - System processes the photo immediately
    - Top 5 matches are displayed
@@ -145,10 +195,12 @@ You need to run **all three services** simultaneously:
 ## API Configuration
 
 The frontend is configured to use:
+
 - **Auth Backend**: `http://localhost:3001/api` (for authentication)
 - **Turtle Backend**: `http://localhost:5000/api` (for photo uploads and matching)
 
 If your backends run on different ports, set these environment variables in the frontend:
+
 ```bash
 # In the frontend directory
 echo "VITE_AUTH_API_URL=http://localhost:3001/api" >> .env
@@ -178,10 +230,28 @@ echo "VITE_API_URL=http://localhost:5000/api" >> .env
 - Redux for state management
 - React Router for navigation
 
+## Testing
+
+Tests run against the real backends (no fake backends). Use Docker to run services, then run tests.
+
+- **Backend integration tests:** `backend/tests/integration/`. Start auth + backend with Docker, then run pytest:
+  ```bash
+  docker compose -f docker-compose.integration.yml up -d --build
+  # Seed test user (once): docker compose -f docker-compose.integration.yml exec -e E2E_ADMIN_EMAIL=admin@test.com -e E2E_ADMIN_PASSWORD=testpassword123 auth-backend node dist/scripts/seed-test-users.js
+  cd backend && BACKEND_URL=http://localhost:5000 AUTH_URL=http://localhost:3001/api python -m pytest tests/integration -v
+  ```
+- **E2E tests (Frontend):** `frontend/tests/e2e/` (Playwright). Start the full stack with Docker, then run Playwright:
+  ```bash
+  docker compose up -d --build
+  # Seed test users (see .github/workflows/playwright-e2e-tests.yml), then:
+  cd frontend && PLAYWRIGHT_BASE_URL=http://localhost npm test
+  ```
+
 ## Further Information
 
 - See `auth-backend/README.md` for detailed auth backend documentation
 - See `backend/README.md` for detailed turtle backend documentation
+- See `docs/VERSION_AND_RELEASES.md` for versioning, changelog, and GitHub Releases
 
 ## Funding & Acknowledgments
 
