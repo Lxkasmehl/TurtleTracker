@@ -198,7 +198,7 @@ class TurtleDeepMatcher:
 
         for cand in self.vram_cache:
             # Apply location filter early to skip unnecessary math
-            if location_filter != "All Locations" and cand['location'] != location_filter:
+            if location_filter and location_filter != "All Locations" and cand['location'] != location_filter:
                 continue
 
             # --- NEW: Bulletproof device alignment check ---

@@ -216,8 +216,9 @@ class TurtleManager:
         t_start = time.time()
 
         # Clean location filter if needed
-        loc = None if not location_filter or location_filter == "All Locations" else location_filter.split("/")[
-            0].strip()
+        loc = (location_filter or "").strip()
+        if not loc or loc == "All Locations":
+            loc = "All Locations"
 
         print(f"🔍 Deep Searching {filename} (VRAM Cached Mode)...")
 
@@ -464,6 +465,13 @@ class TurtleManager:
     def reject_review_packet(self, request_id):
         """Delete a review queue packet without processing (e.g. junk/spam)."""
         packet_dir = os.path.join(self.review_queue_dir, request_id)
+        real_packet = os.path.realpath(packet_dir)
+        real_base = os.path.realpath(self.review_queue_dir)
+        try:
+            if os.path.commonpath([real_packet, real_base]) != real_base:
+                return False, "Invalid request path"
+        except ValueError:
+            return False, "Invalid request path"
         if not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
             return False, "Request not found"
         try:

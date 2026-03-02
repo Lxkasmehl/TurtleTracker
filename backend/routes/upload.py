@@ -163,7 +163,10 @@ def register_upload_routes(app):
                             except OSError:
                                 pass
                 match_sheet = (request.form.get('match_sheet') or '').strip() or None
-                matches = manager_service.manager.search_for_matches(query_save_path, sheet_name=match_sheet)
+                matches, _ = manager_service.manager.search_for_matches(
+                    query_save_path,
+                    location_filter=match_sheet or "All Locations"
+                )
                 if matches is None:
                     matches = []
                 formatted_matches = []
