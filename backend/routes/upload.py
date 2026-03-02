@@ -119,10 +119,14 @@ def register_upload_routes(app):
                         typ = 'microhabitat' if rest.startswith('microhabitat') else 'condition' if rest.startswith('condition') else 'other'
                         f = request.files[key]
                         if f and f.filename and allowed_file(f.filename):
-                            ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
-                            extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
-                            f.save(extra_temp)
-                            files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+                            f.seek(0, os.SEEK_END)
+                            size = f.tell()
+                            f.seek(0)
+                            if size <= MAX_FILE_SIZE:
+                                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                                extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
+                                f.save(extra_temp)
+                                files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
 
                 if files_with_types:
                     manager_service.manager.add_additional_images_to_packet(request_id, files_with_types)
@@ -211,11 +215,15 @@ def register_upload_routes(app):
                         rest = key.replace('extra_', '', 1).strip().lower()
                         typ = 'microhabitat' if rest.startswith('microhabitat') else 'condition' if rest.startswith('condition') else 'other'
                         f = request.files[key]
-                        if f and f.filename:
-                            ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
-                            extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
-                            f.save(extra_temp)
-                            files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+                        if f and f.filename and allowed_file(f.filename):
+                            f.seek(0, os.SEEK_END)
+                            size = f.tell()
+                            f.seek(0)
+                            if size <= MAX_FILE_SIZE:
+                                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                                extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
+                                f.save(extra_temp)
+                                files_with_types.append({'path': extra_temp, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
 
                 if files_with_types:
                     manager_service.manager.add_additional_images_to_packet(request_id, files_with_types)

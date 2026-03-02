@@ -137,10 +137,18 @@ class IdentifyWindow:
 
     def _thread_search(self, query_path, loc_filter):
         fname = os.path.basename(query_path)
-        results, time_taken = manager.search_for_matches(query_path, location_filter=loc_filter)
+        try:
+            results, time_taken = manager.search_for_matches(query_path, location_filter=loc_filter)
+        except Exception as e:
+            self.top.after(0, self._handle_search_error, fname, str(e))
+            return
 
-        # Route results back to the main UI thread safely
         self.top.after(0, self._process_single_results, fname, results, time_taken)
+
+    def _handle_search_error(self, fname, error_msg):
+        self.btn_search.config(state="normal")
+        self.log_message("💥", fname, f"Error: {error_msg}")
+        tk.Label(self.scrollable_frame, text=f"Search failed: {error_msg}", font=("Arial", 12), fg="red").pack(pady=20)
 
     def _process_single_results(self, fname, results, time_taken):
         self.btn_search.config(state="normal")
@@ -180,7 +188,12 @@ class IdentifyWindow:
 
     def _thread_bulk(self, folder_path, loc_filter):
         BULK_THRESHOLD = 400
-        files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        try:
+            files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        except Exception as e:
+            self.top.after(0, self._handle_bulk_error, str(e))
+            return
+
         total = len(files)
         count_good = 0
         total_time = 0.0
@@ -190,10 +203,14 @@ class IdentifyWindow:
         for filename in files:
             file_path = os.path.join(folder_path, filename)
 
-            # VISUAL UPDATE
             self.top.after(0, self.show_image, file_path, self.lbl_query_img, (300, 300))
 
-            results, time_taken = manager.search_for_matches(file_path, location_filter=loc_filter)
+            try:
+                results, time_taken = manager.search_for_matches(file_path, location_filter=loc_filter)
+            except Exception as e:
+                self.top.after(0, self.log_message, "💥", filename, f"Error: {e}")
+                continue
+
             total_time += time_taken
 
             if results:
@@ -208,11 +225,19 @@ class IdentifyWindow:
             else:
                 self.top.after(0, self.log_message, "❌", filename, "No Matches", time_taken)
 
-        # Trigger benchmark saving
-        manager.save_benchmark(self.current_device, total_time)
+        try:
+            manager.save_benchmark(self.current_device, total_time)
+        except Exception:
+            pass
 
-        # Notify completion
         self.top.after(0, self._bulk_test_complete, count_good, total, total_time)
+
+    def _handle_bulk_error(self, error_msg):
+        self.btn_bulk.config(state="normal")
+        self.btn_search.config(state="normal")
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        self.log_message("💥", "BULK ERROR", error_msg)
 
     def _bulk_test_complete(self, count_good, total, total_time):
         # 🚀 FIX: Unlock the UI when the thread finishes

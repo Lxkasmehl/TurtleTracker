@@ -314,10 +314,10 @@ class TurtleManager:
         - Merges date-stamped additional_images and updates find_metadata.json.
         """
         query_image = None
-        packet_dir = os.path.join(self.review_queue_dir, request_id)
+        packet_dir = self._resolve_packet_dir(request_id)
 
         # Locate Image
-        if os.path.exists(packet_dir):
+        if packet_dir and os.path.exists(packet_dir):
             for f in os.listdir(packet_dir):
                 if f.lower().endswith(('.jpg', '.png', '.jpeg')) and f != 'metadata.json':
                     query_image = os.path.join(packet_dir, f)
@@ -464,8 +464,8 @@ class TurtleManager:
 
     def reject_review_packet(self, request_id):
         """Delete a review queue packet without processing (e.g. junk/spam)."""
-        packet_dir = os.path.join(self.review_queue_dir, request_id)
-        if not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
+        packet_dir = self._resolve_packet_dir(request_id)
+        if not packet_dir or not os.path.exists(packet_dir) or not os.path.isdir(packet_dir):
             return False, "Request not found"
         try:
             shutil.rmtree(packet_dir)
@@ -473,6 +473,14 @@ class TurtleManager:
             return True, "Deleted"
         except Exception as e:
             return False, str(e)
+
+    def _resolve_packet_dir(self, request_id):
+        """Safely resolve a review-queue packet directory, preventing path traversal."""
+        packet_dir = os.path.realpath(os.path.join(self.review_queue_dir, request_id))
+        real_queue = os.path.realpath(self.review_queue_dir)
+        if not packet_dir.startswith(real_queue + os.sep) and packet_dir != real_queue:
+            return None
+        return packet_dir
 
     # --- PARTNER'S HELPER AND TRACKING FUNCTIONS (KEPT 100%) ---
 
@@ -488,8 +496,8 @@ class TurtleManager:
         return None
 
     def add_additional_images_to_packet(self, request_id, files_with_types):
-        packet_dir = os.path.join(self.review_queue_dir, request_id)
-        if not os.path.isdir(packet_dir): return False, "Request not found"
+        packet_dir = self._resolve_packet_dir(request_id)
+        if not packet_dir or not os.path.isdir(packet_dir): return False, "Request not found"
         today_str = time.strftime('%Y-%m-%d')
         date_dir = os.path.join(packet_dir, 'additional_images', today_str)
         os.makedirs(date_dir, exist_ok=True)
@@ -518,8 +526,8 @@ class TurtleManager:
         return True, "OK"
 
     def remove_additional_image_from_packet(self, request_id, filename):
-        packet_dir = os.path.join(self.review_queue_dir, request_id)
-        if not os.path.isdir(packet_dir): return False, "Request not found"
+        packet_dir = self._resolve_packet_dir(request_id)
+        if not packet_dir or not os.path.isdir(packet_dir): return False, "Request not found"
         additional_dir = os.path.join(packet_dir, 'additional_images')
         if not os.path.isdir(additional_dir): return False, "No additional images"
         if not filename or os.path.basename(filename) != filename: return False, "Invalid filename"
