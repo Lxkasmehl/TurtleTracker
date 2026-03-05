@@ -128,10 +128,12 @@ test.describe('Admin Turtle Match', () => {
       timeout: 15_000,
     });
 
-    // Section only appears when there are matches; skip assertion if no matches
+    // Wait for match results to load before branching
     const noMatches = page.getByText('No matches found');
-    if ((await noMatches.isVisible())) return;
-    await expect(page.getByText('Microhabitat / Condition photos')).toBeVisible();
+    const matchSection = page.getByText('Microhabitat / Condition photos');
+    await expect(noMatches.or(matchSection)).toBeVisible({ timeout: 10_000 });
+    if (await noMatches.isVisible()) return;
+    await expect(matchSection).toBeVisible();
   });
 
   test('Upload with extra microhabitat: image appears under From this upload, then can be removed', async ({
@@ -161,10 +163,12 @@ test.describe('Admin Turtle Match', () => {
     await expect(page.getByRole('heading', { name: /Turtle Match Review/ })).toBeVisible({
       timeout: 15_000,
     });
-    // Section only appears when there are matches
+    // Wait for match results to load before branching
     const noMatches = page.getByText('No matches found');
-    if ((await noMatches.isVisible())) return;
-    await expect(page.getByText('From this upload', { exact: true })).toBeVisible();
+    const fromUpload = page.getByText('From this upload', { exact: true });
+    await expect(noMatches.or(fromUpload)).toBeVisible({ timeout: 10_000 });
+    if (await noMatches.isVisible()) return;
+    await expect(fromUpload).toBeVisible();
     const fromUploadSection = page.getByText('From this upload', { exact: true }).locator('..').locator('..');
     await expect(fromUploadSection.getByRole('img').first()).toBeVisible({ timeout: 5000 });
 

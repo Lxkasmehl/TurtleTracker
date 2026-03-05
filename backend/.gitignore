@@ -1,6 +1,13 @@
 data/
 turtles/media
 
+# 🐢 Turtle Data & AI Tensors
+data/
+Temp Data/
+data/*.pt
+data/*.npz
+data/*.jpg
+
 # Python cache files
 __pycache__/
 *.pyc
@@ -30,7 +37,7 @@ venv/
 
 # Credentials and sensitive files
 credentials/
-
+credentials/*.json
 # Database files
 *.sqlite
 *.sqlite3
