@@ -78,7 +78,10 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     });
 
     await loginAsAdmin(page);
-    await page.getByText('Successfully logged in!').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+    await page
+      .getByText('Successfully logged in!')
+      .waitFor({ state: 'hidden', timeout: 8000 })
+      .catch(() => {});
 
     const fileInput = page.locator('input[type="file"]:not([capture])').first();
     await fileInput.setInputFiles({
@@ -187,7 +190,10 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     });
 
     await loginAsAdmin(page);
-    await page.getByText('Successfully logged in!').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+    await page
+      .getByText('Successfully logged in!')
+      .waitFor({ state: 'hidden', timeout: 8000 })
+      .catch(() => {});
 
     const fileInput = page.locator('input[type="file"]:not([capture])').first();
     await fileInput.setInputFiles({
