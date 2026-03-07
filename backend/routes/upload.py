@@ -117,7 +117,7 @@ def register_upload_routes(app):
             if not os.path.exists(temp_path):
                 return jsonify({'error': 'Failed to save file'}), 500
             
-            if user_role == 'admin':
+            if user_role in ('staff', 'admin'):
                 # Admin: create a packet (so we can add additional images on match page) then run search
                 request_id = f"admin_{int(time.time())}_{filename}"
                 packet_dir = os.path.join(manager_service.manager.review_queue_dir, request_id)

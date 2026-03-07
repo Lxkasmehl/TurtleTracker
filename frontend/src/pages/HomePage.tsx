@@ -27,6 +27,7 @@ import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
 import { useAvailableSheets } from '../hooks/useAvailableSheets';
+import { isStaffRole } from '../services/api/auth';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
 
@@ -34,6 +35,7 @@ const MATCH_ALL_VALUE = '__all__';
 
 export default function HomePage() {
   const { role } = useUser();
+  const isStaff = isStaffRole(role);
   const { sheets: availableSheets, loading: sheetsLoading } =
     useAvailableSheets(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -50,21 +52,20 @@ export default function HomePage() {
     }
   }, []);
 
-  // Admin: default to first location when sheets load
+  // Staff/Admin: default to first location when sheets load
   useEffect(() => {
-    if (role === 'admin' && availableSheets.length > 0) {
+    if (isStaff && availableSheets.length > 0) {
       setSelectedMatchSheet((prev) =>
         prev === MATCH_ALL_VALUE ? availableSheets[0] : prev,
       );
     }
-  }, [role, availableSheets]);
+  }, [isStaff, availableSheets]);
 
-  const matchSheetForUpload =
-    role === 'admin'
-      ? selectedMatchSheet === MATCH_ALL_VALUE
-        ? ''
-        : selectedMatchSheet
-      : undefined;
+  const matchSheetForUpload = isStaff
+    ? selectedMatchSheet === MATCH_ALL_VALUE
+      ? ''
+      : selectedMatchSheet
+    : undefined;
 
   const {
     files,
@@ -206,8 +207,8 @@ export default function HomePage() {
             </Stack>
           </Center>
 
-          {/* Admin: select which location/datasheet to test against (from Google Sheets) */}
-          {role === 'admin' && (
+          {/* Staff/Admin: select which location/datasheet to test against (from Google Sheets) */}
+          {isStaff && (
             <Stack gap='xs'>
               <Text size='sm' fw={500}>
                 Which location to test against?

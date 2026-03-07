@@ -92,6 +92,8 @@ export default defineConfig({
         // Test user credentials
         E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL || 'admin@test.com',
         E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD || 'testpassword123',
+        E2E_STAFF_EMAIL: process.env.E2E_STAFF_EMAIL || 'staff@test.com',
+        E2E_STAFF_PASSWORD: process.env.E2E_STAFF_PASSWORD || 'testpassword123',
         E2E_COMMUNITY_EMAIL: process.env.E2E_COMMUNITY_EMAIL || 'community@test.com',
         E2E_COMMUNITY_PASSWORD: process.env.E2E_COMMUNITY_PASSWORD || 'testpassword123',
         // Auth backend configuration (with defaults for testing)

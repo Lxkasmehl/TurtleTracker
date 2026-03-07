@@ -41,7 +41,7 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     // Check if there's a valid admin invitation token
-    let role: 'community' | 'admin' = 'community';
+    let role: 'community' | 'staff' | 'admin' = 'community';
     if (token) {
       const invitation = db
         .prepare(

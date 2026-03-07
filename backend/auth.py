@@ -78,20 +78,20 @@ def optional_auth(f):
 
 
 def require_admin(f):
-    """Decorator to require admin role"""
+    """Decorator to require staff or admin role (turtle records, release, sheets, review)."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Allow OPTIONS requests for CORS preflight
         if request.method == 'OPTIONS':
             return jsonify({}), 200
-        
+
         success, user_data, error = get_user_from_request()
         if not success:
             return jsonify({'error': error or 'Authentication required'}), 401
-        
-        if user_data.get('role') != 'admin':
-            return jsonify({'error': 'Admin access required'}), 403
-        
+
+        if user_data.get('role') not in ('staff', 'admin'):
+            return jsonify({'error': 'Staff or admin access required'}), 403
+
         # Attach user data to request for use in route
         request.user = user_data
         return f(*args, **kwargs)
