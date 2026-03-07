@@ -111,7 +111,7 @@ export interface ApproveReviewResponse {
 // Upload photo (Admin or Community)
 export const uploadTurtlePhoto = async (
   file: File,
-  _role: 'admin' | 'community',
+  _role: 'admin' | 'staff' | 'community',
   _email: string,
   location?: { state: string; location: string },
   /** Optional: coordinates as hint only (never stored in sheets) */

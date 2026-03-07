@@ -21,6 +21,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../hooks/useUser';
+import { isStaffRole } from '../services/api/auth';
 import {
   type TurtleMatch,
   getImageUrl,
@@ -88,9 +89,9 @@ export default function AdminTurtleMatchPage() {
       .catch(() => setSelectedMatchTurtleImages(null));
   }, [selectedMatch, selectedMatchData?.location]);
 
-  // Load sheets once when admin (avoids each TurtleSheetsDataForm calling listSheets)
+  // Load sheets once when staff/admin (avoids each TurtleSheetsDataForm calling listSheets)
   useEffect(() => {
-    if (!authChecked || role !== 'admin') return;
+    if (!authChecked || !isStaffRole(role)) return;
     listSheets()
       .then((res) => {
         if (res.success && res.sheets?.length) setAvailableSheets(res.sheets);
@@ -100,7 +101,7 @@ export default function AdminTurtleMatchPage() {
 
   useEffect(() => {
     if (!authChecked) return;
-    if (role !== 'admin') {
+    if (!isStaffRole(role)) {
       navigate('/');
       return;
     }
@@ -462,7 +463,7 @@ export default function AdminTurtleMatchPage() {
     );
   }
 
-  if (role !== 'admin') {
+  if (!isStaffRole(role)) {
     return null;
   }
 

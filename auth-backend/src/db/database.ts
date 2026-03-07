@@ -23,7 +23,7 @@ interface User {
   password_hash?: string;
   name: string | null;
   google_id: string | null;
-  role: 'community' | 'admin';
+  role: 'community' | 'staff' | 'admin';
   created_at: string;
   updated_at: string;
   email_verified: boolean;
@@ -463,7 +463,7 @@ class DatabaseWrapper {
               // Apply SET clause updates
               setColumns.forEach(({ col, paramIndex: idx }) => {
                 if (col === 'role' && idx >= 0) {
-                  user.role = params[idx] as 'community' | 'admin';
+                  user.role = params[idx] as 'community' | 'staff' | 'admin';
                 } else if (col === 'password_hash' && idx >= 0) {
                   user.password_hash = params[idx];
                 } else if (col === 'name' && idx >= 0) {
@@ -607,7 +607,7 @@ db.exec(`
     password_hash TEXT,
     name TEXT,
     google_id TEXT UNIQUE,
-    role TEXT NOT NULL DEFAULT 'community' CHECK(role IN ('community', 'admin')),
+    role TEXT NOT NULL DEFAULT 'community' CHECK(role IN ('community', 'staff', 'admin')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )

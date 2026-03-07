@@ -4,6 +4,8 @@ import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@test.com';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'testpassword123';
+const STAFF_EMAIL = process.env.E2E_STAFF_EMAIL ?? 'staff@test.com';
+const STAFF_PASSWORD = process.env.E2E_STAFF_PASSWORD ?? 'testpassword123';
 const COMMUNITY_EMAIL = process.env.E2E_COMMUNITY_EMAIL ?? 'community@test.com';
 const COMMUNITY_PASSWORD = process.env.E2E_COMMUNITY_PASSWORD ?? 'testpassword123';
 
@@ -27,6 +29,16 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Sign In' }).click();
   await page.waitForURL('/', { timeout: 10000 });
   await expect(page.getByTestId('role-badge')).toHaveText(/Admin/);
+}
+
+/** Login as staff user (admin-like, no user management). */
+export async function loginAsStaff(page: Page): Promise<void> {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(STAFF_EMAIL);
+  await page.getByLabel('Password').fill(STAFF_PASSWORD);
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL('/', { timeout: 10000 });
+  await expect(page.getByTestId('role-badge')).toHaveText(/Staff/);
 }
 
 /** Login as community user. */

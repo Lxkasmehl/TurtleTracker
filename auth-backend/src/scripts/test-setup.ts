@@ -9,13 +9,15 @@ import type { User } from '../types/user.js';
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'admin@test.com';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'testpassword123';
+const staffEmail = process.env.E2E_STAFF_EMAIL || 'staff@test.com';
+const staffPassword = process.env.E2E_STAFF_PASSWORD || 'testpassword123';
 const communityEmail = process.env.E2E_COMMUNITY_EMAIL || 'community@test.com';
 const communityPassword = process.env.E2E_COMMUNITY_PASSWORD || 'testpassword123';
 
 async function createUser(
   email: string,
   password: string,
-  role: 'admin' | 'community',
+  role: 'admin' | 'staff' | 'community',
   name: string | null = null
 ) {
   // Check if user already exists
@@ -66,10 +68,14 @@ async function seedTestUsers() {
     // Create community user
     await createUser(communityEmail, communityPassword, 'community', 'Test Community');
 
+    // Create staff user
+    await createUser(staffEmail, staffPassword, 'staff', 'Test Staff');
+
     console.log('\n✅ Test users seeded successfully!');
     console.log(`   Admin: ${adminEmail}`);
+    console.log(`   Staff: ${staffEmail}`);
     console.log(`   Community: ${communityEmail}`);
-    console.log(`   Password: ${adminPassword} (same for both)\n`);
+    console.log(`   Password: ${adminPassword} (same for all)\n`);
 
     // Exit successfully so the next command (npm run dev) can run
     process.exit(0);

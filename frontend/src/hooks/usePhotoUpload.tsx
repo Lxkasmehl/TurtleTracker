@@ -155,16 +155,16 @@ export function usePhotoUpload({
     try {
       // Upload to backend API (location hint is collected explicitly in UI for community)
       // Authentication is optional - anonymous uploads are allowed
-      const userRole: 'admin' | 'community' =
-        (role === 'admin' || role === 'community' ? role : null) ||
-        (user?.role === 'admin' || user?.role === 'community' ? user.role : null) ||
+      const userRole: 'admin' | 'staff' | 'community' =
+        (role === 'admin' || role === 'staff' || role === 'community' ? role : null) ||
+        (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'community' ? user.role : null) ||
         'community';
       const userEmail = user?.email || 'anonymous@example.com';
 
       const hasFlagData =
         collectedToLab || physicalFlag || (locationHint && collectedToLab === 'yes');
       const flagOptions: UploadFlagOptions | undefined =
-        hasFlagData && (userRole === 'community' || userRole === 'admin')
+        hasFlagData && (userRole === 'community' || userRole === 'admin' || userRole === 'staff')
           ? {
               ...(collectedToLab && { collectedToLab }),
               ...(physicalFlag && { physicalFlag }),
