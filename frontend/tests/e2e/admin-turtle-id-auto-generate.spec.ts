@@ -84,20 +84,13 @@ test.describe('Admin Create New Turtle – auto-generated ID field', () => {
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Turtle' })).toBeVisible();
 
-    const generateIdResponse = page.waitForResponse(
-      (resp) => resp.url().includes('generate-id') && resp.status() === 200,
-      { timeout: 25_000 },
-    );
-
-    // Select sheet (Kansas) then sex (F)
+    // Select sheet (Kansas) then sex (F); form then calls generate-id and sets ID
     await selectSheetInCreateTurtleDialog(page, dialog, 'Kansas');
     await selectSexInCreateTurtleDialog(page, dialog, 'F');
 
-    await generateIdResponse;
-
-    // ID field should show the auto-generated value and be disabled (no manual entry)
+    // Wait for UI outcome instead of network (avoids race with waitForResponse)
     const idField = dialog.getByLabel('ID', { exact: true });
-    await expect(idField).toHaveValue(MOCK_BIOLOGY_ID, { timeout: 5000 });
+    await expect(idField).toHaveValue(MOCK_BIOLOGY_ID, { timeout: 10_000 });
     await expect(idField).toBeDisabled();
 
     // Create mode: ID description explains auto-generation (branch: ID always read-only)

@@ -99,12 +99,13 @@ export async function clickUploadPhotoButton(page: Page): Promise<void> {
  * Selects an option from an open Mantine Select/Combobox by keyboard.
  * Call after clicking the select input. Index 0 = first option.
  * Works when the dropdown is portaled or not visible to Playwright (e.g. mobile).
+ * First option is not auto-focused when the list opens, so we always ArrowDown into the list first.
  */
 export async function selectComboboxOptionByIndex(
   page: Page,
   optionIndex: number,
 ): Promise<void> {
-  for (let i = 0; i < optionIndex; i++) {
+  for (let i = 0; i <= optionIndex; i++) {
     await page.keyboard.press('ArrowDown');
   }
   await page.keyboard.press('Enter');
