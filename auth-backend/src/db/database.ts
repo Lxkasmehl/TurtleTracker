@@ -28,6 +28,8 @@ interface User {
   updated_at: string;
   email_verified: boolean;
   email_verified_at: string | null;
+  /** When set, JWTs issued before this time (iat) are rejected. Used to invalidate tokens on role demotion. */
+  tokens_valid_after: string | null;
 }
 
 interface AdminInvitation {
@@ -83,6 +85,9 @@ function loadDatabase(): Database {
           }
           if (u.email_verified_at === undefined) {
             u.email_verified_at = u.email_verified ? (u.created_at ?? null) : null;
+          }
+          if (u.tokens_valid_after === undefined) {
+            u.tokens_valid_after = null;
           }
         });
       }
@@ -290,6 +295,7 @@ class DatabaseWrapper {
             updated_at: new Date().toISOString(),
             email_verified: false,
             email_verified_at: null,
+            tokens_valid_after: null,
           };
 
           columns.forEach((col, index) => {
@@ -435,9 +441,8 @@ class DatabaseWrapper {
               if (valueExpr === '?') {
                 setColumns.push({ col, paramIndex });
                 paramIndex++;
-              } else if (valueExpr === 'CURRENT_TIMESTAMP' && col === 'updated_at') {
-                // Handle CURRENT_TIMESTAMP
-                setColumns.push({ col: 'updated_at', paramIndex: -1 });
+              } else if (valueExpr === 'CURRENT_TIMESTAMP' && (col === 'updated_at' || col === 'tokens_valid_after')) {
+                setColumns.push({ col, paramIndex: -1 });
               }
             }
           });
@@ -476,10 +481,15 @@ class DatabaseWrapper {
                   (user as any).email_verified_at = params[idx];
                 } else if (col === 'updated_at') {
                   if (idx === -1) {
-                    // CURRENT_TIMESTAMP
                     user.updated_at = new Date().toISOString();
                   } else {
                     user.updated_at = params[idx];
+                  }
+                } else if (col === 'tokens_valid_after') {
+                  if (idx === -1) {
+                    (user as any).tokens_valid_after = new Date().toISOString();
+                  } else {
+                    (user as any).tokens_valid_after = params[idx];
                   }
                 }
               });
@@ -609,7 +619,8 @@ db.exec(`
     google_id TEXT UNIQUE,
     role TEXT NOT NULL DEFAULT 'community' CHECK(role IN ('community', 'staff', 'admin')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tokens_valid_after DATETIME DEFAULT NULL
   )
 `);
 

@@ -34,7 +34,20 @@ export const authenticateToken = (
       id: number;
       email: string;
       role: 'community' | 'staff' | 'admin';
+      iat?: number;
     };
+    // Invalidate tokens issued before tokens_valid_after (e.g. after role demotion)
+    const row = db
+      .prepare('SELECT tokens_valid_after FROM users WHERE id = ?')
+      .get(decoded.id) as { tokens_valid_after: string | null } | undefined;
+    const validAfter = row?.tokens_valid_after;
+    if (validAfter && decoded.iat != null) {
+      const validAfterSeconds = Math.floor(new Date(validAfter).getTime() / 1000);
+      if (decoded.iat < validAfterSeconds) {
+        res.status(403).json({ error: 'Token has been revoked' });
+        return;
+      }
+    }
     (req as AuthRequest).user = decoded;
     next();
   } catch (error) {

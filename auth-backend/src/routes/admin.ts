@@ -161,7 +161,16 @@ router.patch(
       }
 
       const newRole = role as UserRole;
+      const oldRole = user.role;
       db.prepare('UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newRole, userId);
+
+      // Invalidate existing JWTs when demoting so elevated privileges are revoked immediately
+      const roleRank = (r: UserRole) => (r === 'admin' ? 3 : r === 'staff' ? 2 : 1);
+      if (roleRank(newRole) < roleRank(oldRole)) {
+        db.prepare(
+          'UPDATE users SET tokens_valid_after = CURRENT_TIMESTAMP WHERE id = ?'
+        ).run(userId);
+      }
 
       res.json({
         success: true,
