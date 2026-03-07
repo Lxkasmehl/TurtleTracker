@@ -143,6 +143,7 @@ export async function selectSheetInCreateTurtleDialog(
     .waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
   const option = page.getByRole('option', { name: sheetName });
   await option.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
+  await option.scrollIntoViewIfNeeded();
   await option.click();
 }
 
