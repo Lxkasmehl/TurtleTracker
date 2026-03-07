@@ -151,7 +151,9 @@ test.describe('Admin Create New Turtle – sheets morphometrics fields', () => {
     await dialog.getByLabel('Mass (g)', { exact: true }).fill('300');
     await dialog.getByLabel('Dome height (mm)', { exact: true }).fill('98');
 
-    await dialog.getByRole('button', { name: 'Create Turtle Data' }).click();
+    const createTurtleDataBtn = dialog.getByRole('button', { name: 'Create Turtle Data' });
+    await expect(createTurtleDataBtn).toBeEnabled({ timeout: 15_000 });
+    await createTurtleDataBtn.click();
 
     await expect(page.getByText(/created|success/i)).toBeVisible({ timeout: 10_000 }).catch(() => {});
 
