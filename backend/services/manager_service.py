@@ -14,12 +14,13 @@ manager_ready = threading.Event()
 
 # Initialize Google Sheets Service (lazy initialization)
 sheets_service = None
+community_sheets_service = None
 migration_checked = False
 migration_running = False
 
 
 def get_sheets_service():
-    """Lazy initialization of Google Sheets Service"""
+    """Lazy initialization of Google Sheets Service (research spreadsheet)"""
     global sheets_service, migration_checked, migration_running
     if sheets_service is None:
         try:
@@ -43,10 +44,27 @@ def get_sheets_service():
     return sheets_service
 
 
+def get_community_sheets_service():
+    """Lazy initialization of Google Sheets Service for community-facing spreadsheet.
+    Returns None if GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID is not set."""
+    global community_sheets_service
+    community_id = os.environ.get('GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID', '').strip()
+    if not community_id:
+        return None
+    if community_sheets_service is None:
+        try:
+            community_sheets_service = GoogleSheetsService(spreadsheet_id=community_id)
+        except Exception as e:
+            print(f"⚠️ Warning: Community Google Sheets not available: {e}")
+            return None
+    return community_sheets_service
+
+
 def reset_sheets_service():
     """Reset the Google Sheets service (useful for connection issues)"""
-    global sheets_service
+    global sheets_service, community_sheets_service
     sheets_service = None
+    community_sheets_service = None
     return get_sheets_service()
 
 

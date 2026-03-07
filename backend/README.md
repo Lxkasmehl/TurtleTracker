@@ -358,6 +358,21 @@ The Google Sheets spreadsheet should have:
 - The system automatically finds columns by header name, so column order can change
 - New columns can be added - just make sure the header name matches the expected format
 
+### Post-confirmation automation (relabeling and community spreadsheet)
+
+Once the turtle team confirms an upload (match to existing turtle or new turtle), the backend automates:
+
+1. **Relabeling photos and records**
+   - **Match:** The uploaded image is copied into the confirmed turtle’s folder (`data/<location>/<turtle_id>/loose_images/`) with a timestamped filename (e.g. `Obs_<timestamp>_<original>.jpg`). The review packet is then removed. The correct turtle ID is thus reflected by the folder and filename.
+   - **New turtle:** The image is processed into a new turtle folder under the chosen location/sheet.
+   - Research Google Sheet is updated by the admin (or frontend) before or during confirm; the backend does not change sheet data for matches beyond optional community sync.
+
+2. **Community-facing spreadsheet (required)**
+   - Community uploads are always synced to a **separate** community spreadsheet. Set `GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID` in `.env` (see `env.template`). Use the same service account and share the community spreadsheet with it (Editor).
+   - **Match to existing turtle:** The confirmed row is synced from the research spreadsheet to the community spreadsheet (research remains the source of truth for that turtle).
+   - **New turtle from community upload:** The turtle is created **only** in the community spreadsheet, not in the research spreadsheet. So community-only turtles exist only in the community sheet.
+   - If the community spreadsheet is not configured or sync fails, the approval request fails with a 503 and a clear error message.
+
 ### Google Sheets API Endpoints
 
 - `GET /api/sheets/turtle/<primary_id>` - Get turtle data from Google Sheets (Admin only)

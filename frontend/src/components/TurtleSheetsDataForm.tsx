@@ -15,10 +15,8 @@ import {
 } from '@mantine/core';
 import { useImperativeHandle, forwardRef } from 'react';
 import { IconInfoCircle } from '@tabler/icons-react';
-import {
-  useTurtleSheetsDataForm,
-  type UseTurtleSheetsDataFormReturn,
-} from '../hooks/useTurtleSheetsDataForm';
+import { useTurtleSheetsDataForm } from '../hooks/useTurtleSheetsDataForm';
+import type { UseTurtleSheetsDataFormReturn } from './TurtleSheetsDataForm.types';
 import {
   FormHeader,
   SheetSelectionRow,
@@ -47,6 +45,7 @@ export const TurtleSheetsDataForm = forwardRef<
     onCombinedSubmit,
     addOnlyMode = false,
     initialAvailableSheets,
+    useBackendLocations = false,
   },
   ref,
 ) {
@@ -63,6 +62,7 @@ export const TurtleSheetsDataForm = forwardRef<
     onCombinedSubmit,
     addOnlyMode,
     initialAvailableSheets,
+    useBackendLocations,
   });
 
   useImperativeHandle(ref, () => ({
