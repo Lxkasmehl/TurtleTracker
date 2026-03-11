@@ -71,6 +71,7 @@ export {
   generatePrimaryId,
   generateTurtleId,
   listSheets,
+  listCommunitySheets,
   getLocations,
   createSheet,
   getTurtleNames,

@@ -46,6 +46,7 @@ export const TurtleSheetsDataForm = forwardRef<
     addOnlyMode = false,
     initialAvailableSheets,
     useBackendLocations = false,
+    sheetSource = 'admin',
   },
   ref,
 ) {
@@ -63,6 +64,7 @@ export const TurtleSheetsDataForm = forwardRef<
     addOnlyMode,
     initialAvailableSheets,
     useBackendLocations,
+    sheetSource,
   });
 
   useImperativeHandle(ref, () => ({
@@ -134,6 +136,7 @@ export const TurtleSheetsDataForm = forwardRef<
                 setSelectedSheetName={hook.setSelectedSheetName}
                 availableSheets={hook.availableSheets}
                 setShowCreateSheetModal={hook.setShowCreateSheetModal}
+                allowCreateNewSheet
               />
             </Grid.Col>
             <TurtleSheetsDataFormFields
@@ -151,6 +154,7 @@ export const TurtleSheetsDataForm = forwardRef<
               hintCoordinates={hintCoordinates}
               errors={hook.errors}
               mode={mode}
+              requireGeneralLocationForPath={(sheetSource === 'admin' || useBackendLocations) && mode === 'create'}
             />
           </Grid>
 

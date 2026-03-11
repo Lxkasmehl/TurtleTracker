@@ -64,6 +64,7 @@ export function TurtleSheetsDataFormFields({
   hintCoordinates,
   errors,
   mode,
+  requireGeneralLocationForPath = false,
 }: TurtleSheetsDataFormFieldsProps) {
   return (
     <>
@@ -173,7 +174,9 @@ export function TurtleSheetsDataFormFields({
               description={
                 config.key === 'id' && mode === 'create'
                   ? 'Auto-generated from sex + sequence for this sheet (e.g. M1, F2)'
-                  : config.description
+                  : config.key === 'general_location' && requireGeneralLocationForPath
+                    ? 'Required for backend path (State/Location).'
+                    : config.description
               }
               infoTooltip={config.infoTooltip}
               value={value}
@@ -185,6 +188,7 @@ export function TurtleSheetsDataFormFields({
               requestUnlock={requestUnlock}
               disabled={config.key === 'id' && mode === 'create'}
               error={errors?.[config.key]}
+              required={config.key === 'general_location' ? requireGeneralLocationForPath : undefined}
             />
           </Grid.Col>
         );

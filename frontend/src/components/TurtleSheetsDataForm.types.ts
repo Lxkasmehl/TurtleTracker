@@ -21,6 +21,12 @@ export interface TurtleSheetsDataFormProps {
   initialAvailableSheets?: string[];
   /** When true, use backend locations (State/Location) instead of Google Sheet tabs. For community upload new turtle: sheet = State, path = State/Location. */
   useBackendLocations?: boolean;
+  /**
+   * Which spreadsheet drives the sheet/location dropdown.
+   * - 'admin': admin-facing sheet (root data/ folders) – e.g. Turtle Match, admin uploads in Review Queue.
+   * - 'community': community-facing sheet (Community_Uploads subfolders) – e.g. community uploads in Review Queue.
+   */
+  sheetSource?: 'admin' | 'community';
 }
 
 export interface TurtleSheetsDataFormRef {
@@ -45,6 +51,8 @@ export interface TurtleSheetsDataFormFieldsProps {
   errors?: Record<string, string>;
   /** In create mode the ID field is always disabled and filled by generate-id (sex + sequence per sheet). */
   mode?: 'create' | 'edit';
+  /** When true, General Location is required (used for backend path State/Location). */
+  requireGeneralLocationForPath?: boolean;
 }
 
 /** Return type of useTurtleSheetsDataForm hook */

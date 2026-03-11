@@ -22,4 +22,5 @@ export interface TurtleFormFieldProps {
   requestUnlock: (field: keyof TurtleSheetsData) => void;
   disabled?: boolean;
   error?: string;
+  required?: boolean;
 }

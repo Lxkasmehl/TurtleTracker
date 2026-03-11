@@ -26,17 +26,15 @@ import { useRef, useState, useEffect } from 'react';
 import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
-import { useAvailableSheets } from '../hooks/useAvailableSheets';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
 import { getLocations } from '../services/api';
 
 const MATCH_ALL_VALUE = '__all__';
-const SYSTEM_FOLDERS = ['Incidental_Finds', 'Community_Uploads', 'Review_Queue'];
+const SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue'];
 
 export default function HomePage() {
   const { role } = useUser();
-  const { sheets: availableSheets } = useAvailableSheets(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,14 +76,13 @@ export default function HomePage() {
       .catch(() => setAvailableLocations([]))
       .finally(() => setLocationsLoading(false));
   }, [role]);
-  // Admin: default to first location when sheets load (fallback if no backend locations)
   useEffect(() => {
-    if (role === 'admin' && availableSheets.length > 0 && availableLocations.length === 0) {
+    if (role === 'admin' && availableLocations.length > 0) {
       setSelectedMatchSheet((prev) =>
-        prev === MATCH_ALL_VALUE ? availableSheets[0] : prev,
+        prev === MATCH_ALL_VALUE ? availableLocations[0] : prev,
       );
     }
-  }, [role, availableSheets, availableLocations.length]);
+  }, [role, availableLocations]);
 
   const matchSheetForUpload =
     role === 'admin'

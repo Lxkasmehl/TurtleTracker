@@ -50,6 +50,7 @@ export function TurtleFormField({
   requestUnlock,
   disabled,
   error,
+  required,
 }: TurtleFormFieldProps) {
   const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
   const locked = isFieldModeRestricted && !isFieldUnlocked(field);
@@ -74,6 +75,7 @@ export function TurtleFormField({
           disabled
           description={description}
           error={error}
+          required={required}
         />
       </>
     );
@@ -97,6 +99,7 @@ export function TurtleFormField({
           value={value}
           onChange={(e) => onChange(e.currentTarget.value)}
           data={nativeData}
+          required={required}
         />
       );
     }
@@ -111,6 +114,7 @@ export function TurtleFormField({
         description={description}
         disabled={disabled}
         error={error}
+        required={required}
         comboboxProps={{ keepMounted: true }}
       />
     );
@@ -126,6 +130,7 @@ export function TurtleFormField({
         description={description}
         disabled={disabled}
         error={error}
+        required={required}
         minRows={3}
       />
     );
@@ -140,6 +145,7 @@ export function TurtleFormField({
       description={description}
       disabled={disabled}
       error={error}
+      required={required}
     />
   );
 }

@@ -214,7 +214,7 @@ The crash happened when the backend had an **unfitted vocabulary** (`vlad_vocab.
   Copy your `backend/data/` (and optionally the generated files in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`) to your colleague’s machine in the same relative paths. Then restart the backend.
 
 - **Option B – Empty setup (no matches):**  
-  Ensure `backend/data/` exists (e.g. `backend/data/Review_Queue`, `backend/data/Community_Uploads`, `backend/data/Incidental_Finds` are created on first run). With the current code, an empty `data/` no longer causes 500; uploads succeed and return **no matches** until reference data (and index) are added. If you had a 500 before, delete **all** index/vocab files in `backend/turtles/` (see Option C) so no stale unfitted vocab remains.
+  Ensure `backend/data/` exists (e.g. `backend/data/Review_Queue`, `backend/data/Community_Uploads` are created on first run; after a full reset, folder structure is recreated from admin and community sheet names). With the current code, an empty `data/` no longer causes 500; uploads succeed and return **no matches** until reference data (and index) are added. If you had a 500 before, delete **all** index/vocab files in `backend/turtles/` (see Option C) so no stale unfitted vocab remains.
 
 - **Option C – Clear index/vocab together:**  
   If you clear or replace `backend/data/`, also remove **all** of these in `backend/turtles/`: `vlad_vocab.pkl`, `turtles.index`, `metadata.pkl`, `global_vlad_array.npy`, `trained_kmeans_vocabulary.pkl`. That avoids the "unfitted vocab + old index" state. You can use `python reset_complete_backend.py` to reset everything (data + index + vocab) in one go.

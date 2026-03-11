@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Password policy**: Registration and change-password enforce a password policy via `validatePassword`. New endpoint `POST /auth/change-password` (authenticated) to update password with the same policy.
 - **Email service**: Verification emails via `sendVerificationEmail`; shared helpers `wrapEmailHtml` and `sendMailSafe`; admin promotion and invitation emails refactored to use them. No-reply sender configurable via `SMTP_FROM`.
 - **Docker**: Configurable frontend host port via `FRONTEND_PORT` in `.env` (default 80). When port 80 is in use, set `FRONTEND_PORT=8080` and `FRONTEND_URL=http://localhost:8080` so auth redirects work correctly. See `.env.docker.example` and comments in `docker-compose.yml`.
+- Backend folder structure driven by admin and community sheet names (on startup and after full reset): `data/<admin sheet>`, `data/Community_Uploads/<community sheet>`.
+- Review queue: badges in list and detail view indicating "Admin upload" vs "Community upload" (by `request_id`).
+- Sheet/Location dropdown source: `sheetSource` (admin | community) so community uploads use community spreadsheet tabs and admin use admin sheet/State.
+- API: `GET /api/sheets/community-sheets`; `POST /api/sheets/sheets` and `POST /api/sheets/turtle` accept `target_spreadsheet: 'community'` to create/list in community spreadsheet.
+- Option "+ Create New Sheet" for community turtles; new community sheet creates tab and `data/Community_Uploads/<name>` folder.
 
 ### Changed
 
@@ -23,12 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Intake survey**: "Health Status" field with free-text input and an optional "?" tooltip guiding community members on what to look for when assessing turtle health (e.g. mucous discharge, eye coloration, shell damage, dehydration, flesh flies, mites). Data is stored in Google Sheets when the "Health Status" column is present.
 - **Docker**: Configurable frontend host port via `FRONTEND_PORT` in `.env` (default 80). When port 80 is in use, set `FRONTEND_PORT=8080` and `FRONTEND_URL=http://localhost:8080` so auth redirects work correctly. See `.env.docker.example` and comments in `docker-compose.yml`.
 - **Turtle forms**: ID field is always read-only (create and edit). Description clarifies read-only behavior and that IDs may not be unique across sheets. E2E tests cover ID read-only and descriptions in create (match dialog) and edit (Sheets Browser) flows.
+- Admin turtle backend path: always `data/State/Location/PrimaryID`; Location = General Location (sheet field). General Location is required when creating admin turtles.
+- Review queue new turtle: admin uploads send `new_location` as `Sheet/general_location`; community uploads use single sheet name and are stored in community spreadsheet and `Community_Uploads/<sheet>`.
+- `get_all_locations()` now includes state-level folder names so sheet-based state folders appear in dropdowns even with no Location subfolders.
 
 ### Fixed
 
 - **Google Sheets**: Single RLock for all Sheets API use and reinit to avoid concurrent SSL/connection errors (e.g. DECRYPTION_FAILED_OR_BAD_RECORD_MAC, record layer failure) and process segfaults (exit 139). Route that reads sheet values for validation now holds the same lock.
 - **Create New Turtle E2E (ID auto-generate)**: Test no longer fails on WebKit/Firefox when the ID field stays empty. The form now requests the biology ID when sex is selected, using the selected sheet or the first available sheet so the ID appears even when sheet selection state hasn’t updated yet. E2E test waits for the generate-id response and mocks `/api/locations` for the backend-locations flow.
 - **E2E**: Stabilize flaky tests: scope sex dropdown option to listbox and wait before click (fixes WebKit failure in admin-turtle-id-auto-generate); increase timeout for "From this upload" on turtle match page (Chromium/Mobile Chrome); wait for review queue content before branching and add timeouts for "No pending reviews" (Mobile Safari).
+
+### Removed
+- Incidental_Finds: removed from backend (reset, turtle_manager, README), frontend (HomePage, useTurtleSheetsDataForm), and locations API docstring.
 
 ---
 

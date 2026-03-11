@@ -23,6 +23,20 @@ except ImportError:
 # --- CONFIGURATION ---
 BASE_DATA_DIR = 'data'
 
+# Characters invalid in folder names (Windows + common Unix); replaced with _ when syncing sheet names to disk
+_FOLDER_NAME_INVALID = r'\/:*?"<>|'
+
+
+def _safe_folder_name(sheet_name):
+    """Sanitize sheet name for use as filesystem folder."""
+    if not sheet_name or not isinstance(sheet_name, str):
+        return "_"
+    out = sheet_name.strip()
+    for c in _FOLDER_NAME_INVALID:
+        out = out.replace(c, "_")
+    return out or "_"
+
+
 LOCATION_NAME_MAP = {
     # "CBPS": "WT",
     # "North Topeka": "NT",
@@ -45,10 +59,42 @@ class TurtleManager:
         print("✅ Resources Ready.")
 
     def _ensure_special_directories(self):
-        """Creates the folder roots for Community and Incidental finds."""
-        for special_folder in ["Community_Uploads", "Incidental_Finds"]:
-            path = os.path.join(self.base_dir, special_folder)
-            os.makedirs(path, exist_ok=True)
+        """Creates the folder root for Community uploads."""
+        path = os.path.join(self.base_dir, "Community_Uploads")
+        os.makedirs(path, exist_ok=True)
+
+    def ensure_data_folders_from_sheets(self, admin_sheet_names=None, community_sheet_names=None):
+        """
+        Ensure data/ contains folders for each admin sheet and Community_Uploads/<sheet> for each community sheet.
+        Call with lists from Google Sheets (e.g. on startup) so folder structure matches spreadsheets without running reset.
+        """
+        admin_sheet_names = admin_sheet_names or []
+        community_sheet_names = community_sheet_names or []
+        community_uploads_dir = os.path.join(self.base_dir, "Community_Uploads")
+        os.makedirs(community_uploads_dir, exist_ok=True)
+        created_admin = 0
+        created_community = 0
+        for name in admin_sheet_names:
+            safe = _safe_folder_name(name)
+            if not safe:
+                continue
+            path = os.path.join(self.base_dir, safe)
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+                created_admin += 1
+        for name in community_sheet_names:
+            safe = _safe_folder_name(name)
+            if not safe:
+                continue
+            path = os.path.join(community_uploads_dir, safe)
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+                created_community += 1
+        if created_admin or created_community:
+            try:
+                print(f"📁 Data folders: created {created_admin} admin, {created_community} community sheet folder(s)")
+            except UnicodeEncodeError:
+                print("[OK] Data folders: created admin/community sheet folder(s)")
 
     def get_official_location_name(self, folder_name):
         """Translates acronyms (CBPS) to official names (Central Biological Preserve)."""
@@ -57,18 +103,22 @@ class TurtleManager:
     def get_all_locations(self):
         """
         Scans the data folder to build a list of locations for the GUI Dropdown.
-        Returns: ["Nebraska/Topeka", "Kansas/Karlyle Woods", "Incidental_Finds", ...]
+        Returns state names (e.g. "Kansas") and State/Location paths (e.g. "Kansas/Wichita"), plus "Community_Uploads".
+        State-level folders from sheets are included even when they have no Location subfolders yet.
         """
-        locations = ["Incidental_Finds", "Community_Uploads"]
+        locations = ["Community_Uploads"]
 
         if os.path.exists(self.base_dir):
-            # Loop through States
             for state in sorted(os.listdir(self.base_dir)):
                 state_path = os.path.join(self.base_dir, state)
-                if not os.path.isdir(state_path) or state.startswith('.'): continue
-                if state in ["Review_Queue", "Community_Uploads", "Incidental_Finds"]: continue
+                if not os.path.isdir(state_path) or state.startswith('.'):
+                    continue
+                if state in ["Review_Queue", "Community_Uploads"]:
+                    continue
 
-                # Loop through Locations
+                # Include state name so sheet-based folders appear in dropdowns even with no subfolders
+                locations.append(state)
+
                 for loc in sorted(os.listdir(state_path)):
                     if os.path.isdir(os.path.join(state_path, loc)) and not loc.startswith('.'):
                         locations.append(f"{state}/{loc}")
@@ -85,7 +135,7 @@ class TurtleManager:
             state, loc = location_selection.split("/", 1)
             location_dir = os.path.join(self.base_dir, state, loc)
         else:
-            # Handle roots like "Incidental_Finds"
+            # Handle roots like "Community_Uploads"
             location_dir = os.path.join(self.base_dir, location_selection)
 
         if not os.path.exists(location_dir):
@@ -628,10 +678,11 @@ class TurtleManager:
         return None
 
     def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None,
-                              uploaded_image_path=None, find_metadata=None):
+                              uploaded_image_path=None, find_metadata=None, is_community_upload=False):
         """
         Called when Admin approves a packet.
         - Merges date-stamped additional_images correctly.
+        - is_community_upload: when True, new turtle files go under data/Community_Uploads/<sheet_name>.
         """
         query_image = None
         packet_dir = os.path.join(self.review_queue_dir, request_id)
@@ -657,11 +708,14 @@ class TurtleManager:
             print(f"✅ Observation added to {match_turtle_id}")
 
         elif new_location and new_turtle_id:
-            # Create new turtle. new_location can be "State" or "State/Location" for two-level paths.
+            # Create new turtle. new_location can be "State", "State/Location", or (community) single sheet name.
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
             parts = [p.strip() for p in new_location.split("/") if p.strip()]
             sheet_name = parts[0] if parts else new_location
-            if len(parts) >= 2:
+            if is_community_upload:
+                # Community uploads: data/Community_Uploads/<sheet_name>/
+                location_dir = os.path.join(self.base_dir, "Community_Uploads", sheet_name)
+            elif len(parts) >= 2:
                 # Two-level: data/<sheet>/<location>/<turtle_id>/
                 location_dir = os.path.join(self.base_dir, parts[0], parts[1])
             else:
@@ -684,7 +738,11 @@ class TurtleManager:
             return False, "Either match_turtle_id or both new_location and new_turtle_id must be provided"
 
         target_turtle_id = match_turtle_id if match_turtle_id else new_turtle_id
-        location_hint = (new_location or "").split("/")[0].strip() if new_location else None
+        if new_location:
+            first = (new_location or "").split("/")[0].strip()
+            location_hint = f"Community_Uploads/{first}" if is_community_upload else first
+        else:
+            location_hint = None
         target_dir = self._get_turtle_folder(target_turtle_id, location_hint)
 
         if target_dir:
@@ -818,7 +876,7 @@ class TurtleManager:
             state_path = os.path.join(self.base_dir, state)
             if not os.path.isdir(state_path) or state.startswith('.'):
                 continue
-            if state in ["Review_Queue", "Community_Uploads", "Incidental_Finds"]:
+            if state in ["Review_Queue", "Community_Uploads"]:
                 continue
             for name in sorted(os.listdir(state_path)):
                 sub_path = os.path.join(state_path, name)

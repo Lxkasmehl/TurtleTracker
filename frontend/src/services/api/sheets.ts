@@ -69,6 +69,8 @@ export interface CreateTurtleSheetsDataRequest {
   state?: string;
   location?: string;
   turtle_data: TurtleSheetsData;
+  /** When 'community', create in community-facing spreadsheet (e.g. review queue community upload). Default 'research'. */
+  target_spreadsheet?: 'research' | 'community';
 }
 
 export interface CreateTurtleSheetsDataResponse {
@@ -93,6 +95,8 @@ export interface UpdateTurtleSheetsDataResponse {
 
 export interface CreateSheetRequest {
   sheet_name: string;
+  /** When 'community', create in community-facing spreadsheet. Default 'research'. */
+  target_spreadsheet?: 'research' | 'community';
 }
 
 export interface CreateSheetResponse {
@@ -339,6 +343,36 @@ export const listSheets = async (
       throw new Error(error.error || 'Failed to list sheets');
     }
 
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
+// List sheet (tab) names from the community-facing spreadsheet (for Review Queue – community uploads)
+export const listCommunitySheets = async (
+  timeoutMs: number = 25000,
+): Promise<ListSheetsResponse> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${TURTLE_API_BASE_URL}/sheets/community-sheets`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Failed to list community sheets');
+    }
     return await response.json();
   } catch (error) {
     clearTimeout(timeoutId);

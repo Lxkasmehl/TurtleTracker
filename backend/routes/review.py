@@ -343,83 +343,97 @@ def register_review_routes(app):
         find_metadata = data.get('find_metadata')  # Optional: microhabitat_uploaded, physical_flag, digital_flag_*, etc.
 
         try:
+            is_community_upload = not (request_id.startswith('admin_') if request_id else False)
             success, message = manager_service.manager.approve_review_packet(
                 request_id,
                 match_turtle_id=match_turtle_id,
                 new_location=new_location,
                 new_turtle_id=new_turtle_id,
                 uploaded_image_path=uploaded_image_path,
-                find_metadata=find_metadata
+                find_metadata=find_metadata,
+                is_community_upload=is_community_upload,
             )
 
             if success:
-                # Admin uploads use request_id starting with "admin_"; only those go to research sheet.
-                # Community uploads (review queue) go to community spreadsheet only (new turtles) or sync match from research.
-                is_community_upload = not (request_id.startswith('admin_') if request_id else False)
+                # New turtle: create row in the correct spreadsheet (research vs community).
+                # Community uploads: community spreadsheet + Community_Uploads/<sheet> folder only.
+                # Admin uploads: research spreadsheet + data/State/Location.
+                if new_location and new_turtle_id:
+                    sheet_name = (isinstance(sheets_data, dict) and sheets_data.get('sheet_name')) or new_location
+                    state = (isinstance(sheets_data, dict) and sheets_data.get('general_location')) or ''
+                    location = (isinstance(sheets_data, dict) and sheets_data.get('location')) or ''
 
-                # Research spreadsheet: only update for *matches* (existing turtle). New turtles from
-                # community uploads are created only in the community spreadsheet, not in research.
-                service = get_sheets_service()
-                if service:
-                    try:
-                        if new_location and new_turtle_id:
-                            # New turtle created - create Sheets entry
-                            # new_location is the sheet name (backend path); row content uses sheets_data
-                            sheet_name = (isinstance(sheets_data, dict) and sheets_data.get('sheet_name')) or new_location
-                            state = (isinstance(sheets_data, dict) and sheets_data.get('general_location')) or ''
-                            location = (isinstance(sheets_data, dict) and sheets_data.get('location')) or ''
-
-                            # Check if frontend already created the entry (indicated by primary_id and sheet_name in sheets_data)
-                            # IMPORTANT: Only skip if primary_id is present - if createTurtleSheetsData failed,
-                            # primary_id won't be set, and we should create it in fallback mode
-                            if isinstance(sheets_data, dict) and sheets_data.get('primary_id') and sheets_data.get('sheet_name'):
-                                # Frontend already created the entry via createTurtleSheetsData
-                                # Skip creation here to avoid duplicates
-                                primary_id = sheets_data.get('primary_id')
-                                print(f"✅ Google Sheets entry already created by frontend for new turtle {new_turtle_id} with Primary ID {primary_id}")
-                                print(f"   Frontend data fields: {list(sheets_data.keys())}")
-                            elif isinstance(sheets_data, dict) and sheets_data.get('sheet_name') and not sheets_data.get('primary_id'):
-                                # Frontend tried to create but failed (no primary_id means createTurtleSheetsData failed)
-                                # Create it in fallback mode with all the form data
-                                print(f"⚠️ Frontend createTurtleSheetsData failed (no primary_id in sheets_data), creating in fallback mode")
-                            else:
-                                # Fallback: create Sheets entry if frontend didn't (for backwards compatibility)
-                                
-                                # Use primary_id from sheets_data if provided, otherwise generate new one
-                                if isinstance(sheets_data, dict) and sheets_data.get('primary_id'):
+                    if is_community_upload:
+                        # Community upload: create/ensure row in community spreadsheet only (no research sheet).
+                        comm = get_community_sheets_service()
+                        if comm:
+                            try:
+                                if isinstance(sheets_data, dict) and sheets_data.get('primary_id') and sheets_data.get('sheet_name'):
                                     primary_id = sheets_data.get('primary_id')
+                                    print(f"✅ Community spreadsheet entry already created by frontend for new turtle {new_turtle_id} with Primary ID {primary_id}")
                                 else:
+                                    if isinstance(sheets_data, dict) and sheets_data.get('primary_id'):
+                                        primary_id = sheets_data.get('primary_id')
+                                    else:
+                                        primary_id = comm.generate_primary_id(state, location)
+                                    turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
+                                    turtle_data.pop('sheet_name', None)
+                                    turtle_data['primary_id'] = primary_id
+                                    if not turtle_data.get('id'):
+                                        sex = (turtle_data.get('sex') or '').strip().upper()
+                                        gender = sex if sex in ('M', 'F', 'J') else 'U'
+                                        turtle_data['id'] = comm.generate_biology_id(gender, sheet_name)
+                                    comm.create_sheet_with_headers(sheet_name)
+                                    comm.create_turtle_data(turtle_data, sheet_name, state, location)
+                                    print(f"✅ Created community spreadsheet entry for new turtle {new_turtle_id} with Primary ID {primary_id}")
+                            except Exception as comm_err:
+                                print(f"⚠️ Warning: Failed to create community Google Sheets entry: {comm_err}")
+                    else:
+                        # Admin upload: create in research spreadsheet.
+                        service = get_sheets_service()
+                        if service:
+                            try:
+                                if isinstance(sheets_data, dict) and sheets_data.get('primary_id') and sheets_data.get('sheet_name'):
+                                    primary_id = sheets_data.get('primary_id')
+                                    print(f"✅ Google Sheets entry already created by frontend for new turtle {new_turtle_id} with Primary ID {primary_id}")
+                                elif isinstance(sheets_data, dict) and sheets_data.get('sheet_name') and not sheets_data.get('primary_id'):
+                                    print(f"⚠️ Frontend createTurtleSheetsData failed (no primary_id in sheets_data), creating in fallback mode")
                                     primary_id = service.generate_primary_id(state, location)
-                                
-                                # Create Sheets entry with ALL data from sheets_data (preserve user input)
-                                turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
-                                # Remove sheet_name from turtle_data (it's metadata, not data)
-                                turtle_data.pop('sheet_name', None)
-                                
-                                # Set primary_id in the Primary ID column (globally unique)
-                                turtle_data['primary_id'] = primary_id
-                                # Determine sheet_name from the turtle data or use a default
-                                sheet_name = sheets_data.get('sheet_name') if isinstance(sheets_data, dict) else 'Location A'
-                                # Auto-generate biology ID (ID column) from sex if not present (scoped to this sheet)
-                                if not turtle_data.get('id'):
-                                    sex = (turtle_data.get('sex') or '').strip().upper()
-                                    gender = sex if sex in ('M', 'F', 'J') else 'U'
-                                    turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
-                                # Do not set general_location or location from state/location – leave empty if admin did not fill them; community location is for display only
-                                
-                                # Debug: Log what data we're creating
-                                
-                                service.create_turtle_data(turtle_data, sheet_name, state, location)
-                                print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
-                        elif match_turtle_id:
-                            # Existing turtle - ensure Sheets entry exists
-                            # Try to find location from turtle folder structure
-                            # For now, we'll handle this in the frontend when Sheets data is saved
-                            pass
-                    except Exception as sheets_error:
-                        # Log but don't fail - Sheets is optional but should be created
-                        print(f"⚠️ Warning: Failed to create Google Sheets entry: {sheets_error}")
-                
+                                    turtle_data = sheets_data.copy()
+                                    turtle_data.pop('sheet_name', None)
+                                    turtle_data['primary_id'] = primary_id
+                                    sheet_name = sheets_data.get('sheet_name', 'Location A')
+                                    if not turtle_data.get('id'):
+                                        sex = (turtle_data.get('sex') or '').strip().upper()
+                                        gender = sex if sex in ('M', 'F', 'J') else 'U'
+                                        turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
+                                    service.create_turtle_data(turtle_data, sheet_name, state, location)
+                                    print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
+                                else:
+                                    primary_id = service.generate_primary_id(state, location) if not (isinstance(sheets_data, dict) and sheets_data.get('primary_id')) else sheets_data.get('primary_id')
+                                    turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
+                                    turtle_data.pop('sheet_name', None)
+                                    turtle_data['primary_id'] = primary_id
+                                    sheet_name = sheets_data.get('sheet_name', 'Location A') if isinstance(sheets_data, dict) else 'Location A'
+                                    if not turtle_data.get('id'):
+                                        sex = (turtle_data.get('sex') or '').strip().upper()
+                                        gender = sex if sex in ('M', 'F', 'J') else 'U'
+                                        turtle_data['id'] = service.generate_biology_id(gender, sheet_name)
+                                    service.create_turtle_data(turtle_data, sheet_name, state, location)
+                                    print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
+                            except Exception as sheets_error:
+                                print(f"⚠️ Warning: Failed to create Google Sheets entry: {sheets_error}")
+
+                # Sync match to community when admin matched an existing turtle (research → community).
+                if match_turtle_id:
+                    try:
+                        _sync_confirmed_to_community(
+                            request.json or {}, (request.json or {}).get('sheets_data'),
+                            get_sheets_service(), None, None, match_turtle_id,
+                        )
+                    except Exception as sync_err:
+                        print(f"⚠️ Warning: Could not sync match to community: {sync_err}")
+
                 return jsonify({
                     'success': True,
                     'message': message

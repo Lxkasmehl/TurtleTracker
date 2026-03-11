@@ -402,6 +402,7 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
           console.error('Error generating primary ID:', error);
         }
       }
+      const isCommunityUpload = !selectedItem.request_id?.startsWith('admin_');
       let sheetsDataCreated = false;
       if (effectiveSheetsData && finalPrimaryId && effectiveSheetName) {
         try {
@@ -415,6 +416,7 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
               general_location: effectiveSheetsData?.general_location ?? '',
               location: effectiveSheetsData?.location ?? '',
             },
+            target_spreadsheet: isCommunityUpload ? 'community' : 'research',
           });
           sheetsDataCreated = result.success ?? false;
         } catch {
@@ -427,8 +429,16 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
         }
       }
       const turtleIdForReview = finalPrimaryId || `T${Date.now()}`;
+      // Admin: backend path = data/State/Location/PrimaryID (Location = general_location). Community: data/Community_Uploads/Sheet/.
+      const generalLoc = effectiveSheetsData?.general_location?.trim() ?? '';
+      const newLocation =
+        isCommunityUpload
+          ? effectiveSheetName
+          : generalLoc
+            ? `${effectiveSheetName}/${generalLoc}`
+            : effectiveSheetName;
       await approveReview(selectedItem.request_id, {
-        new_location: effectiveSheetName,
+        new_location: newLocation,
         new_turtle_id: turtleIdForReview,
         uploaded_image_path: selectedItem.uploaded_image,
         sheets_data: effectiveSheetsData

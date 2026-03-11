@@ -116,12 +116,41 @@ def initialize_manager():
             print("✅ TurtleManager initialized successfully")
         except UnicodeEncodeError:
             print("[OK] TurtleManager initialized successfully")
+        # Ensure data folder structure matches admin and community spreadsheets (no reset required)
+        _ensure_sheet_folders_on_startup()
     except Exception as e:
         try:
             print(f"❌ Error initializing TurtleManager: {str(e)}")
         except UnicodeEncodeError:
             print(f"[ERROR] Error initializing TurtleManager: {str(e)}")
         manager_ready.set()  # Set even on error so server can continue
+
+
+def _ensure_sheet_folders_on_startup():
+    """Fetch sheet names from admin and community spreadsheets and ensure matching folders exist under data/."""
+    if manager is None:
+        return
+    admin_sheets = []
+    community_sheets = []
+    try:
+        svc = get_sheets_service()
+        if svc:
+            admin_sheets = svc.list_sheets() or []
+    except Exception:
+        pass
+    try:
+        comm = get_community_sheets_service()
+        if comm:
+            community_sheets = comm.list_sheets() or []
+    except Exception:
+        pass
+    try:
+        manager.ensure_data_folders_from_sheets(admin_sheets, community_sheets)
+    except Exception as e:
+        try:
+            print(f"⚠️ Could not ensure sheet folders: {e}")
+        except UnicodeEncodeError:
+            print("[WARN] Could not ensure sheet folders")
 
 
 def initialize_sheets_migration():

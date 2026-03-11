@@ -8,6 +8,7 @@ import { IconCheck, IconX } from '@tabler/icons-react';
 import type { TurtleSheetsData } from '../services/api';
 import {
   listSheets,
+  listCommunitySheets,
   getLocations,
   createSheet,
   getTurtleNames,
@@ -21,7 +22,7 @@ import type {
 export type { UseTurtleSheetsDataFormReturn } from '../components/TurtleSheetsDataForm.types';
 
 /** Backend folder names that are not selectable as turtle location (new-turtle dialog). */
-const LOCATION_SYSTEM_FOLDERS = ['Incidental_Finds', 'Community_Uploads', 'Review_Queue'];
+const LOCATION_SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue'];
 
 export function useTurtleSheetsDataForm(
   props: TurtleSheetsDataFormProps,
@@ -35,6 +36,7 @@ export function useTurtleSheetsDataForm(
     addOnlyMode = false,
     initialAvailableSheets,
     useBackendLocations = false,
+    sheetSource = 'admin',
   } = props;
 
   const [formData, setFormData] = useState<TurtleSheetsData>(initialData || {});
@@ -140,7 +142,8 @@ export function useTurtleSheetsDataForm(
   }, [mode, selectedSheetName, formData.sex, useBackendLocations]);
 
   useEffect(() => {
-    if (initialAvailableSheets != null && initialAvailableSheets.length > 0) {
+    // When admin source and parent passed a list, use it to avoid duplicate fetch
+    if (sheetSource === 'admin' && initialAvailableSheets != null && initialAvailableSheets.length > 0) {
       setAvailableSheets(initialAvailableSheets);
       setLoadingSheets(false);
       return;
@@ -151,6 +154,21 @@ export function useTurtleSheetsDataForm(
     const loadOptions = async () => {
       setLoadingSheets(true);
       try {
+        if (sheetSource === 'community') {
+          const response = await listCommunitySheets();
+          if (cancelled) return;
+          if (response.success && response.sheets) {
+            const sheets = response.sheets;
+            setAvailableSheets(sheets);
+            setSelectedSheetName((current) => {
+              if (!current && !initialSheetName && sheets.length > 0) return sheets[0];
+              return current;
+            });
+          } else {
+            setAvailableSheets([]);
+          }
+          return;
+        }
         if (useBackendLocations) {
           const response = await getLocations();
           if (cancelled) return;
@@ -189,7 +207,11 @@ export function useTurtleSheetsDataForm(
       } catch (error) {
         if (!cancelled) {
           console.error(
-            useBackendLocations ? 'Failed to load locations:' : 'Failed to load sheets:',
+            sheetSource === 'community'
+              ? 'Failed to load community sheets:'
+              : useBackendLocations
+                ? 'Failed to load locations:'
+                : 'Failed to load sheets:',
             error,
           );
           setAvailableSheets([]);
@@ -203,7 +225,7 @@ export function useTurtleSheetsDataForm(
     return () => {
       cancelled = true;
     };
-  }, [initialSheetName, initialAvailableSheets, useBackendLocations]);
+  }, [initialSheetName, initialAvailableSheets, useBackendLocations, sheetSource]);
 
   const handleCreateNewSheet = async (sheetName: string) => {
     if (!sheetName?.trim()) {
@@ -217,11 +239,22 @@ export function useTurtleSheetsDataForm(
 
     setCreatingSheet(true);
     try {
-      const response = await createSheet({ sheet_name: sheetName.trim() });
+      const targetSpreadsheet = sheetSource === 'community' ? 'community' : 'research';
+      const response = await createSheet({
+        sheet_name: sheetName.trim(),
+        target_spreadsheet: targetSpreadsheet,
+      });
       if (response.success) {
-        const sheetsResponse = await listSheets();
-        if (sheetsResponse.success && sheetsResponse.sheets) {
-          setAvailableSheets(sheetsResponse.sheets);
+        if (sheetSource === 'community') {
+          const sheetsResponse = await listCommunitySheets();
+          if (sheetsResponse.success && sheetsResponse.sheets) {
+            setAvailableSheets(sheetsResponse.sheets);
+          }
+        } else {
+          const sheetsResponse = await listSheets();
+          if (sheetsResponse.success && sheetsResponse.sheets) {
+            setAvailableSheets(sheetsResponse.sheets);
+          }
         }
         setSelectedSheetName(sheetName.trim());
         setShowCreateSheetModal(false);
@@ -301,6 +334,10 @@ export function useTurtleSheetsDataForm(
     } else if (mode === 'create' && formData.name && checkDuplicateName(formData.name)) {
       newErrors.name = duplicateNameMessage;
     }
+    // Admin backend path is data/State/Location/PrimaryID; Location comes from General Location.
+    if ((useBackendLocations || sheetSource === 'admin') && mode === 'create' && !formData.general_location?.trim()) {
+      newErrors.general_location = 'General location is required (used for backend path State/Location)';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -348,12 +385,13 @@ export function useTurtleSheetsDataForm(
             : {}),
         };
       }
+      // Backend path: data/State/Location/PrimaryID where Location = general_location (sheet field).
       const backendLocationPath =
-        useBackendLocations && selectedSheetName
-          ? dataToSave.location?.trim()
-            ? `${selectedSheetName}/${dataToSave.location.trim()}`
-            : selectedSheetName
-          : undefined;
+        useBackendLocations && selectedSheetName && dataToSave.general_location?.trim()
+          ? `${selectedSheetName}/${dataToSave.general_location.trim()}`
+          : useBackendLocations && selectedSheetName
+            ? selectedSheetName
+            : undefined;
 
       if (onCombinedSubmit) {
         await onCombinedSubmit(dataToSave, selectedSheetName, backendLocationPath);
