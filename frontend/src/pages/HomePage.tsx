@@ -258,8 +258,8 @@ export default function HomePage() {
                 />
               )}
               <Text size='xs' c='dimmed'>
-                Default: only turtles from this location. &quot;All locations&quot; only
-                in exceptional cases.
+                Matches run against turtles in the selected location and always include
+                all community turtles. &quot;All locations&quot; only in exceptional cases.
               </Text>
             </Stack>
           )}

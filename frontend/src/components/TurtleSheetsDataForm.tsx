@@ -47,6 +47,7 @@ export const TurtleSheetsDataForm = forwardRef<
     initialAvailableSheets,
     useBackendLocations = false,
     sheetSource = 'admin',
+    requireNewSheetForCommunityMatch = false,
   },
   ref,
 ) {
@@ -65,6 +66,7 @@ export const TurtleSheetsDataForm = forwardRef<
     initialAvailableSheets,
     useBackendLocations,
     sheetSource,
+    requireNewSheetForCommunityMatch,
   });
 
   useImperativeHandle(ref, () => ({
@@ -129,7 +131,7 @@ export const TurtleSheetsDataForm = forwardRef<
             <Grid.Col span={12}>
               <SheetSelectionRow
                 loadingSheets={hook.loadingSheets}
-                isFieldModeRestricted={hook.isFieldModeRestricted}
+                isFieldModeRestricted={hook.isFieldModeRestricted && !requireNewSheetForCommunityMatch}
                 isFieldUnlocked={hook.isFieldUnlocked}
                 requestUnlock={hook.requestUnlock}
                 selectedSheetName={hook.selectedSheetName}
@@ -138,12 +140,22 @@ export const TurtleSheetsDataForm = forwardRef<
                 setShowCreateSheetModal={hook.setShowCreateSheetModal}
                 allowCreateNewSheet
               />
+              {requireNewSheetForCommunityMatch && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  This turtle was found in the community spreadsheet. Select the admin sheet (and location) where it should be stored in the research spreadsheet.
+                </Text>
+              )}
+              {hook.errors.sheet_name && (
+                <Text size="sm" c="red" mt={4}>
+                  {hook.errors.sheet_name}
+                </Text>
+              )}
             </Grid.Col>
             <TurtleSheetsDataFormFields
               formData={hook.formData}
               handleChange={hook.handleChange}
               isFieldModeRestricted={hook.isFieldModeRestricted}
-              isFieldUnlocked={hook.isFieldUnlocked}
+              isFieldUnlocked={(field) => hook.isFieldUnlocked(field) || (requireNewSheetForCommunityMatch && field === 'general_location')}
               requestUnlock={hook.requestUnlock}
               additionalDatesRefound={hook.additionalDatesRefound}
               setAdditionalDatesRefound={hook.setAdditionalDatesRefound}
@@ -154,7 +166,8 @@ export const TurtleSheetsDataForm = forwardRef<
               hintCoordinates={hintCoordinates}
               errors={hook.errors}
               mode={mode}
-              requireGeneralLocationForPath={(sheetSource === 'admin' || useBackendLocations) && mode === 'create'}
+              requireGeneralLocationForPath={(sheetSource === 'admin' || useBackendLocations) && (mode === 'create' || requireNewSheetForCommunityMatch)}
+              requireNewSheetForCommunityMatch={requireNewSheetForCommunityMatch}
             />
           </Grid>
 

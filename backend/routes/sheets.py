@@ -44,6 +44,16 @@ def _fetch_turtle_sheets_data_impl(service, primary_id, sheet_name_arg, state, l
     return sn, data
 
 
+def _fetch_turtle_sheets_data_community_impl(service, primary_id, community_sheet_name):
+    """Run in thread: get turtle data from community spreadsheet. sheet = tab name (e.g. second path segment)."""
+    sn = (community_sheet_name or '').strip()
+    if not sn:
+        return None, None
+    # Community sheets: state/location convention may use sheet as both
+    data = service.get_turtle_data(primary_id, sn, sn, '')
+    return sn, data
+
+
 def register_sheets_routes(app):
     """Register Google Sheets routes"""
     
@@ -60,7 +70,12 @@ def register_sheets_routes(app):
             state = request.args.get('state', '')
             location = request.args.get('location', '')
             
-            service = get_sheets_service()
+            # When match is from Community_Uploads, fetch from community spreadsheet (sheet = second path segment).
+            use_community = (state or '').strip() == 'Community_Uploads'
+            if use_community:
+                service = get_community_sheets_service()
+            else:
+                service = get_sheets_service()
             if not service:
                 return jsonify({'error': 'Google Sheets service not configured'}), 503
             
@@ -69,10 +84,17 @@ def register_sheets_routes(app):
             for attempt in range(2):
                 executor = ThreadPoolExecutor(max_workers=1)
                 try:
-                    future = executor.submit(
-                        _fetch_turtle_sheets_data_impl,
-                        service, primary_id, sheet_name, state, location
-                    )
+                    if use_community:
+                        community_sheet = (location or sheet_name or '').strip()
+                        future = executor.submit(
+                            _fetch_turtle_sheets_data_community_impl,
+                            service, primary_id, community_sheet
+                        )
+                    else:
+                        future = executor.submit(
+                            _fetch_turtle_sheets_data_impl,
+                            service, primary_id, sheet_name, state, location
+                        )
                     result_sheet, result_data = future.result(timeout=SHEETS_TURTLE_DATA_TIMEOUT_SEC)
                     break
                 except FuturesTimeoutError:

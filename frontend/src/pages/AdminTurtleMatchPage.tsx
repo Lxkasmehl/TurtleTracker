@@ -79,6 +79,10 @@ export default function AdminTurtleMatchPage() {
     ? matchData.matches.find((m) => m.turtle_id === selectedMatch)
     : undefined;
 
+  /** True when the selected match is from the community spreadsheet (admin re-found a community turtle). */
+  const isMatchFromCommunity =
+    (selectedMatchData?.location?.startsWith('Community_Uploads') ?? false);
+
   // Load selected match turtle's existing additional images (microhabitat/condition)
   useEffect(() => {
     if (!selectedMatch || !selectedMatchData) {
@@ -206,17 +210,28 @@ export default function AdminTurtleMatchPage() {
       throw new Error('Match not found');
     }
 
-    const locationParts = match.location.split('/');
-    const state = locationParts.length >= 1 ? locationParts[0] : '';
-    const location = locationParts.length >= 2 ? locationParts.slice(1).join('/') : '';
     const currentPrimaryId = primaryId || selectedMatch;
 
-    await updateTurtleSheetsData(currentPrimaryId, {
-      sheet_name: sheetName,
-      state,
-      location,
-      turtle_data: data,
-    });
+    if (isMatchFromCommunity) {
+      // Turtle is from community spreadsheet; create a new row in the research spreadsheet.
+      await createTurtleSheetsData({
+        sheet_name: sheetName,
+        state: data.general_location ?? '',
+        location: data.location ?? '',
+        turtle_data: { ...data, primary_id: currentPrimaryId },
+        target_spreadsheet: 'research',
+      });
+    } else {
+      const locationParts = match.location.split('/');
+      const state = locationParts.length >= 1 ? locationParts[0] : '';
+      const location = locationParts.length >= 2 ? locationParts.slice(1).join('/') : '';
+      await updateTurtleSheetsData(currentPrimaryId, {
+        sheet_name: sheetName,
+        state,
+        location,
+        turtle_data: data,
+      });
+    }
 
     setSheetsData(data);
   };
@@ -236,16 +251,23 @@ export default function AdminTurtleMatchPage() {
       // First, save to Google Sheets
       await handleSaveSheetsData(data, sheetName);
 
-      // Then, confirm the match (include primary_id/sheet_name for community spreadsheet sync)
+      // Then, confirm the match (full sheets_data so backend can move folder and remove from community sheet)
       const currentPrimaryId = primaryId || selectedMatch;
+      const communitySheetName = isMatchFromCommunity
+        ? (selectedMatchData?.location?.split('/')[1]?.trim() || 'Unknown')
+        : '';
       await approveReview(imageId, {
         match_turtle_id: selectedMatch,
         uploaded_image_path: matchData.uploaded_image_path,
         find_metadata: findMetadata ?? undefined,
         sheets_data: {
+          ...data,
           primary_id: currentPrimaryId,
           sheet_name: sheetName,
+          general_location: data.general_location ?? '',
         },
+        match_from_community: isMatchFromCommunity,
+        community_sheet_name: isMatchFromCommunity ? communitySheetName : undefined,
       });
 
       localStorage.removeItem(`match_${imageId}`);
@@ -720,7 +742,7 @@ export default function AdminTurtleMatchPage() {
                       <TurtleSheetsDataForm
                         ref={formRef}
                         initialData={sheetsData || undefined}
-                        sheetName={sheetsData?.sheet_name}
+                        sheetName={isMatchFromCommunity ? '' : (sheetsData?.sheet_name)}
                         primaryId={primaryId || undefined}
                         mode={sheetsData ? 'edit' : 'create'}
                         onSave={handleSaveSheetsData}
@@ -728,6 +750,8 @@ export default function AdminTurtleMatchPage() {
                         onCombinedSubmit={handleSaveAndConfirm}
                         addOnlyMode={true}
                         initialAvailableSheets={availableSheets.length > 0 ? availableSheets : undefined}
+                        sheetSource="admin"
+                        requireNewSheetForCommunityMatch={isMatchFromCommunity}
                       />
                     </ScrollArea>
                   </Paper>

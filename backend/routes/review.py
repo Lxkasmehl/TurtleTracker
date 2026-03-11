@@ -341,6 +341,20 @@ def register_review_routes(app):
         uploaded_image_path = data.get('uploaded_image_path')  # Optional: direct path for admin uploads
         sheets_data = data.get('sheets_data')  # Optional: Google Sheets data to create/update
         find_metadata = data.get('find_metadata')  # Optional: microhabitat_uploaded, physical_flag, digital_flag_*, etc.
+        match_from_community = data.get('match_from_community') is True  # Admin re-found a community turtle
+        community_sheet_name = (data.get('community_sheet_name') or '').strip() or None  # Community tab to remove from
+
+        # When moving turtle from community to admin, new admin path = sheet_name/general_location (e.g. Kansas/NT)
+        new_admin_location = None
+        if match_from_community and isinstance(sheets_data, dict) and sheets_data.get('sheet_name'):
+            sheet_part = (sheets_data.get('sheet_name') or '').strip()
+            general_loc = (sheets_data.get('general_location') or '').strip()
+            if sheet_part and general_loc:
+                new_admin_location = f"{sheet_part}/{general_loc}"
+            elif sheet_part:
+                new_admin_location = sheet_part
+            if new_admin_location:
+                print(f"📋 Community→Admin move: new_admin_location={new_admin_location!r}, community_sheet_name={community_sheet_name!r}")
 
         try:
             is_community_upload = not (request_id.startswith('admin_') if request_id else False)
@@ -352,6 +366,9 @@ def register_review_routes(app):
                 uploaded_image_path=uploaded_image_path,
                 find_metadata=find_metadata,
                 is_community_upload=is_community_upload,
+                match_from_community=match_from_community,
+                community_sheet_name=community_sheet_name,
+                new_admin_location=new_admin_location,
             )
 
             if success:
@@ -424,15 +441,30 @@ def register_review_routes(app):
                             except Exception as sheets_error:
                                 print(f"⚠️ Warning: Failed to create Google Sheets entry: {sheets_error}")
 
-                # Sync match to community when admin matched an existing turtle (research → community).
+                # When admin matched a community turtle: remove from community sheet (turtle moved to research).
+                # When admin matched a research turtle: sync to community spreadsheet.
                 if match_turtle_id:
-                    try:
-                        _sync_confirmed_to_community(
-                            request.json or {}, (request.json or {}).get('sheets_data'),
-                            get_sheets_service(), None, None, match_turtle_id,
-                        )
-                    except Exception as sync_err:
-                        print(f"⚠️ Warning: Could not sync match to community: {sync_err}")
+                    if match_from_community and community_sheet_name:
+                        primary_id = (isinstance(sheets_data, dict) and sheets_data.get('primary_id')) or match_turtle_id
+                        comm = get_community_sheets_service()
+                        if comm:
+                            try:
+                                deleted = comm.delete_turtle_data(primary_id, community_sheet_name)
+                                if deleted:
+                                    print(f"✅ Removed turtle {primary_id} from community sheet '{community_sheet_name}' (moved to admin).")
+                                else:
+                                    print(f"⚠️ Could not remove turtle {primary_id} from community sheet '{community_sheet_name}' (row may not exist).")
+                            except Exception as del_err:
+                                print(f"⚠️ Warning: Failed to remove turtle from community sheet: {del_err}")
+                        # Do NOT sync to community – turtle now lives only in research.
+                    else:
+                        try:
+                            _sync_confirmed_to_community(
+                                request.json or {}, (request.json or {}).get('sheets_data'),
+                                get_sheets_service(), None, None, match_turtle_id,
+                            )
+                        except Exception as sync_err:
+                            print(f"⚠️ Warning: Could not sync match to community: {sync_err}")
 
                 return jsonify({
                     'success': True,

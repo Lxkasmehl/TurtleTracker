@@ -37,6 +37,7 @@ export function useTurtleSheetsDataForm(
     initialAvailableSheets,
     useBackendLocations = false,
     sheetSource = 'admin',
+    requireNewSheetForCommunityMatch = false,
   } = props;
 
   const [formData, setFormData] = useState<TurtleSheetsData>(initialData || {});
@@ -147,6 +148,12 @@ export function useTurtleSheetsDataForm(
     if (sheetSource === 'admin' && initialAvailableSheets != null && initialAvailableSheets.length > 0) {
       setAvailableSheets(initialAvailableSheets);
       setLoadingSheets(false);
+      if (!requireNewSheetForCommunityMatch) {
+        setSelectedSheetName((current) => {
+          if (!current && !initialSheetName && initialAvailableSheets.length > 0) return initialAvailableSheets[0];
+          return current;
+        });
+      }
       return;
     }
 
@@ -226,7 +233,7 @@ export function useTurtleSheetsDataForm(
     return () => {
       cancelled = true;
     };
-  }, [initialSheetName, initialAvailableSheets, useBackendLocations, sheetSource]);
+  }, [initialSheetName, initialAvailableSheets, useBackendLocations, sheetSource, requireNewSheetForCommunityMatch]);
 
   const handleCreateNewSheet = async (sheetName: string) => {
     if (!sheetName?.trim()) {
@@ -341,8 +348,11 @@ export function useTurtleSheetsDataForm(
       newErrors.name = duplicateNameMessage;
     }
     // Admin backend path is data/State/Location/PrimaryID; Location comes from General Location.
-    if ((useBackendLocations || sheetSource === 'admin') && mode === 'create' && !formData.general_location?.trim()) {
+    if ((useBackendLocations || sheetSource === 'admin') && (mode === 'create' || requireNewSheetForCommunityMatch) && !formData.general_location?.trim()) {
       newErrors.general_location = 'General location is required (used for backend path State/Location)';
+    }
+    if (requireNewSheetForCommunityMatch && !selectedSheetName?.trim()) {
+      newErrors.sheet_name = 'Select an admin sheet where this turtle will be stored (moving from community to research).';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

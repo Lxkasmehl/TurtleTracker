@@ -27,6 +27,11 @@ export interface TurtleSheetsDataFormProps {
    * - 'community': community-facing sheet (Community_Uploads subfolders) – e.g. community uploads in Review Queue.
    */
   sheetSource?: 'admin' | 'community';
+  /**
+   * When true, the matched turtle is from the community spreadsheet (admin re-found it).
+   * Sheet selection is required (admin sheet where the turtle will be stored) and the sheet field is not locked.
+   */
+  requireNewSheetForCommunityMatch?: boolean;
 }
 
 export interface TurtleSheetsDataFormRef {
@@ -53,6 +58,8 @@ export interface TurtleSheetsDataFormFieldsProps {
   mode?: 'create' | 'edit';
   /** When true, General Location is required (used for backend path State/Location). */
   requireGeneralLocationForPath?: boolean;
+  /** When true, sheet and general_location are always editable (no unlock); used on Match page for community→admin. */
+  requireNewSheetForCommunityMatch?: boolean;
 }
 
 /** Return type of useTurtleSheetsDataForm hook */

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sheet/Location dropdown source: `sheetSource` (admin | community) so community uploads use community spreadsheet tabs and admin use admin sheet/State.
 - API: `GET /api/sheets/community-sheets`; `POST /api/sheets/sheets` and `POST /api/sheets/turtle` accept `target_spreadsheet: 'community'` to create/list in community spreadsheet.
 - Option "+ Create New Sheet" for community turtles; new community sheet creates tab and `data/Community_Uploads/<name>` folder.
+- **Community turtle move to admin**: When an admin re-finds a turtle that lives in the community spreadsheet, the match flow now (1) requires selecting an admin sheet and general location (both fields unlocked on the Turtle Match page), (2) creates the turtle row in the research spreadsheet, (3) moves the turtle folder from `data/Community_Uploads/<sheet>/` to `data/<State>/<Location>/`, (4) removes the turtle from the community spreadsheet, and (5) does not add it to the community sheet again. Match search always includes the selected location plus all community turtles.
 
 ### Changed
 
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin turtle backend path: always `data/State/Location/PrimaryID`; Location = General Location (sheet field). General Location is required when creating admin turtles.
 - Review queue new turtle: admin uploads send `new_location` as `Sheet/general_location`; community uploads use single sheet name and are stored in community spreadsheet and `Community_Uploads/<sheet>`.
 - `get_all_locations()` now includes state-level folder names so sheet-based state folders appear in dropdowns even with no Location subfolders.
+- **Match search scope**: Photo match search when a location is selected now always runs against that location and all turtles under `Community_Uploads` (in addition to the chosen location). Home page helper text updated accordingly.
 
 ### Fixed
 

@@ -535,7 +535,12 @@ class TurtleManager:
         3. Return the best set of results.
         """
         total_search_start = time.time()
-        location_filter = (sheet_name or '').strip() or None
+        # When a location is selected, always search that location AND Community_Uploads (so community turtles are always included in match results).
+        raw_sheet = (sheet_name or '').strip() or None
+        if raw_sheet:
+            location_filter = [raw_sheet, "Community_Uploads"]
+        else:
+            location_filter = None
 
         MATCH_CONFIDENCE_THRESHOLD = 15
 
@@ -547,7 +552,7 @@ class TurtleManager:
         candidates_normal = image_processing.smart_search(
             query_image_path, location_filter=location_filter, k_results=20
         )
-        if location_filter and not candidates_normal:
+        if raw_sheet and not candidates_normal:
             candidates_normal = image_processing.smart_search(
                 query_image_path, location_filter=None, k_results=20
             )
@@ -585,7 +590,7 @@ class TurtleManager:
             candidates_mirror = image_processing.smart_search(
                 mirror_path, location_filter=location_filter, k_results=20
             )
-            if location_filter and not candidates_mirror:
+            if raw_sheet and not candidates_mirror:
                 candidates_mirror = image_processing.smart_search(
                     mirror_path, location_filter=None, k_results=20
                 )
@@ -678,11 +683,13 @@ class TurtleManager:
         return None
 
     def approve_review_packet(self, request_id, match_turtle_id=None, new_location=None, new_turtle_id=None,
-                              uploaded_image_path=None, find_metadata=None, is_community_upload=False):
+                              uploaded_image_path=None, find_metadata=None, is_community_upload=False,
+                              match_from_community=False, community_sheet_name=None, new_admin_location=None):
         """
         Called when Admin approves a packet.
         - Merges date-stamped additional_images correctly.
         - is_community_upload: when True, new turtle files go under data/Community_Uploads/<sheet_name>.
+        - match_from_community: when True, the matched turtle is in Community_Uploads; we move its folder to new_admin_location and caller removes from community sheet.
         """
         query_image = None
         packet_dir = os.path.join(self.review_queue_dir, request_id)
@@ -741,6 +748,9 @@ class TurtleManager:
         if new_location:
             first = (new_location or "").split("/")[0].strip()
             location_hint = f"Community_Uploads/{first}" if is_community_upload else first
+        elif match_from_community and community_sheet_name:
+            # So we find and move the folder under Community_Uploads, not an existing admin copy
+            location_hint = f"Community_Uploads/{community_sheet_name}"
         else:
             location_hint = None
         target_dir = self._get_turtle_folder(target_turtle_id, location_hint)
@@ -803,6 +813,24 @@ class TurtleManager:
                             # Save merged manifest
                             with open(dest_manifest_path, 'w') as f:
                                 json.dump(existing_manifest, f, indent=4)
+
+            # Move turtle folder from Community_Uploads to admin location when admin re-found a community turtle
+            if match_from_community and new_admin_location and match_turtle_id and target_dir and os.path.isdir(target_dir):
+                parts = [p.strip() for p in new_admin_location.split("/") if p.strip()]
+                if parts:
+                    dest_dir = os.path.join(self.base_dir, *parts, match_turtle_id)
+                    if not os.path.exists(dest_dir):
+                        try:
+                            os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
+                            shutil.move(target_dir, dest_dir)
+                            print(f"📁 Moved turtle from Community_Uploads to {new_admin_location}")
+                            print("♻️  Rebuilding search index...")
+                            image_processing.rebuild_index_and_reload(self.base_dir)
+                            print("✅ Search index updated.")
+                        except Exception as move_err:
+                            print(f"⚠️ Failed to move turtle folder: {move_err}")
+                    else:
+                        print(f"⚠️ Destination {dest_dir} already exists; turtle left in place.")
 
         if os.path.exists(packet_dir):
             try:

@@ -65,7 +65,11 @@ export function TurtleSheetsDataFormFields({
   errors,
   mode,
   requireGeneralLocationForPath = false,
+  requireNewSheetForCommunityMatch = false,
 }: TurtleSheetsDataFormFieldsProps) {
+  // When moving community turtle to admin, sheet and general_location must be editable without unlock
+  const effectiveRestrictedForField = (field: keyof TurtleSheetsData) =>
+    requireNewSheetForCommunityMatch && field === 'general_location' ? false : isFieldModeRestricted;
   return (
     <>
       {primaryId && (
@@ -183,7 +187,7 @@ export function TurtleSheetsDataFormFields({
               onChange={(v) => handleChange(config.key, v)}
               type={config.type}
               selectData={config.selectData}
-              isFieldModeRestricted={isFieldModeRestricted}
+              isFieldModeRestricted={effectiveRestrictedForField(config.key)}
               isFieldUnlocked={isFieldUnlocked}
               requestUnlock={requestUnlock}
               disabled={config.key === 'id' && mode === 'create'}
