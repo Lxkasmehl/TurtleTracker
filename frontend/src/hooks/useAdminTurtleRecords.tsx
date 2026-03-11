@@ -280,12 +280,14 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
     const state = selectedItem.metadata.state || '';
     const location = selectedItem.metadata.location || '';
     const currentPrimaryId = primaryId || selectedCandidate;
+    const isCommunityUpload = !selectedItem.request_id?.startsWith('admin_');
 
     await updateTurtleSheetsData(currentPrimaryId, {
       sheet_name: sheetName,
       state,
       location,
       turtle_data: data,
+      target_spreadsheet: isCommunityUpload ? 'community' : 'research',
     });
 
     setSheetsData(data);

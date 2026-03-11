@@ -85,6 +85,8 @@ export interface UpdateTurtleSheetsDataRequest {
   state?: string;
   location?: string;
   turtle_data: Partial<TurtleSheetsData>;
+  /** When 'community', update in community spreadsheet. Default 'research'. */
+  target_spreadsheet?: 'research' | 'community';
 }
 
 export interface UpdateTurtleSheetsDataResponse {
@@ -109,6 +111,8 @@ export interface CreateSheetResponse {
 export interface GenerateTurtleIdRequest {
   sex: string; // M, F, J, or U
   sheet_name: string;
+  /** When 'community', use community spreadsheet for ID generation (do not create sheet in research). */
+  target_spreadsheet?: 'research' | 'community';
 }
 
 export interface GenerateTurtleIdResponse {

@@ -131,7 +131,8 @@ export function useTurtleSheetsDataForm(
         : selectedSheetName;
     if (!sheetNameForApi) return;
     const requestId = ++generateIdRequestRef.current;
-    generateTurtleId({ sheet_name: sheetNameForApi, sex })
+    const targetSpreadsheet = sheetSource === 'community' ? 'community' : 'research';
+    generateTurtleId({ sheet_name: sheetNameForApi, sex, target_spreadsheet: targetSpreadsheet })
       .then((res) => {
         if (requestId !== generateIdRequestRef.current) return;
         if (res.success && res.id) {
@@ -139,7 +140,7 @@ export function useTurtleSheetsDataForm(
         }
       })
       .catch(() => {});
-  }, [mode, selectedSheetName, formData.sex, useBackendLocations]);
+  }, [mode, selectedSheetName, formData.sex, useBackendLocations, sheetSource]);
 
   useEffect(() => {
     // When admin source and parent passed a list, use it to avoid duplicate fetch
@@ -313,7 +314,12 @@ export function useTurtleSheetsDataForm(
             : sheetToUse;
         if (sheetNameForApi) {
           const requestId = ++generateIdRequestRef.current;
-          generateTurtleId({ sheet_name: sheetNameForApi, sex: value.trim() })
+          const targetSpreadsheet = sheetSource === 'community' ? 'community' : 'research';
+          generateTurtleId({
+            sheet_name: sheetNameForApi,
+            sex: value.trim(),
+            target_spreadsheet: targetSpreadsheet,
+          })
             .then((res) => {
               if (requestId !== generateIdRequestRef.current) return;
               if (res.success && res.id) {
