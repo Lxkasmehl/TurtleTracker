@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Create New Turtle E2E**: ID field now populates on WebKit/Firefox (request biology ID when sex selected; test mocks `/api/locations` and waits for generate-id).
 - **E2E**: Flaky fixes—sex dropdown scoped to listbox, longer timeout for "From this upload", review queue content wait and "No pending reviews" timeouts (WebKit, Mobile Safari).
 - **Community sheet creation**: "Create New Sheet" for community turtles no longer creates the tab in the research spreadsheet; generate-id and update-turtle accept `target_spreadsheet`, frontend passes it when `sheetSource` is community.
+- **E2E and test setup**: Test user seed scripts always update password and role for existing users so E2E credentials work regardless of prior state. Playwright webServer uses `path`/`cwd` and `127.0.0.1`; Vite `strictPort: true`. Login fixtures use `noWaitAfter`, detect login errors, and throw clear messages suggesting `npm run test:setup`. E2E selectors: `getByRole('textbox')` for Sheet/Location and regex for General Location to avoid strict mode; ID field always disabled; sheet select `all
 
 ### Removed
 

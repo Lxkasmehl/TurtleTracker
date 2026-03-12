@@ -190,7 +190,7 @@ export function TurtleSheetsDataFormFields({
               isFieldModeRestricted={effectiveRestrictedForField(config.key)}
               isFieldUnlocked={isFieldUnlocked}
               requestUnlock={requestUnlock}
-              disabled={config.key === 'id' && mode === 'create'}
+              disabled={config.key === 'id'}
               error={errors?.[config.key]}
               required={config.key === 'general_location' ? requireGeneralLocationForPath : undefined}
             />

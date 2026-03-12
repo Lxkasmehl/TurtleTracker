@@ -142,6 +142,7 @@ export function SheetSelectionRow({
       value={selectedSheetName}
       onChange={handleSheetChange}
       required
+      allowDeselect={false}
       description='Select the Google Sheets tab where this turtle data should be stored'
       error={!selectedSheetName ? 'Sheet selection is required' : undefined}
       searchable

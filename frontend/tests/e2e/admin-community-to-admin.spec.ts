@@ -182,14 +182,16 @@ test.describe('Admin Community turtle move to admin', () => {
     await page.getByText(COMMUNITY_MATCH.turtle_id).first().click();
 
     // Form should show; for community match, Sheet / Location and General Location are editable
-    await expect(page.getByLabel('Sheet / Location')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel('General Location', { exact: true })).toBeVisible({
+    // Use getByRole to avoid strict mode: Mantine Select has both input and listbox with same label
+    const sheetLocationInput = page.getByRole('textbox', { name: 'Sheet / Location' });
+    await expect(sheetLocationInput).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel(/General Location/)).toBeVisible({
       timeout: 5000,
     });
 
-    await page.getByLabel('Sheet / Location').click();
+    await sheetLocationInput.click();
     await page.getByRole('option', { name: 'Kansas' }).click();
-    await page.getByLabel('General Location', { exact: true }).fill('Wichita');
+    await page.getByLabel(/General Location/).fill('Wichita');
 
     await page.getByRole('button', { name: 'Save to Sheets & Confirm Match' }).click();
 
