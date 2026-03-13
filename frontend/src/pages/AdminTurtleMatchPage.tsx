@@ -319,29 +319,35 @@ export default function AdminTurtleMatchPage() {
     const state = data.general_location || '';
     const location = data.location || '';
 
-    let primaryId = newTurtlePrimaryId;
-    if (!primaryId) {
+    let generatedPrimaryId = newTurtlePrimaryId;
+    if (!generatedPrimaryId) {
       try {
         const primaryIdResponse = await generatePrimaryId({
           state,
           location,
         });
         if (primaryIdResponse.success && primaryIdResponse.primary_id) {
-          primaryId = primaryIdResponse.primary_id;
-          setNewTurtlePrimaryId(primaryId);
+          generatedPrimaryId = primaryIdResponse.primary_id;
+          setNewTurtlePrimaryId(generatedPrimaryId);
         }
       } catch (error) {
         console.error('Error generating primary ID:', error);
       }
     }
 
-    await handleConfirmNewTurtle(sheetName, data, backendLocationPath);
+    await handleConfirmNewTurtle(
+      sheetName,
+      data,
+      backendLocationPath,
+      generatedPrimaryId || undefined,
+    );
   };
 
   const handleConfirmNewTurtle = async (
     sheetNameOverride?: string,
     sheetsDataOverride?: TurtleSheetsData,
     backendPathOverride?: string,
+    primaryIdOverride?: string,
   ) => {
     const effectiveSheetName = sheetNameOverride || newTurtleSheetName;
     const effectiveSheetsData = sheetsDataOverride || newTurtleSheetsData;
@@ -375,6 +381,16 @@ export default function AdminTurtleMatchPage() {
     }
 
     setProcessing(true);
+    const progressNotificationId = `new-turtle-${imageId}`;
+    notifications.show({
+      id: progressNotificationId,
+      title: 'Creating turtle...',
+      message: 'Saving to Google Sheets and rebuilding search index.',
+      color: 'blue',
+      loading: true,
+      autoClose: false,
+      withCloseButton: false,
+    });
     try {
       // Backend path: State/Location (e.g. Kansas/Wichita) when useBackendLocations, else sheet name
       const backendPathLocation = effectiveBackendPath ?? effectiveSheetName;
@@ -385,7 +401,7 @@ export default function AdminTurtleMatchPage() {
       const turtleLocation = formLocation || '';
 
       // Generate primary ID if not already generated
-      let finalPrimaryId = newTurtlePrimaryId;
+      let finalPrimaryId = primaryIdOverride || newTurtlePrimaryId;
       if (!finalPrimaryId) {
         try {
           const primaryIdResponse = await generatePrimaryId({
@@ -432,22 +448,31 @@ export default function AdminTurtleMatchPage() {
 
       localStorage.removeItem(`match_${imageId}`);
 
-      notifications.show({
+      notifications.update({
+        id: progressNotificationId,
         title: 'Success!',
         message: 'New turtle created successfully',
         color: 'green',
         icon: <IconCheck size={18} />,
+        loading: false,
+        autoClose: 1800,
+        withCloseButton: true,
       });
 
       // Close the modal after successful creation
       setShowNewTurtleModal(false);
 
-      navigate('/');
+      // Small delay so success state is visible before navigation.
+      window.setTimeout(() => navigate('/'), 500);
     } catch (error) {
-      notifications.show({
+      notifications.update({
+        id: progressNotificationId,
         title: 'Error',
         message: error instanceof Error ? error.message : 'Failed to create new turtle',
         color: 'red',
+        loading: false,
+        autoClose: 5000,
+        withCloseButton: true,
       });
     } finally {
       setProcessing(false);

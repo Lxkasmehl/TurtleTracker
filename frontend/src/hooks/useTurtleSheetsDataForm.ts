@@ -185,11 +185,37 @@ export function useTurtleSheetsDataForm(
               const first = path.split('/')[0]?.trim() || '';
               return first && !LOCATION_SYSTEM_FOLDERS.includes(first);
             });
-            const states = [...new Set(filtered.map((p) => p.split('/')[0].trim()).filter(Boolean))].sort();
-            setAvailableSheets(states);
+            const byState = new Map<string, Set<string>>();
+            for (const path of filtered) {
+              const parts = path
+                .split('/')
+                .map((p) => p.trim())
+                .filter(Boolean);
+              const state = parts[0];
+              if (!state) continue;
+              if (!byState.has(state)) byState.set(state, new Set<string>());
+              if (state === 'Kansas' && parts.length > 1) {
+                byState.get(state)!.add(`${state}/${parts.slice(1).join('/')}`);
+              }
+            }
+            const states = Array.from(byState.keys()).sort((a, b) =>
+              a.localeCompare(b, undefined, { sensitivity: 'base' }),
+            );
+            const options: string[] = [];
+            for (const state of states) {
+              options.push(state);
+              if (state === 'Kansas') {
+                const kansasLocations = Array.from(byState.get(state) ?? []).sort((a, b) =>
+                  a.localeCompare(b, undefined, { sensitivity: 'base' }),
+                );
+                options.push(...kansasLocations);
+              }
+            }
+            setAvailableSheets(options);
             setSelectedSheetName((current) => {
-              if (!current && !initialSheetName && states.length > 0) {
-                return states[0];
+              if (!current && !initialSheetName && options.length > 0) {
+                const defaultKansasLocation = options.find((opt) => opt.startsWith('Kansas/'));
+                return defaultKansasLocation || options[0];
               }
               return current;
             });
@@ -347,8 +373,15 @@ export function useTurtleSheetsDataForm(
     } else if (mode === 'create' && formData.name && checkDuplicateName(formData.name)) {
       newErrors.name = duplicateNameMessage;
     }
-    // Admin backend path is data/State/Location/PrimaryID; Location comes from General Location.
-    if ((useBackendLocations || sheetSource === 'admin') && (mode === 'create' || requireNewSheetForCommunityMatch) && !formData.general_location?.trim()) {
+    const selectedHasLocation = useBackendLocations && selectedSheetName.includes('/');
+    // Admin backend path is data/State/Location/PrimaryID; Location comes from General Location
+    // unless a location-level selector option was chosen (e.g. Kansas/North Topeka).
+    if (
+      (useBackendLocations || sheetSource === 'admin') &&
+      (mode === 'create' || requireNewSheetForCommunityMatch) &&
+      !selectedHasLocation &&
+      !formData.general_location?.trim()
+    ) {
       newErrors.general_location = 'General location is required (used for backend path State/Location)';
     }
     if (requireNewSheetForCommunityMatch && !selectedSheetName?.trim()) {
@@ -401,18 +434,39 @@ export function useTurtleSheetsDataForm(
             : {}),
         };
       }
-      // Backend path: data/State/Location/PrimaryID where Location = general_location (sheet field).
+      const selectedPathParts = selectedSheetName
+        .split('/')
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const selectedState = selectedPathParts[0] || selectedSheetName;
+      const selectedLocationFromPath =
+        selectedPathParts.length > 1 ? selectedPathParts.slice(1).join('/') : '';
+
+      // If a location-level option was chosen in selector (e.g. Kansas/North Topeka),
+      // keep sheets tab as state (Kansas) and mirror location into general_location.
+      if (useBackendLocations && selectedLocationFromPath && !dataToSave.general_location?.trim()) {
+        dataToSave = { ...dataToSave, general_location: selectedLocationFromPath };
+      }
+
+      // Backend path: data/State/Location/PrimaryID where Location = general_location.
       const backendLocationPath =
-        useBackendLocations && selectedSheetName && dataToSave.general_location?.trim()
-          ? `${selectedSheetName}/${dataToSave.general_location.trim()}`
-          : useBackendLocations && selectedSheetName
-            ? selectedSheetName
+        useBackendLocations && selectedPathParts.length > 1
+          ? selectedSheetName
+          : useBackendLocations && selectedState && dataToSave.general_location?.trim()
+            ? `${selectedState}/${dataToSave.general_location.trim()}`
+            : useBackendLocations && selectedState
+              ? selectedState
             : undefined;
 
+      const sheetNameForSubmit =
+        useBackendLocations && selectedPathParts.length > 1
+          ? selectedState
+          : selectedSheetName;
+
       if (onCombinedSubmit) {
-        await onCombinedSubmit(dataToSave, selectedSheetName, backendLocationPath);
+        await onCombinedSubmit(dataToSave, sheetNameForSubmit, backendLocationPath);
       } else {
-        await onSave(dataToSave, selectedSheetName, backendLocationPath);
+        await onSave(dataToSave, sheetNameForSubmit, backendLocationPath);
         notifications.show({
           title: 'Success!',
           message: `Turtle data ${mode === 'create' ? 'created' : 'updated'} successfully`,
@@ -432,13 +486,32 @@ export function useTurtleSheetsDataForm(
     }
   };
 
+  const handleSelectedSheetNameChange = (value: string) => {
+    setSelectedSheetName(value);
+    if (!useBackendLocations) return;
+    const parts = value
+      .split('/')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 1) {
+      const loc = parts.slice(1).join('/');
+      setFormData((prev) => ({ ...prev, general_location: prev.general_location?.trim() ? prev.general_location : loc }));
+      setErrors((prev) => {
+        if (!prev.general_location) return prev;
+        const next = { ...prev };
+        delete next.general_location;
+        return next;
+      });
+    }
+  };
+
   return {
     formData,
     loading,
     errors,
     availableSheets,
     selectedSheetName,
-    setSelectedSheetName,
+    setSelectedSheetName: handleSelectedSheetNameChange,
     loadingSheets,
     showCreateSheetModal,
     setShowCreateSheetModal,

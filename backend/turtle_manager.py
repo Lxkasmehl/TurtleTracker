@@ -37,10 +37,48 @@ def _safe_folder_name(sheet_name):
     return out or "_"
 
 
-LOCATION_NAME_MAP = {
-    # "CBPS": "WT",
-    # "North Topeka": "NT",
+# --- FLASH DRIVE INGEST: Map drive folder names to backend folder names ---
+# When folder names on the flash drive don't match backend/Google Sheets, add mappings here.
+# Ingest will route files to the correct backend State/Location based on these maps.
+
+# Flat structure: when drive has location folders directly at root (no State parent),
+# map each folder name to "State/Location". Takes precedence over hierarchical logic.
+DRIVE_LOCATION_TO_BACKEND_PATH = {
+    "North Topeka": "Kansas/North Topeka",
+    "Lawrence": "Kansas/Lawrence",
+    "Karlyle Woods": "Kansas/Karlyle Woods",
+    "Valencia": "Kansas/Valencia",
+    "CPBS": "NebraskaCPBS/CPBS",
+    "Crescent Lake": "NebraskaCL/Crescent Lake",
 }
+
+# Flat structure: top-level folders that should be treated as State-level (not Location-level).
+# Images directly inside these folders ingest to data/<State>/<TurtleID>/...
+DRIVE_STATE_LEVEL_FOLDERS = {
+    "Incidental Places": "Incidental Places",
+    "Community": "Community",
+}
+
+# Hierarchical structure (drive_root/State/Location): map state/location names
+DRIVE_STATE_NAME_MAP = {
+    # Example: "KS": "Kansas",
+    # Example: "Kansas_2024": "Kansas",
+}
+
+LOCATION_NAME_MAP = {
+    # Example: "CBPS": "WT",
+    # Example: "TPK": "Topeka",
+}
+
+
+def _resolve_drive_state_name(drive_state_name):
+    """Map flash drive state folder name to backend state name."""
+    return DRIVE_STATE_NAME_MAP.get(drive_state_name, drive_state_name)
+
+
+def _resolve_drive_location_name(drive_location_name):
+    """Map flash drive location folder name to backend location name."""
+    return LOCATION_NAME_MAP.get(drive_location_name, drive_location_name)
 
 
 class TurtleManager:
@@ -200,41 +238,60 @@ class TurtleManager:
         count_new = 0
         count_skipped = 0
 
-        for state_name in os.listdir(drive_root_path):
+        def process_location_folder(location_source_path, location_dest_path):
+            """Process all turtle images in a location folder."""
+            nonlocal count_new, count_skipped
+            for filename in os.listdir(location_source_path):
+                if not filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    continue
+                turtle_id = filename[:4].strip().rstrip('_')
+                source_path = os.path.join(location_source_path, filename)
+                status = self._process_single_turtle(source_path, location_dest_path, turtle_id)
+                if status == "created":
+                    count_new += 1
+                elif status == "skipped":
+                    count_skipped += 1
 
-            if state_name == "System Volume Information" or state_name.startswith('.'):
+        for top_level_name in os.listdir(drive_root_path):
+
+            if top_level_name == "System Volume Information" or top_level_name.startswith('.'):
                 continue
 
-            state_source_path = os.path.join(drive_root_path, state_name)
-            if not os.path.isdir(state_source_path): continue
+            top_level_path = os.path.join(drive_root_path, top_level_name)
+            if not os.path.isdir(top_level_path):
+                continue
 
-            state_dest_path = os.path.join(self.base_dir, state_name)
+            # Flat structure: location folders at root map directly to State/Location
+            if top_level_name in DRIVE_LOCATION_TO_BACKEND_PATH:
+                backend_path = DRIVE_LOCATION_TO_BACKEND_PATH[top_level_name]
+                state_name, location_name = backend_path.split("/", 1)
+                location_dest_path = os.path.join(self.base_dir, state_name, location_name)
+                os.makedirs(location_dest_path, exist_ok=True)
+                process_location_folder(top_level_path, location_dest_path)
+                continue
+
+            # Flat structure: State-level folders at root (not location folders)
+            if top_level_name in DRIVE_STATE_LEVEL_FOLDERS:
+                state_dest_name = DRIVE_STATE_LEVEL_FOLDERS[top_level_name]
+                state_dest_path = os.path.join(self.base_dir, state_dest_name)
+                os.makedirs(state_dest_path, exist_ok=True)
+                process_location_folder(top_level_path, state_dest_path)
+                continue
+
+            # Hierarchical structure: State/Location
+            state_dest_name = _resolve_drive_state_name(top_level_name)
+            state_dest_path = os.path.join(self.base_dir, state_dest_name)
             os.makedirs(state_dest_path, exist_ok=True)
 
-            for location_name in os.listdir(state_source_path):
-                location_source_path = os.path.join(state_source_path, location_name)
-                if not os.path.isdir(location_source_path) or location_name.startswith('.'): continue
+            for location_name in os.listdir(top_level_path):
+                location_source_path = os.path.join(top_level_path, location_name)
+                if not os.path.isdir(location_source_path) or location_name.startswith('.'):
+                    continue
 
-                official_name = self.get_official_location_name(location_name)
+                official_name = _resolve_drive_location_name(location_name)
                 location_dest_path = os.path.join(state_dest_path, official_name)
                 os.makedirs(location_dest_path, exist_ok=True)
-
-                for filename in os.listdir(location_source_path):
-                    if not filename.lower().endswith(('.jpg', '.jpeg', '.png')): continue
-
-                    # Extract only the first 4 chars (Letter + 3 Numbers)
-                    # Example: "T101_date.jpg" -> "T101"
-                    turtle_id = filename[:4].strip().rstrip('_')
-
-                    source_path = os.path.join(location_source_path, filename)
-
-                    # Call helper (which handles the duplicate skipping logic)
-                    status = self._process_single_turtle(source_path, location_dest_path, turtle_id)
-
-                    if status == "created":
-                        count_new += 1
-                    elif status == "skipped":
-                        count_skipped += 1
+                process_location_folder(location_source_path, location_dest_path)
         # --- TIMER END ---
         total_time = time.time() - ingest_start_time
         print(f"\n🎉 Ingest Complete. New: {count_new}, Skipped (Existing/Duplicates): {count_skipped}")

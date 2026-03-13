@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Review queue**: Badges for "Admin upload" vs "Community upload"; sheet/location dropdown respects `sheetSource` (admin vs community). API: `GET /api/sheets/community-sheets`; sheets/turtle endpoints accept `target_spreadsheet: 'community'`.
 - **Community sheets**: Option "+ Create New Sheet" for community turtles (creates tab and `data/Community_Uploads/<name>`). Backend folder layout: `data/<admin sheet>`, `data/Community_Uploads/<community sheet>`.
 - **Community turtle → admin**: When matching a community turtle to the research spreadsheet, flow selects admin sheet + location, creates turtle row, moves folder to `data/<State>/<Location>/`, and removes from community sheet. Match search includes selected location plus all community turtles.
+- **Flash-drive ingest mapping**: Configurable ingest routing maps drive folder names to backend destinations (`State/Location`) without renaming source folders. Supports flat drive roots and hierarchical `State/Location` layouts.
+- **Ingest state-level folder handling**: Added explicit support for top-level ingest folders that should be treated as state roots (not location folders), so imports can target `data/<State>/...` when needed.
 
 ### Changed
 
@@ -26,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Turtle forms**: ID field always read-only (create and edit); copy clarifies that IDs may not be unique across sheets. General Location required for admin turtles; paths `data/State/Location/PrimaryID`.
 - **Locations**: `get_all_locations()` includes state-level folders so sheet-based states appear in dropdowns without subfolders. Review queue: admin `new_location` = Sheet/general_location; community = single sheet in community spreadsheet.
 - **Match search**: With a location selected, search runs against that location plus all `Community_Uploads` turtles; home page helper text updated.
+- **Admin upload match scope**: Home page selector "Which location to test against?" now supports location-level options in `State/Location` format; Kansas expands to location entries while other states remain state-level.
+- **Create New Turtle selector**: In backend-location mode, `Sheet / Location` now mirrors Kansas-only location expansion. Selecting `Kansas/<location>` keeps Google Sheets tab at state level while targeting backend path at location level.
 
 ### Fixed
 
@@ -34,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E**: Flaky fixes—sex dropdown scoped to listbox, longer timeout for "From this upload", review queue content wait and "No pending reviews" timeouts (WebKit, Mobile Safari).
 - **Community sheet creation**: "Create New Sheet" for community turtles no longer creates the tab in the research spreadsheet; generate-id and update-turtle accept `target_spreadsheet`, frontend passes it when `sheetSource` is community.
 - **E2E and test setup**: Test user seed scripts always update password and role for existing users so E2E credentials work regardless of prior state. Playwright webServer uses `path`/`cwd` and `127.0.0.1`; Vite `strictPort: true`. Login fixtures use `noWaitAfter`, detect login errors, and throw clear messages suggesting `npm run test:setup`. E2E selectors: `getByRole('textbox')` for Sheet/Location and regex for General Location to avoid strict mode; ID field always disabled; sheet select `all
+- **New turtle create flow UX**: Added in-progress/success notification updates and short post-success delay before redirect so completion feedback remains visible.
+- **New turtle create latency**: Removed duplicate primary-ID generation path in frontend create/confirm flow to reduce unnecessary round-trips.
 
 ### Removed
 

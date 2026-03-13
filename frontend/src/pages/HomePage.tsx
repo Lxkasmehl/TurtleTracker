@@ -22,7 +22,7 @@ import {
   IconCamera,
   IconInfoCircle,
 } from '@tabler/icons-react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
@@ -39,7 +39,7 @@ export default function HomePage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [instructionsOpened, setInstructionsOpened] = useState(false);
-  // Admin: backend folder locations for match scope (State = first path segment)
+  // Admin: backend folder locations for match scope (State and State/Location)
   const [availableLocations, setAvailableLocations] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [selectedMatchSheet, setSelectedMatchSheet] = useState<string>(MATCH_ALL_VALUE);
@@ -52,7 +52,7 @@ export default function HomePage() {
     }
   }, []);
 
-  // Admin: load backend locations (states = first path segment) for match dropdown
+  // Admin: load backend locations (state and state/location) for match dropdown
   useEffect(() => {
     if (role !== 'admin') return;
     setLocationsLoading(true);
@@ -62,15 +62,22 @@ export default function HomePage() {
           setAvailableLocations([]);
           return;
         }
-        const states = new Set<string>();
-        for (const path of res.locations as string[]) {
+        const paths = new Set<string>();
+        for (const rawPath of res.locations as string[]) {
+          const path = (rawPath || '').trim();
           const first = (path.split('/')[0] ?? '').trim();
-          if (first && !SYSTEM_FOLDERS.includes(first)) states.add(first);
+          if (path && first && !SYSTEM_FOLDERS.includes(first)) {
+            paths.add(path);
+          }
         }
-        const list = Array.from(states).sort();
+        const list = Array.from(paths).sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base' }),
+        );
         setAvailableLocations(list);
+        const firstLocation = list.find((p) => p.includes('/'));
+        const defaultSelection = firstLocation || list[0] || MATCH_ALL_VALUE;
         setSelectedMatchSheet((prev) =>
-          prev === MATCH_ALL_VALUE && list.length ? list[0] : prev,
+          prev === MATCH_ALL_VALUE ? defaultSelection : prev,
         );
       })
       .catch(() => setAvailableLocations([]))
@@ -78,11 +85,50 @@ export default function HomePage() {
   }, [role]);
   useEffect(() => {
     if (role === 'admin' && availableLocations.length > 0) {
+      const firstLocation = availableLocations.find((p) => p.startsWith('Kansas/'));
+      const defaultSelection = firstLocation || availableLocations[0];
       setSelectedMatchSheet((prev) =>
-        prev === MATCH_ALL_VALUE ? availableLocations[0] : prev,
+        prev === MATCH_ALL_VALUE ? defaultSelection : prev,
       );
     }
   }, [role, availableLocations]);
+
+  const matchScopeOptions = useMemo(() => {
+    const byState = new Map<string, Set<string>>();
+
+    for (const path of availableLocations) {
+      const parts = path
+        .split('/')
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const state = parts[0];
+      if (!state) continue;
+      if (!byState.has(state)) byState.set(state, new Set<string>());
+      if (parts.length > 1) {
+        byState.get(state)!.add(`${state}/${parts.slice(1).join('/')}`);
+      }
+    }
+
+    const orderedStates = Array.from(byState.keys()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+    const options: { value: string; label: string }[] = [];
+
+    for (const state of orderedStates) {
+      options.push({ value: state, label: state });
+      if (state === 'Kansas') {
+        const stateLocations = Array.from(byState.get(state) ?? []).sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base' }),
+        );
+        for (const loc of stateLocations) {
+          options.push({ value: loc, label: loc });
+        }
+      }
+    }
+
+    options.push({ value: MATCH_ALL_VALUE, label: 'All locations (exception)' });
+    return options;
+  }, [availableLocations]);
 
   const matchSheetForUpload =
     role === 'admin'
@@ -246,13 +292,10 @@ export default function HomePage() {
                 </Group>
               ) : (
                 <Select
-                  data={[
-                    ...availableLocations.map((s) => ({ value: s, label: s })),
-                    { value: MATCH_ALL_VALUE, label: 'All locations (exception)' },
-                  ]}
+                  data={matchScopeOptions}
                   value={selectedMatchSheet}
                   onChange={(v) => v != null && setSelectedMatchSheet(v)}
-                  placeholder={availableLocations.length ? 'Select location' : 'No locations yet'}
+                  placeholder={availableLocations.length ? 'Select state or location' : 'No locations yet'}
                   allowDeselect={false}
                   disabled={uploadState === 'uploading'}
                 />

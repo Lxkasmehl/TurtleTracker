@@ -166,7 +166,11 @@ export const TurtleSheetsDataForm = forwardRef<
               hintCoordinates={hintCoordinates}
               errors={hook.errors}
               mode={mode}
-              requireGeneralLocationForPath={(sheetSource === 'admin' || useBackendLocations) && (mode === 'create' || requireNewSheetForCommunityMatch)}
+              requireGeneralLocationForPath={
+                (sheetSource === 'admin' || useBackendLocations) &&
+                (mode === 'create' || requireNewSheetForCommunityMatch) &&
+                !(useBackendLocations && hook.selectedSheetName.includes('/'))
+              }
               requireNewSheetForCommunityMatch={requireNewSheetForCommunityMatch}
             />
           </Grid>
