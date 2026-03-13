@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Search filtering**: Fixed default and location-filtered matching in GUI/API by normalizing location filters and aligning filter labels with cached index locations.
 - **Review safety**: Hardened review-packet processing with safer packet IDs and staged reference-image replacement to avoid losing existing reference data if feature extraction fails.
 - **Dependencies**: Pinned LightGlue to `v0.2` for reproducible backend installs.
+- **Legacy compatibility**: Removed remaining SIFT-based processing calls and marked VLAD/FAISS helpers as deprecated compatibility modules (non-default path).
+- **Docker runtime UX**: Added GPU compose override (`docker-compose.gpu.yml`) plus cross-platform launchers (`scripts/docker-up.ps1`, `scripts/docker-up.sh`) that prefer GPU when available and fall back to CPU automatically.
+- **CI hardening**: Added Linux launcher validation in GitHub Actions (`bash -n` + `shellcheck`) to keep Docker startup parity healthy across platforms.
 - **Repository cleanup**: Removed unused root-level `package.json` to avoid confusion with the actual frontend package.
 
 ---

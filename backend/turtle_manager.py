@@ -184,7 +184,7 @@ class TurtleManager:
         print(f"⏱️ Total Ingest Time: {total_time:.2f}s")
 
     def _process_single_turtle(self, source_path, location_dir, turtle_id):
-        """Creates folders and generates .pt tensor file using SuperPoint (No SIFT)."""
+        """Creates folders and generates .pt tensor file using SuperPoint."""
         turtle_dir = os.path.join(location_dir, turtle_id)
         ref_dir = os.path.join(turtle_dir, 'ref_data')
         loose_dir = os.path.join(turtle_dir, 'loose_images')
@@ -211,7 +211,7 @@ class TurtleManager:
 
     # --- FAST VRAM SEARCH LOGIC ---
     def search_for_matches(self, query_image_path, location_filter="All Locations"):
-        """VRAM Cached Deep Search. Bypasses disk, replaces old SIFT/RANSAC/Mirror logic."""
+        """VRAM cached SuperPoint/LightGlue search path."""
         filename = os.path.basename(query_image_path)
         t_start = time.time()
 
@@ -306,7 +306,7 @@ class TurtleManager:
         return queue_items
 
     # MERGE FIX: Massive hybrid function. Keeps partner's manifest/metadata merging,
-    # but integrates your replace_reference and VRAM reloading features without SIFT.
+    # but integrates your replace_reference and VRAM reloading features.
     def approve_review_packet(self, request_id, match_turtle_id=None, replace_reference=False, new_location=None,
                               new_turtle_id=None, uploaded_image_path=None, find_metadata=None):
         """

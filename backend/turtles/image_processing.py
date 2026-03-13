@@ -247,7 +247,7 @@ brain = TurtleDeepMatcher()
 
 def load_or_generate_persistent_data(_data_dir):
     """
-    Deprecated FAISS/SIFT compatibility shim.
+    Deprecated VLAD/FAISS compatibility shim.
     """
     logger.warning(
         "load_or_generate_persistent_data() is deprecated in SuperPoint mode and should not be used."
@@ -255,11 +255,11 @@ def load_or_generate_persistent_data(_data_dir):
     return False
 
 
-def process_image_through_SIFT(image_path, output_path):
+def extract_and_store_features(image_path, output_path):
     """
-    Deprecated compatibility shim for legacy codepaths.
-    Converts legacy .npz target naming to current .pt extraction output.
+    Extract and persist SuperPoint features.
+    If a legacy .npz path is provided, convert it to the equivalent .pt path.
     """
-    pt_path = output_path.replace(".npz", ".pt")
+    pt_path = output_path.replace(".npz", ".pt") if output_path.endswith(".npz") else output_path
     success = brain.process_and_save(image_path, pt_path)
     return success, None

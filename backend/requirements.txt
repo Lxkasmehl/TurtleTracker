@@ -2,9 +2,9 @@ flask==3.0.0
 flask-cors==4.0.0
 Django>=5.2
 Pillow>=10.0
-opencv-python>=4.8.0
 numpy>=1.26.0
 scikit-learn>=1.3.2
+# Deprecated optional fallback dependency (VLAD/FAISS experimentation only)
 faiss-cpu>=1.7.4
 joblib>=1.3.2
 scipy>=1.11.4
@@ -28,7 +28,6 @@ torchvision>=0.15.0
 lightglue @ https://github.com/cvg/LightGlue/archive/refs/tags/v0.2.zip
 einops
 kornia
-scipy
 
 # Computer Vision (Use headless for Docker/Linux compatibility)
 opencv-python-headless>=4.8.0

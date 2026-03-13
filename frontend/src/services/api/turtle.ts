@@ -10,7 +10,6 @@ export interface TurtleMatch {
   location: string;
   score: number;
   confidence: number;
-  distance?: number;
   file_path: string;
   filename: string;
 }
