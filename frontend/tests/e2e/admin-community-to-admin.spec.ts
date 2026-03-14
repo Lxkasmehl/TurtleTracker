@@ -182,8 +182,11 @@ test.describe('Admin Community turtle move to admin', () => {
     await page.getByText(COMMUNITY_MATCH.turtle_id).first().click();
 
     // Form should show; for community match, Sheet / Location and General Location are editable
-    // On mobile (≤768px) we use NativeSelect (native <select>); on desktop we use Mantine Select (listbox in portal)
-    const sheetLocationInput = page.getByRole('combobox', { name: 'Sheet / Location' });
+    // On mobile (≤768px) we use NativeSelect (native <select>); on desktop we use Mantine Select (listbox in portal).
+    // getByLabel('Sheet / Location') matches 2 on desktop (input + listbox via aria-labelledby), so target by role: textbox (desktop) or combobox (native <select> on mobile).
+    const sheetLocationInput = page
+      .getByRole('textbox', { name: 'Sheet / Location' })
+      .or(page.getByRole('combobox', { name: 'Sheet / Location' }));
     await expect(sheetLocationInput).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel(/General Location/)).toBeVisible({
       timeout: 5000,

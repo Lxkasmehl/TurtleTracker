@@ -177,7 +177,9 @@ export async function selectSheetInCreateTurtleDialog(
   await option.click();
 }
 
-/** Fills the General Location field in Create New Turtle dialog (required for admin backend path). */
+/**
+ * Fills the General Location field in Create New Turtle dialog (required for admin backend path).
+ */
 export async function fillGeneralLocationInCreateTurtleDialog(
   dialog: ReturnType<Page['getByRole']>,
   value: string,

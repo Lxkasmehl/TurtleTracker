@@ -1,12 +1,14 @@
 import { test, expect } from '@playwright/test';
-import {
+import * as helpers from './fixtures';
+
+const {
   loginAsAdmin,
   grantLocationPermission,
   getTestImageBuffer,
   clickUploadPhotoButton,
   selectSheetInCreateTurtleDialog,
   fillGeneralLocationInCreateTurtleDialog,
-} from './fixtures';
+} = helpers;
 
 /**
  * E2E tests: duplicate turtle name validation in the Create New Turtle form.
