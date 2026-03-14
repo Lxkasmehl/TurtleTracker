@@ -90,7 +90,7 @@ jobs:
           E2E_ADMIN_PASSWORD: testpassword123
           E2E_COMMUNITY_EMAIL: community@test.com
           E2E_COMMUNITY_PASSWORD: testpassword123
-        run: npx playwright test --ignore=tests/e2e/auth.spec.ts --ignore=tests/e2e/navigation.spec.ts --ignore=tests/e2e/upload.spec.ts
+        run: npx playwright test -c playwright.remaining.config.ts
 
       - name: Upload test results
         if: failure()
