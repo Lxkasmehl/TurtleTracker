@@ -40,8 +40,23 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.goto('/login');
   await page.getByLabel('Email').fill(ADMIN_EMAIL);
   await page.getByLabel('Password').fill(ADMIN_PASSWORD);
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  await page.waitForURL('/', { timeout: 10000 });
+  await page.getByRole('button', { name: 'Sign In' }).click({ noWaitAfter: true });
+
+  const loginError = page.getByRole('main').getByRole('alert').filter({ hasText: /invalid|error|password|failed|unauthorized/i });
+  const navigated = page.waitForURL('/', { timeout: 15000 }).then(() => true).catch(() => false);
+  const errorShown = loginError.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+
+  const [didNavigate, didShowError] = await Promise.all([navigated, errorShown]);
+
+  if (didShowError && !didNavigate) {
+    const msg = (await loginError.textContent().catch(() => null)) ?? 'Unknown error';
+    throw new Error(
+      `Login failed: ${msg.trim()}. Run \`npm run test:setup\` in auth-backend to seed test users.`,
+    );
+  }
+  if (!didNavigate) {
+    throw new Error('Login timed out. Run `npm run test:setup` in auth-backend and ensure the server is running.');
+  }
   await expect(page.getByTestId('role-badge')).toHaveText(/Admin/);
 }
 
@@ -60,8 +75,23 @@ export async function loginAsCommunity(page: Page): Promise<void> {
   await page.goto('/login');
   await page.getByLabel('Email').fill(COMMUNITY_EMAIL);
   await page.getByLabel('Password').fill(COMMUNITY_PASSWORD);
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  await page.waitForURL('/', { timeout: 10000 });
+  await page.getByRole('button', { name: 'Sign In' }).click({ noWaitAfter: true });
+
+  const loginError = page.getByRole('main').getByRole('alert').filter({ hasText: /invalid|error|password|failed|unauthorized/i });
+  const navigated = page.waitForURL('/', { timeout: 15000 }).then(() => true).catch(() => false);
+  const errorShown = loginError.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+
+  const [didNavigate, didShowError] = await Promise.all([navigated, errorShown]);
+
+  if (didShowError && !didNavigate) {
+    const msg = (await loginError.textContent().catch(() => null)) ?? 'Unknown error';
+    throw new Error(
+      `Login failed: ${msg.trim()}. Run \`npm run test:setup\` in auth-backend to seed test users.`,
+    );
+  }
+  if (!didNavigate) {
+    throw new Error('Login timed out. Run `npm run test:setup` in auth-backend and ensure the server is running.');
+  }
   await expect(page.getByTestId('role-badge')).toHaveText(/Community/);
 }
 
@@ -167,9 +197,23 @@ export async function selectSheetInCreateTurtleDialog(
   await page
     .getByRole('listbox', { name: SHEET_SELECT_LABEL })
     .waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
-  const option = page.getByRole('option', { name: sheetName });
+  // exact: true so "Kansas" does not match "Kansas/Wichita" (strict mode)
+  const option = page.getByRole('listbox', { name: SHEET_SELECT_LABEL }).getByRole('option', { name: sheetName, exact: true });
   await option.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
   await option.click();
+}
+
+/**
+ * Fills the General Location field in Create New Turtle dialog (required for admin backend path).
+ */
+export async function fillGeneralLocationInCreateTurtleDialog(
+  dialog: ReturnType<Page['getByRole']>,
+  value: string,
+): Promise<void> {
+  // Required fields get " *" appended by Mantine, so avoid exact match on the label.
+  const field = dialog.getByLabel(/General Location/);
+  await field.waitFor({ state: 'visible', timeout: 5000 });
+  await field.fill(value);
 }
 
 const SEX_SELECT_LABEL = 'Sex';
