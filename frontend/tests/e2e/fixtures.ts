@@ -24,8 +24,23 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.goto('/login');
   await page.getByLabel('Email').fill(ADMIN_EMAIL);
   await page.getByLabel('Password').fill(ADMIN_PASSWORD);
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  await page.waitForURL('/', { timeout: 10000 });
+  await page.getByRole('button', { name: 'Sign In' }).click({ noWaitAfter: true });
+
+  const loginError = page.getByRole('main').getByRole('alert').filter({ hasText: /invalid|error|password|failed|unauthorized/i });
+  const navigated = page.waitForURL('/', { timeout: 15000 }).then(() => true).catch(() => false);
+  const errorShown = loginError.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+
+  const [didNavigate, didShowError] = await Promise.all([navigated, errorShown]);
+
+  if (didShowError && !didNavigate) {
+    const msg = (await loginError.textContent().catch(() => null)) ?? 'Unknown error';
+    throw new Error(
+      `Login failed: ${msg.trim()}. Run \`npm run test:setup\` in auth-backend to seed test users.`,
+    );
+  }
+  if (!didNavigate) {
+    throw new Error('Login timed out. Run `npm run test:setup` in auth-backend and ensure the server is running.');
+  }
   await expect(page.getByTestId('role-badge')).toHaveText(/Admin/);
 }
 
@@ -34,8 +49,23 @@ export async function loginAsCommunity(page: Page): Promise<void> {
   await page.goto('/login');
   await page.getByLabel('Email').fill(COMMUNITY_EMAIL);
   await page.getByLabel('Password').fill(COMMUNITY_PASSWORD);
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  await page.waitForURL('/', { timeout: 10000 });
+  await page.getByRole('button', { name: 'Sign In' }).click({ noWaitAfter: true });
+
+  const loginError = page.getByRole('main').getByRole('alert').filter({ hasText: /invalid|error|password|failed|unauthorized/i });
+  const navigated = page.waitForURL('/', { timeout: 15000 }).then(() => true).catch(() => false);
+  const errorShown = loginError.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+
+  const [didNavigate, didShowError] = await Promise.all([navigated, errorShown]);
+
+  if (didShowError && !didNavigate) {
+    const msg = (await loginError.textContent().catch(() => null)) ?? 'Unknown error';
+    throw new Error(
+      `Login failed: ${msg.trim()}. Run \`npm run test:setup\` in auth-backend to seed test users.`,
+    );
+  }
+  if (!didNavigate) {
+    throw new Error('Login timed out. Run `npm run test:setup` in auth-backend and ensure the server is running.');
+  }
   await expect(page.getByTestId('role-badge')).toHaveText(/Community/);
 }
 
@@ -99,12 +129,17 @@ export async function clickUploadPhotoButton(page: Page): Promise<void> {
  * Selects an option from an open Mantine Select/Combobox by keyboard.
  * Call after clicking the select input. Index 0 = first option.
  * Works when the dropdown is portaled or not visible to Playwright (e.g. mobile).
+ * First ArrowDown moves focus from input into the list (onto first option); then we need
+ * optionIndex more steps to reach the desired option. So total = optionIndex + 1 for all browsers.
  */
 export async function selectComboboxOptionByIndex(
   page: Page,
   optionIndex: number,
 ): Promise<void> {
-  for (let i = 0; i < optionIndex; i++) {
+  await page.waitForTimeout(150);
+  // One ArrowDown to move focus from input into list (onto first option), then optionIndex more.
+  const steps = optionIndex + 1;
+  for (let i = 0; i < steps; i++) {
     await page.keyboard.press('ArrowDown');
   }
   await page.keyboard.press('Enter');
@@ -136,17 +171,34 @@ export async function selectSheetInCreateTurtleDialog(
   await page
     .getByRole('listbox', { name: SHEET_SELECT_LABEL })
     .waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
-  const option = page.getByRole('option', { name: sheetName });
+  // exact: true so "Kansas" does not match "Kansas/Wichita" (strict mode)
+  const option = page.getByRole('listbox', { name: SHEET_SELECT_LABEL }).getByRole('option', { name: sheetName, exact: true });
   await option.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
   await option.click();
 }
 
+/**
+ * Fills the General Location field in Create New Turtle dialog (required for admin backend path).
+ */
+export async function fillGeneralLocationInCreateTurtleDialog(
+  dialog: ReturnType<Page['getByRole']>,
+  value: string,
+): Promise<void> {
+  // Required fields get " *" appended by Mantine, so avoid exact match on the label.
+  const field = dialog.getByLabel(/General Location/);
+  await field.waitFor({ state: 'visible', timeout: 5000 });
+  await field.fill(value);
+}
+
 const SEX_SELECT_LABEL = 'Sex';
 const SEX_DROPDOWN_TIMEOUT = 10_000;
+/** Option order in UI (turtleSheetsDataFormFieldsConfig: F, M, J, U). */
+const SEX_OPTION_INDEX: Record<string, number> = { F: 0, M: 1, J: 2, U: 3 };
 
 /**
  * In the Create New Turtle dialog, select Sex (e.g. "F", "M").
  * On mobile we use NativeSelect (native <select>); on desktop, Mantine Select (listbox).
+ * Uses keyboard selection for Mantine so options that render outside the viewport (portaled dropdown) still work.
  */
 export async function selectSexInCreateTurtleDialog(
   page: Page,
@@ -164,10 +216,14 @@ export async function selectSexInCreateTurtleDialog(
 
   await sexSelect.scrollIntoViewIfNeeded();
   await sexSelect.click();
-  await page
-    .getByRole('listbox', { name: SEX_SELECT_LABEL })
-    .waitFor({ state: 'visible', timeout: SEX_DROPDOWN_TIMEOUT });
-  const option = page.getByRole('option', { name: value });
-  await option.waitFor({ state: 'visible', timeout: SEX_DROPDOWN_TIMEOUT });
-  await option.click({ force: true });
+  const listbox = page.getByRole('listbox', { name: SEX_SELECT_LABEL });
+  await listbox.waitFor({ state: 'visible', timeout: SEX_DROPDOWN_TIMEOUT });
+  // Keyboard selection avoids portaled options being outside viewport (no option.click).
+  const optionIndex = SEX_OPTION_INDEX[value];
+  if (optionIndex === undefined) {
+    throw new Error(`Unknown sex value: ${value}`);
+  }
+  await selectComboboxOptionByIndex(page, optionIndex);
+  // Wait for listbox to close so the value is committed and generate-id can run.
+  await listbox.waitFor({ state: 'hidden', timeout: SEX_DROPDOWN_TIMEOUT });
 }

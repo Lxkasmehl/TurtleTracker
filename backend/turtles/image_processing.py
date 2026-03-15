@@ -198,8 +198,10 @@ class TurtleDeepMatcher:
 
         for cand in self.vram_cache:
             # Apply location filter early to skip unnecessary math
-            if location_filter and location_filter != "All Locations" and cand['location'] != location_filter:
-                continue
+            if location_filter and location_filter != "All Locations":
+                allowed = set(location_filter) if isinstance(location_filter, list) else {location_filter}
+                if cand['location'] not in allowed:
+                    continue
 
             # --- NEW: Bulletproof device alignment check ---
             cand_feats_safe = {k: v.to(self.device) for k, v in cand['feats'].items()}

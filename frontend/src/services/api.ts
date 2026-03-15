@@ -19,6 +19,8 @@ export {
   logout,
   getGoogleAuthUrl,
   getInvitationDetails,
+  verifyEmail,
+  resendVerificationEmail,
   promoteToAdmin,
 } from './api/auth';
 export type {
@@ -69,6 +71,8 @@ export {
   generatePrimaryId,
   generateTurtleId,
   listSheets,
+  listCommunitySheets,
+  getLocations,
   createSheet,
   getTurtleNames,
   listAllTurtlesFromSheets,
@@ -76,6 +80,7 @@ export {
 export type {
   TurtleSheetsData,
   GetTurtleSheetsDataResponse,
+  GetLocationsResponse,
   ListSheetsResponse,
   GeneratePrimaryIdRequest,
   GeneratePrimaryIdResponse,

@@ -32,15 +32,13 @@ async function createUser(
     .get(email.toLowerCase()) as User | undefined;
 
   if (existingUser) {
-    // Update role if different
-    if (existingUser.role !== role) {
-      db.prepare(
-        'UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-      ).run(role, existingUser.id);
-      console.log(`✅ User ${email} updated to role: ${role}`);
-    } else {
-      console.log(`ℹ️  User ${email} already exists with role: ${role}`);
-    }
+    // Always set password and role to seed values so E2E credentials work regardless of prior state
+    const now = new Date().toISOString();
+    const passwordHash = await bcrypt.hash(password, 10);
+    db.prepare(
+      'UPDATE users SET password_hash = ?, role = ?, email_verified = ?, email_verified_at = ?, updated_at = ? WHERE id = ?'
+    ).run(passwordHash, role, 1, now, now, existingUser.id);
+    console.log(`✅ User ${email} updated (password + role) for e2e`);
     return;
   }
 
@@ -51,6 +49,11 @@ async function createUser(
   const result = db
     .prepare('INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)')
     .run(email.toLowerCase(), passwordHash, name, role);
+
+  const now = new Date().toISOString();
+  db.prepare(
+    'UPDATE users SET email_verified = ?, email_verified_at = ?, updated_at = ? WHERE id = ?'
+  ).run(1, now, now, result.lastInsertRowid);
 
   console.log(`✅ Created ${role} user: ${email} (ID: ${result.lastInsertRowid})`);
 }

@@ -150,13 +150,12 @@ def register_upload_routes(app):
 
                 formatted_matches = []
                 for match in matches:
-                    pt_path = match.get('file_path', '')
+                    pt_path = match.get('file_path', '') or ''
                     image_path = convert_pt_to_image_path(pt_path)
-
-                    # ARCHITECT FIX: Using SuperPoint AI Metrics instead of Faiss distances
+                    loc = (match.get('location') or 'Unknown').strip() or 'Unknown'
                     formatted_matches.append({
                         'turtle_id': match.get('site_id', 'Unknown') or 'Unknown',
-                        'location': match.get('location', 'Unknown') or 'Unknown',
+                        'location': loc,
                         'score': int(match.get('score', 0)),
                         'confidence': float(match.get('confidence', 0.0)),
                         'file_path': image_path,
