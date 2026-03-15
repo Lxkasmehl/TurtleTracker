@@ -54,9 +54,10 @@ def check_auth_revocation(auth_header):
     """
     Call auth service to enforce demotion revocation (tokens_valid_after).
     Returns (allowed: bool, error_message: str or None).
+    Fails closed when AUTH_URL is unset so demoted staff/admin tokens are not accepted.
     """
     if not AUTH_URL:
-        return True, None
+        return False, 'AUTH_URL must be set to verify staff/admin tokens (revocation check)'
     url = f'{AUTH_URL}/auth/validate'
     try:
         req = urllib.request.Request(url, method='POST', headers={'Authorization': auth_header})
