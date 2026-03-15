@@ -5,7 +5,6 @@ import {
   Text,
   Group,
   Stack,
-  Center,
   Button,
   Select,
   Loader,
@@ -239,44 +238,23 @@ export default function HomePage() {
     <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
       <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md' withBorder>
         <Stack gap='lg'>
-          <Center>
-            <Stack gap='xs' align='center' style={{ width: '100%' }}>
-              {isMobile ? (
-                <Stack gap='xs' align='center' style={{ width: '100%' }}>
-                  <Title order={1} ta='center'>
-                    Photo Upload
-                  </Title>
-                  <Button
-                    variant='light'
-                    size='sm'
-                    leftSection={<IconInfoCircle size={16} />}
-                    onClick={() => setInstructionsOpened(true)}
-                    fullWidth
-                  >
-                    View Instructions
-                  </Button>
-                </Stack>
-              ) : (
-                <Group justify='space-between' style={{ width: '100%' }}>
-                  <div style={{ flex: 1 }} />
-                  <Title order={1}>Photo Upload</Title>
-                  <Group style={{ flex: 1 }} justify='flex-end'>
-                    <Button
-                      variant='light'
-                      size='sm'
-                      leftSection={<IconInfoCircle size={16} />}
-                      onClick={() => setInstructionsOpened(true)}
-                    >
-                      View Instructions
-                    </Button>
-                  </Group>
-                </Group>
-              )}
-              <Text size='sm' c='dimmed' ta='center'>
-                Upload a photo to save it in the backend
-              </Text>
-            </Stack>
-          </Center>
+          <Stack gap="xs" align="center">
+            <Title order={1} ta="center">
+              Photo Upload
+            </Title>
+            <Text size="sm" c="dimmed" ta="center">
+              Upload a photo to save it in the backend
+            </Text>
+            <Button
+              variant="subtle"
+              size="sm"
+              c="dimmed"
+              leftSection={<IconInfoCircle size={16} />}
+              onClick={() => setInstructionsOpened(true)}
+            >
+              View instructions
+            </Button>
+          </Stack>
 
           {/* Admin: select which location (backend folder / state) to test against */}
           {role === 'admin' && (
