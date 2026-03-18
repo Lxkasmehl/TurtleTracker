@@ -303,9 +303,9 @@ class GoogleSheetsService:
                 self._invalidate_list_sheets_cache()
             return result
 
-    def get_sheet_values(self, sheet_name: str) -> Optional[List[List[Any]]]:
+    def get_sheet_rows(self, sheet_name: str) -> Optional[List[List[Any]]]:
         """
-        Get all values from a sheet (for backup export).
+        Get all rows from a sheet tab (for backup export).
         Returns a list of rows, each row a list of cell values, or None on error.
         """
         with self._api_lock:

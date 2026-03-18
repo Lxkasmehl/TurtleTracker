@@ -65,7 +65,7 @@ def _export_spreadsheet(service, label: str, date_str: str, out_dir: Path, expor
     for sheet_name in sheet_names:
         safe = _safe_filename(sheet_name)
         prefix = f"{label}_{safe}"
-        values = service.get_sheet_values(sheet_name)
+        values = service.get_sheet_rows(sheet_name)
         if values is None:
             errors.append(f"{sheet_name}: read failed")
             continue
