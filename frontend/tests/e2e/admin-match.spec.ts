@@ -133,6 +133,85 @@ test.describe('Admin Turtle Match', () => {
     await expect(dialog.getByLabel('Sheet / Location')).toBeVisible();
   });
 
+  test('Create New Turtle shows state-specific General Location dropdown', async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.route('**/api/locations', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, locations: ['Kansas', 'Kansas/Wichita'] }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route('**/api/general-locations', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            catalog: {
+              states: {
+                Kansas: ['Lawrence', 'North Topeka'],
+              },
+              sheet_defaults: {},
+            },
+            states: [{ state: 'Kansas', locations: ['Lawrence', 'North Topeka'] }],
+            sheet_defaults: [],
+          }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route('**/api/sheets/turtle-names', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, names: [] }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await loginAsAdmin(page);
+    const fileInput = page.locator('input[type="file"]:not([capture])').first();
+    await fileInput.setInputFiles({
+      name: 'general-location-e2e.png',
+      mimeType: 'image/png',
+      buffer: getTestImageBuffer(),
+    });
+    await page.waitForSelector('button:has-text("Upload Photo")', { timeout: 5000 });
+    await clickUploadPhotoButton(page);
+    await expect(page).toHaveURL(/\/admin\/turtle-match\/[^/]+/, { timeout: 30_000 });
+
+    await page.getByRole('button', { name: 'Create New Turtle' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    const generalLocationField = dialog.getByLabel(/General Location/);
+    await expect(generalLocationField).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.getByRole('button', { name: /\+ Add new General Location/ })).toBeVisible();
+
+    const isNativeSelect = await generalLocationField.evaluate((el) => el.tagName === 'SELECT');
+    if (isNativeSelect) {
+      const options = await generalLocationField.locator('option').allTextContents();
+      expect(options).toContain('North Topeka');
+    } else {
+      await generalLocationField.click();
+      const listbox = page.getByRole('listbox');
+      await expect(listbox).toBeVisible({ timeout: 5000 });
+      const optionTexts = await listbox.getByRole('option').allTextContents();
+      expect(optionTexts).toContain('North Topeka');
+      await page.keyboard.press('Escape');
+    }
+  });
+
   test('Create New Turtle: Sheet/Location dropdown shows only top-level states (no sublocations or system folders)', async ({
     page,
   }) => {

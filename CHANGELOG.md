@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Replaced the free-text General Location field with a state-dependent dropdown and add-new flow in the admin turtle forms.
+- Added shared general-location catalog support with sheet-specific auto-fill rules for fixed mappings like `Nebraska CPBS`.
+- Applied Google Sheets validation for General Location so new sheets use the same allowed options.
+
 ### Changed
 
 - **Upload instructions (frontend)**: Redesigned photo submission instructions modal with clearer layout, spacing, and alignment; prominent “plastron must have” checklist (full frame, no reflections, centered/sharp, clear pattern). Added note that the example image is an ideal lab photo and field photos need not match it. When reopening instructions after first visit (reminder), modal can be closed via X or click-outside without scrolling or checkbox. Optional hint for microhabitat/condition photos. Home page header simplified to centered title, subtitle, and “View instructions” button below.

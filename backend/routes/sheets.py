@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from flask import request, jsonify
 from auth import require_admin
 from services.manager_service import get_sheets_service, get_community_sheets_service
+from general_locations_catalog import resolve_general_location_from_sheet_and_value
 
 # Timeout for single attempt to find sheet + get turtle data (avoids hanging on SSL/slow API)
 SHEETS_TURTLE_DATA_TIMEOUT_SEC = 25
@@ -276,6 +277,17 @@ def register_sheets_routes(app):
                 if not service:
                     return jsonify({'error': 'Google Sheets service not configured'}), 503
 
+            if target_spreadsheet != 'community':
+                try:
+                    turtle_data['general_location'] = resolve_general_location_from_sheet_and_value(
+                        sheet_name,
+                        turtle_data.get('general_location'),
+                        state=sheet_name,
+                        allow_blank=False,
+                    )
+                except ValueError as exc:
+                    return jsonify({'error': str(exc)}), 400
+
             # If sheet (tab) does not exist, create it with required headers
             existing_sheets = service.list_sheets()
             if sheet_name not in existing_sheets:
@@ -346,6 +358,17 @@ def register_sheets_routes(app):
                 service = get_sheets_service()
                 if not service:
                     return jsonify({'error': 'Google Sheets service not configured'}), 503
+
+            if target_spreadsheet != 'community':
+                try:
+                    turtle_data['general_location'] = resolve_general_location_from_sheet_and_value(
+                        sheet_name,
+                        turtle_data.get('general_location'),
+                        state=sheet_name,
+                        allow_blank=False,
+                    )
+                except ValueError as exc:
+                    return jsonify({'error': str(exc)}), 400
 
             # If sheet (tab) does not exist, create it with required headers (e.g. when using backend locations like "Kansas")
             existing_sheets = service.list_sheets()

@@ -3,6 +3,7 @@
  */
 
 import type { TurtleSheetsData } from '../services/api';
+import type { ReactNode } from 'react';
 
 export type TurtleFormFieldType = 'text' | 'select' | 'textarea';
 
@@ -23,4 +24,6 @@ export interface TurtleFormFieldProps {
   disabled?: boolean;
   error?: string;
   required?: boolean;
+  searchable?: boolean;
+  afterInput?: ReactNode;
 }

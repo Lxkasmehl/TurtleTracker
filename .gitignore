@@ -11,3 +11,4 @@
 Thumbs.db
 
 .env
+backend/general_locations.json
