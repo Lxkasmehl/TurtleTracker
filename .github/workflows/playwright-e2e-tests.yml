@@ -13,6 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate Linux Docker launcher script
+        run: |
+          bash -n scripts/docker-up.sh
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/docker-up.sh
+
       - name: Create .env for Docker Compose
         run: |
           echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env

@@ -64,6 +64,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E**: Review queue upload-source badges (Admin vs Community), community-turtle-move-to-admin flow (`data-testid` on badges). Create New Turtle duplicate-name tests mock `/api/locations` and fill General Location. Home page match-scope helper text and sheet dropdown (top-level states only, no sublocations/system folders). admin-community-to-admin and Create New Turtle support both Mantine Select and native `<select>` for Sheet/Location.
 - **Integration**: Tests for `GET /api/locations` and for `POST /api/sheets/generate-id` with `target_spreadsheet` (research/community).
 
+### Changed
+
+- **Matching pipeline**: Admin and GUI match flows now use SuperPoint/LightGlue match outputs (`score`, `confidence`) consistently across backend and frontend.
+- **Search filtering**: Fixed default and location-filtered matching in GUI/API by normalizing location filters and aligning filter labels with cached index locations.
+- **Review safety**: Hardened review-packet processing with safer packet IDs and staged reference-image replacement to avoid losing existing reference data if feature extraction fails.
+- **Dependencies**: Pinned LightGlue to `v0.2` for reproducible backend installs.
+- **Legacy compatibility**: Removed remaining SIFT-based processing calls and marked VLAD/FAISS helpers as deprecated compatibility modules (non-default path).
+- **Docker runtime UX**: Added GPU compose override (`docker-compose.gpu.yml`) plus cross-platform launchers (`scripts/docker-up.ps1`, `scripts/docker-up.sh`) that prefer GPU when available and fall back to CPU automatically.
+- **CI hardening**: Added Linux launcher validation in GitHub Actions (`bash -n` + `shellcheck`) to keep Docker startup parity healthy across platforms.
+- **Repository cleanup**: Removed unused root-level `package.json` to avoid confusion with the actual frontend package.
+
 ---
 
 ## [0.1.0] - 2026-02-27
