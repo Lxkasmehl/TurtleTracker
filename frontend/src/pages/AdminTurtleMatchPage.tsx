@@ -13,7 +13,6 @@ import {
   Image,
   Card,
   Divider,
-  ScrollArea,
   Modal,
   SimpleGrid,
 } from '@mantine/core';
