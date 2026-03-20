@@ -71,6 +71,7 @@ export function TurtleSheetsDataFormFields({
   generalLocationLocked = false,
   generalLocationStateLabel = '',
   onCreateGeneralLocation,
+  generalLocationSelectRemountKey,
 }: TurtleSheetsDataFormFieldsProps) {
   // When moving community turtle to admin, sheet and general_location must be editable without unlock
   const effectiveRestrictedForField = (field: keyof TurtleSheetsData) =>
@@ -206,6 +207,7 @@ export function TurtleSheetsDataFormFields({
               error={errors?.[config.key]}
               required={config.key === 'general_location' ? requireGeneralLocationForPath : undefined}
               searchable={isGeneralLocationField}
+              selectRemountKey={isGeneralLocationField ? generalLocationSelectRemountKey : undefined}
               afterInput={
                 isGeneralLocationField && onCreateGeneralLocation && !generalLocationLocked ? (
                   <Button

@@ -53,6 +53,7 @@ export function TurtleFormField({
   required,
   searchable = false,
   afterInput,
+  selectRemountKey,
 }: TurtleFormFieldProps) {
   const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
   const locked = isFieldModeRestricted && !isFieldUnlocked(field);
@@ -96,6 +97,7 @@ export function TurtleFormField({
       return (
       <>
         <NativeSelect
+          key={selectRemountKey}
           label={labelNode}
           description={description}
           error={error}
@@ -113,11 +115,12 @@ export function TurtleFormField({
     return (
       <>
         <Select
+          key={selectRemountKey}
           label={labelNode}
           placeholder={placeholder}
           data={data}
-          value={value}
-          onChange={(v) => onChange(v || '')}
+          value={value || null}
+          onChange={(v) => onChange(v ?? '')}
           description={description}
           disabled={disabled}
           error={error}

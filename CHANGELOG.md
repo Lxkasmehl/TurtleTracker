@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Admin turtle form**: Changing Sheet/Location clears General Location, then sheet default rules re-apply; General Location `Select` remounts on sheet change so Mantine does not show a stale label.
+- **Staff photo upload (Home)**: Match-scope `Select` always keeps a value that exists in its option list (required, no deselect); avoids an empty-looking control when the stored value is not in `data`. (This is separate from the admin turtle form General Location field.)
 - **Upload instructions (frontend)**: Redesigned photo submission instructions modal with clearer layout, spacing, and alignment; prominent “plastron must have” checklist (full frame, no reflections, centered/sharp, clear pattern). Added note that the example image is an ideal lab photo and field photos need not match it. When reopening instructions after first visit (reminder), modal can be closed via X or click-outside without scrolling or checkbox. Optional hint for microhabitat/condition photos. Home page header simplified to centered title, subtitle, and “View instructions” button below.
 
 ---

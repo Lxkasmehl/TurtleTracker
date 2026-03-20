@@ -66,6 +66,8 @@ export interface TurtleSheetsDataFormFieldsProps {
   generalLocationLocked?: boolean;
   generalLocationStateLabel?: string;
   onCreateGeneralLocation?: () => void;
+  /** Remount General Location select when sheet changes (Mantine Select can show stale label otherwise). */
+  generalLocationSelectRemountKey?: string;
 }
 
 /** Return type of useTurtleSheetsDataForm hook */

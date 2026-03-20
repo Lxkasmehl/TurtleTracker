@@ -182,6 +182,7 @@ export const TurtleSheetsDataForm = forwardRef<
                   ? undefined
                   : () => hook.setShowCreateGeneralLocationModal(true)
               }
+              generalLocationSelectRemountKey={hook.selectedSheetName}
             />
           </Grid>
 

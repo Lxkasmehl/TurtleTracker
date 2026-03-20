@@ -26,4 +26,6 @@ export interface TurtleFormFieldProps {
   required?: boolean;
   searchable?: boolean;
   afterInput?: ReactNode;
+  /** When set, used as React `key` on Select/NativeSelect so the control remounts (fixes stale Mantine display with keepMounted). */
+  selectRemountKey?: string;
 }

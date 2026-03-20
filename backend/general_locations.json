@@ -1,0 +1,31 @@
+{
+  "sheet_defaults": {
+    "NebraskaCPBS": {
+      "general_location": "CPBS",
+      "state": "Nebraska"
+    },
+    "NebraskaCL": {
+      "general_location": "Crescent Lake",
+      "state": "Nebraska"
+    },
+    "IowaHawkeye": {
+      "general_location": "Hawkeye",
+      "state": "Iowa"
+    }
+  },
+  "states": {
+    "Kansas": [
+      "Karlyle Woods",
+      "Lawrence",
+      "North Topeka",
+      "Valencia"
+    ],
+    "Nebraska": [
+      "CPBS",
+      "Crescent Lake"
+    ],
+    "Iowa": [
+      "Hawkeye"
+    ]
+  }
+}

@@ -215,7 +215,8 @@ export function useTurtleSheetsDataForm(
     const resolved = normalizeValue(selectedGeneralLocationDefault || '');
     if (resolved) {
       setFormData((prev) => {
-        if (normalizeValue(prev.general_location || '') === resolved) return prev;
+        const prevNormalized = normalizeValue(prev.general_location || '');
+        if (prevNormalized === resolved) return prev;
         return { ...prev, general_location: resolved };
       });
       setErrors((prev) => {
@@ -229,7 +230,9 @@ export function useTurtleSheetsDataForm(
 
     if (selectedPathGeneralLocation) {
       setFormData((prev) => {
-        if (normalizeValue(prev.general_location || '') === normalizeValue(selectedPathGeneralLocation)) return prev;
+        const prevNormalized = normalizeValue(prev.general_location || '');
+        const pathNormalized = normalizeValue(selectedPathGeneralLocation);
+        if (prevNormalized === pathNormalized) return prev;
         return { ...prev, general_location: selectedPathGeneralLocation };
       });
     }
@@ -250,6 +253,7 @@ export function useTurtleSheetsDataForm(
     selectedGeneralLocationLocked,
     selectedGeneralLocationState,
     selectedPathGeneralLocation,
+    selectedSheetName,
   ]);
 
   // In create mode, when sheet and sex are set, generate biology ID and set id field.
@@ -376,6 +380,43 @@ export function useTurtleSheetsDataForm(
     };
   }, [initialSheetName, initialAvailableSheets, useBackendLocations, sheetSource, requireNewSheetForCommunityMatch]);
 
+  const clearGeneralLocationFieldError = () => {
+    setErrors((prev) => {
+      if (!prev.general_location) return prev;
+      const next = { ...prev };
+      delete next.general_location;
+      return next;
+    });
+  };
+
+  /** User changed Sheet/Location: reset general_location so a value from the previous tab (e.g. Hawkeye) is not left visible; catalog effect then applies fixed defaults if any. */
+  const applySelectedSheetChange = (value: string) => {
+    setSelectedSheetName(value);
+    const parts = value
+      .split('/')
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (useBackendLocations) {
+      if (parts.length > 1) {
+        const loc = parts.slice(1).join('/');
+        setFormData((prev) => ({ ...prev, general_location: loc }));
+        clearGeneralLocationFieldError();
+        return;
+      }
+      setFormData((prev) => ({ ...prev, general_location: '' }));
+      clearGeneralLocationFieldError();
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, general_location: '' }));
+    clearGeneralLocationFieldError();
+  };
+
+  const handleSelectedSheetNameChange = (value: string) => {
+    applySelectedSheetChange(value);
+  };
+
   const handleCreateNewSheet = async (sheetName: string) => {
     if (!sheetName?.trim()) {
       notifications.show({
@@ -405,7 +446,7 @@ export function useTurtleSheetsDataForm(
             setAvailableSheets(sheetsResponse.sheets);
           }
         }
-        setSelectedSheetName(sheetName.trim());
+        applySelectedSheetChange(sheetName.trim());
         setShowCreateSheetModal(false);
         setNewSheetName('');
         notifications.show({
@@ -676,25 +717,6 @@ export function useTurtleSheetsDataForm(
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSelectedSheetNameChange = (value: string) => {
-    setSelectedSheetName(value);
-    if (!useBackendLocations) return;
-    const parts = value
-      .split('/')
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (parts.length > 1) {
-      const loc = parts.slice(1).join('/');
-      setFormData((prev) => ({ ...prev, general_location: prev.general_location?.trim() ? prev.general_location : loc }));
-      setErrors((prev) => {
-        if (!prev.general_location) return prev;
-        const next = { ...prev };
-        delete next.general_location;
-        return next;
-      });
     }
   };
 
