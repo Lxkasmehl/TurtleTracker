@@ -1,4 +1,4 @@
-import { Navigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Container,
   Paper,
@@ -14,6 +14,7 @@ import {
   RingProgress,
   Divider,
   Alert,
+  Loader,
 } from '@mantine/core';
 import {
   IconCamera,
@@ -25,7 +26,6 @@ import {
 } from '@tabler/icons-react';
 import { useAppSelector } from '../store/hooks';
 import { useUser } from '../hooks/useUser';
-import { isStaffRole } from '../services/api/auth';
 import { isEmailVerified } from '../utils/emailVerified';
 import {
   BADGE_DEFINITIONS,
@@ -37,6 +37,7 @@ import {
 } from '../gamification/definitions';
 import { getISOWeekKey, consecutiveWeeksEndingAt } from '../gamification/isoWeek';
 import { BadgeIcon } from '../components/game/BadgeIcon';
+import { ObserverGamificationTeaser } from '../components/game/ObserverGamificationTeaser';
 
 function questProgress(
   questId: string,
@@ -54,11 +55,25 @@ function questProgress(
 }
 
 export default function ObserverHubPage() {
-  const { role, user } = useUser();
+  const { user, isLoggedIn, authChecked } = useUser();
   const game = useAppSelector((s) => s.communityGame);
 
-  if (isStaffRole(role)) {
-    return <Navigate to="/" replace />;
+  if (!authChecked) {
+    return (
+      <Container size="lg" py="xl">
+        <Group justify="center">
+          <Loader size="md" />
+        </Group>
+      </Container>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <Container size="lg" py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
+        <ObserverGamificationTeaser variant="hub" />
+      </Container>
+    );
   }
 
   const weekKey = getISOWeekKey();

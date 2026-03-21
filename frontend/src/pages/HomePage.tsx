@@ -37,6 +37,7 @@ import {
 } from '../store/slices/communityGameSlice';
 import { SightingRewardsModal } from '../components/game/SightingRewardsModal';
 import { ObserverHomeSummary } from '../components/game/ObserverHomeSummary';
+import { ObserverGamificationTeaser } from '../components/game/ObserverGamificationTeaser';
 
 const MATCH_ALL_VALUE = '__all__';
 const SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue', 'Incidental_Finds'];
@@ -44,8 +45,9 @@ const SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue', 'Incidental_Finds']
 export default function HomePage() {
   const dispatch = useAppDispatch();
   const pendingRewards = useAppSelector((s) => s.communityGame.pendingRewards);
-  const { role } = useUser();
+  const { role, isLoggedIn, authChecked } = useUser();
   const isStaff = isStaffRole(role);
+  const canUseObserverGamification = authChecked && isLoggedIn;
   const isMobile = useMediaQuery('(max-width: 768px)');
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,10 +152,10 @@ export default function HomePage() {
 
   const onCommunitySightRecorded = useCallback(
     (meta: { hasGps: boolean; hasManual: boolean; extraPhotoCount: number }) => {
-      if (isStaff) return;
+      if (!canUseObserverGamification) return;
       dispatch(recordCommunitySighting(meta));
     },
-    [dispatch, isStaff],
+    [dispatch, canUseObserverGamification],
   );
 
   const {
@@ -261,15 +263,22 @@ export default function HomePage() {
     <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
       <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md' withBorder>
         <Stack gap='lg'>
-          {!isStaff && <ObserverHomeSummary />}
+          {!isStaff && authChecked && !isLoggedIn && (
+            <ObserverGamificationTeaser variant="home" />
+          )}
+          {!isStaff && canUseObserverGamification && <ObserverHomeSummary />}
           <Stack gap="xs" align="center">
             <Title order={1} ta="center">
               Photo Upload
             </Title>
             <Text size="sm" c="dimmed" ta="center">
               {isStaff
-                ? 'Upload a photo to save it in the backend'
-                : 'Submit a plastron sighting — your upload earns XP and counts toward Observer HQ quests'}
+                ? canUseObserverGamification
+                  ? 'Upload a photo to save it in the backend and run a match. While logged in, successful uploads also count toward your Observer HQ progress.'
+                  : 'Upload a photo to save it in the backend'
+                : canUseObserverGamification
+                  ? 'Submit a plastron sighting — your upload earns XP and counts toward Observer HQ quests'
+                  : 'Submit a plastron sighting to support the project. Log in or create an account to earn XP and track Observer HQ progress.'}
             </Text>
             <Button
               variant="subtle"
@@ -438,10 +447,12 @@ export default function HomePage() {
       <InstructionsModal
         opened={instructionsOpened}
         onClose={() => setInstructionsOpened(false)}
-        onTrainingCompleted={() => dispatch(markTrainingCompleted())}
+        onTrainingCompleted={
+          canUseObserverGamification ? () => dispatch(markTrainingCompleted()) : undefined
+        }
       />
 
-      {!isStaff && (
+      {canUseObserverGamification && (
         <SightingRewardsModal
           opened={!!pendingRewards}
           rewards={pendingRewards}

@@ -126,10 +126,6 @@ router.get('/community-game', authenticateToken, (req: AuthRequest, res: Respons
     res.status(401).json({ success: false, error: 'Unauthorized' });
     return;
   }
-  if (user.role !== 'community') {
-    res.status(200).json({ success: true, state: null, message: 'Not a community account' });
-    return;
-  }
   const state = getCommunityGameForUser(user.id);
   res.json({ success: true, state });
 });
@@ -139,10 +135,6 @@ router.put('/community-game', authenticateToken, (req: AuthRequest, res: Respons
   const user = req.user;
   if (!user) {
     res.status(401).json({ success: false, error: 'Unauthorized' });
-    return;
-  }
-  if (user.role !== 'community') {
-    res.status(403).json({ success: false, error: 'Observer progress is only for community accounts' });
     return;
   }
   const parsed = parsePayload(req.body);

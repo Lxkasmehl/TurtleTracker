@@ -7,14 +7,10 @@ import {
   resetCommunityGame,
 } from '../../store/slices/communityGameSlice';
 import type { CommunityGamePersistedState } from '../../store/slices/communityGameSlice';
-import {
-  mergeGuestIntoUser,
-  readPersistedGame,
-  storageKeyForUser,
-  writePersistedGame,
-} from '../../gamification/persistence';
+import { readPersistedGame, storageKeyForUser } from '../../gamification/persistence';
 import { fetchCommunityGameState, saveCommunityGameState } from '../../services/api/communityGame';
 import { isEmailVerified } from '../../utils/emailVerified';
+import { store } from '../../store';
 
 function pickPersisted(s: {
   totalXp: number;
@@ -49,13 +45,13 @@ function pickPersisted(s: {
 }
 
 /**
- * Loads / saves observer gamification: guests → localStorage; community accounts → auth API + auth.json store.
+ * Observer gamification: any logged-in account (all roles) syncs to the auth service by user id.
+ * Guests get a reset slice—no local XP storage (avoids “lost progress” confusion).
  */
 export default function GamePersistence(): null {
   const dispatch = useAppDispatch();
   const authChecked = useAppSelector((s) => s.user.authChecked);
   const userId = useAppSelector((s) => s.user.user?.id ?? null);
-  const role = useAppSelector((s) => s.user.role);
   const user = useAppSelector((s) => s.user.user);
   const game = useAppSelector((s) => s.communityGame);
 
@@ -78,26 +74,23 @@ export default function GamePersistence(): null {
     };
 
     void (async () => {
-      if (userId != null && role !== 'community') {
+      if (userId == null) {
         serverWriteEnabledRef.current = false;
+        try {
+          localStorage.removeItem(storageKeyForUser(null));
+        } catch {
+          /* ignore */
+        }
         dispatch(resetCommunityGame());
         return;
       }
 
-      if (userId == null) {
-        serverWriteEnabledRef.current = true;
-        const guestKey = storageKeyForUser(null);
-        const loaded = readPersistedGame(guestKey);
-        dispatch(hydrateGame(loaded ?? {}));
-        if (!cancelled) {
-          applyInstructionsFlag();
-        }
-        return;
-      }
-
       serverWriteEnabledRef.current = false;
-      const guestKey = storageKeyForUser(null);
-      const guestData = readPersistedGame(guestKey);
+      try {
+        localStorage.removeItem(storageKeyForUser(null));
+      } catch {
+        /* ignore */
+      }
 
       let serverData: CommunityGamePersistedState | null = null;
       try {
@@ -108,33 +101,26 @@ export default function GamePersistence(): null {
 
       if (cancelled) return;
 
-      const merged = mergeGuestIntoUser(serverData, guestData);
+      const fallback = readPersistedGame(storageKeyForUser(userId));
+      const payload = serverData ?? fallback ?? {};
+      dispatch(hydrateGame(payload));
 
-      if (guestData && guestData.lifetimeSightings > 0) {
+      const persisted = pickPersisted(store.getState().communityGame);
+      const serverJson = serverData != null ? JSON.stringify(serverData) : null;
+      if (serverJson !== JSON.stringify(persisted)) {
         try {
-          localStorage.removeItem(guestKey);
-        } catch {
-          /* ignore */
-        }
-      }
-
-      dispatch(hydrateGame(merged));
-
-      const serverNorm = serverData ? JSON.stringify(serverData) : 'null';
-      const mergedNorm = JSON.stringify(merged);
-      const guestHad = !!(guestData && guestData.lifetimeSightings > 0);
-      if (guestHad || mergedNorm !== serverNorm) {
-        try {
-          await saveCommunityGameState(merged);
+          await saveCommunityGameState(persisted);
         } catch {
           /* offline — next debounced save may succeed */
         }
       }
 
-      try {
-        localStorage.removeItem(storageKeyForUser(userId));
-      } catch {
-        /* ignore */
+      if (serverData != null) {
+        try {
+          localStorage.removeItem(storageKeyForUser(userId));
+        } catch {
+          /* ignore */
+        }
       }
 
       if (cancelled) return;
@@ -146,7 +132,7 @@ export default function GamePersistence(): null {
     return () => {
       cancelled = true;
     };
-  }, [authChecked, userId, role, dispatch]);
+  }, [authChecked, userId, dispatch]);
 
   useEffect(() => {
     if (!authChecked || !user) return;
@@ -159,11 +145,9 @@ export default function GamePersistence(): null {
     if (!authChecked || !game.hydrated) return;
 
     if (userId == null) {
-      writePersistedGame(storageKeyForUser(null), pickPersisted(game));
       return;
     }
 
-    if (role !== 'community') return;
     if (!serverWriteEnabledRef.current) return;
 
     const uid = userId;
@@ -185,7 +169,6 @@ export default function GamePersistence(): null {
   }, [
     authChecked,
     userId,
-    role,
     game.hydrated,
     game.totalXp,
     game.lifetimeSightings,

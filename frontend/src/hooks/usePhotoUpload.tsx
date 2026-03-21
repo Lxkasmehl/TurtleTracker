@@ -26,7 +26,7 @@ export interface CommunitySightMeta {
 interface UsePhotoUploadOptions {
   role?: string;
   onSuccess?: (imageId: string) => void;
-  /** Community / guest: after a successful sighting upload (not staff/admin match flow). */
+  /** After a successful upload: community flow always; staff/admin match flow before navigating away. */
   onCommunitySightRecorded?: (meta: CommunitySightMeta) => void;
   /** Admin/Staff: sheet name (location) to test against; '' = all locations */
   matchSheet?: string;
@@ -205,6 +205,11 @@ export function usePhotoUpload({
       if (response.success) {
         // Admin/Staff: Always navigate to match page (even if no matches found)
         if (isAdminFlow && response.request_id) {
+          onCommunitySightRecorded?.({
+            hasGps: locationHint?.source === 'gps',
+            hasManual: locationHint?.source === 'manual',
+            extraPhotoCount: extraFiles.length,
+          });
           // Build find_metadata from upload so match page doesn't ask again for physical/digital flag
           const find_metadata_from_upload: FindMetadata | undefined = hasFlagData
             ? {
