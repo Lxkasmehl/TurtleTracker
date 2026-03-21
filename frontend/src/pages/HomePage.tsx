@@ -21,7 +21,7 @@ import {
   IconCamera,
   IconInfoCircle,
 } from '@tabler/icons-react';
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { validateFile } from '../utils/fileValidation';
 import { useUser } from '../hooks/useUser';
 import { usePhotoUpload } from '../hooks/usePhotoUpload';
@@ -29,11 +29,21 @@ import { isStaffRole } from '../services/api/auth';
 import { PreviewCard } from '../components/PreviewCard';
 import { InstructionsModal } from '../components/InstructionsModal';
 import { getLocations } from '../services/api';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import {
+  recordCommunitySighting,
+  clearPendingRewards,
+  markTrainingCompleted,
+} from '../store/slices/communityGameSlice';
+import { SightingRewardsModal } from '../components/game/SightingRewardsModal';
+import { ObserverHomeSummary } from '../components/game/ObserverHomeSummary';
 
 const MATCH_ALL_VALUE = '__all__';
 const SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue', 'Incidental_Finds'];
 
 export default function HomePage() {
+  const dispatch = useAppDispatch();
+  const pendingRewards = useAppSelector((s) => s.communityGame.pendingRewards);
   const { role } = useUser();
   const isStaff = isStaffRole(role);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -138,6 +148,14 @@ export default function HomePage() {
       : selectedMatchSheet
     : undefined;
 
+  const onCommunitySightRecorded = useCallback(
+    (meta: { hasGps: boolean; hasManual: boolean; extraPhotoCount: number }) => {
+      if (isStaff) return;
+      dispatch(recordCommunitySighting(meta));
+    },
+    [dispatch, isStaff],
+  );
+
   const {
     files,
     preview,
@@ -161,7 +179,11 @@ export default function HomePage() {
     handleDrop,
     handleUpload,
     handleRemove,
-  } = usePhotoUpload({ role, matchSheet: matchSheetForUpload });
+  } = usePhotoUpload({
+    role,
+    matchSheet: matchSheetForUpload,
+    onCommunitySightRecorded,
+  });
 
   const handleDropWithValidation = (acceptedFiles: FileWithPath[]): void => {
     if (acceptedFiles.length > 0) {
@@ -239,12 +261,15 @@ export default function HomePage() {
     <Container size='sm' py={{ base: 'md', sm: 'xl' }} px={{ base: 'xs', sm: 'md' }}>
       <Paper shadow='sm' p={{ base: 'md', sm: 'xl' }} radius='md' withBorder>
         <Stack gap='lg'>
+          {!isStaff && <ObserverHomeSummary />}
           <Stack gap="xs" align="center">
             <Title order={1} ta="center">
               Photo Upload
             </Title>
             <Text size="sm" c="dimmed" ta="center">
-              Upload a photo to save it in the backend
+              {isStaff
+                ? 'Upload a photo to save it in the backend'
+                : 'Submit a plastron sighting — your upload earns XP and counts toward Observer HQ quests'}
             </Text>
             <Button
               variant="subtle"
@@ -413,7 +438,16 @@ export default function HomePage() {
       <InstructionsModal
         opened={instructionsOpened}
         onClose={() => setInstructionsOpened(false)}
+        onTrainingCompleted={() => dispatch(markTrainingCompleted())}
       />
+
+      {!isStaff && (
+        <SightingRewardsModal
+          opened={!!pendingRewards}
+          rewards={pendingRewards}
+          onClose={() => dispatch(clearPendingRewards())}
+        />
+      )}
     </Container>
   );
 }

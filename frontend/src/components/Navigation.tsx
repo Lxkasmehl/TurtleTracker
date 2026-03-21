@@ -27,6 +27,7 @@ import {
   IconPhoto,
   IconUsers,
   IconFlag,
+  IconCompass,
 } from '@tabler/icons-react';
 import { useUser } from '../hooks/useUser';
 import { logout as apiLogout } from '../services/api';
@@ -61,6 +62,13 @@ export default function Navigation({ children }: NavigationProps) {
   // Get navigation items in the correct order based on role
   const getNavigationItems = () => {
     const items = [...navigationItems];
+    if (!isStaff) {
+      items.splice(1, 0, {
+        label: 'Observer HQ',
+        path: '/observer',
+        icon: IconCompass,
+      });
+    }
     if (isStaff) {
       items.splice(1, 0, {
         label: 'Turtle Records',
@@ -90,7 +98,7 @@ export default function Navigation({ children }: NavigationProps) {
     const baseBreakpoint = 1000; // Base breakpoint for customer view with normal name
 
     // Calculate item count based on role (admin: 6, staff: 5, community: 3)
-    const itemCount = isAdmin ? 6 : isStaff ? 5 : 3;
+    const itemCount = isAdmin ? 6 : isStaff ? 5 : 4;
 
     // Admin has 2 extra items, increase breakpoint by ~167px per extra item
     // This makes drawer appear earlier when there are more nav items
