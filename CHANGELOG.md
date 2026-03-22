@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - **General Location**: Admin turtle forms use a state-dependent dropdown and add-new flow (replacing free text), backed by a shared catalog with sheet-specific auto-fill (e.g. `NebraskaCPBS`, `IowaHawkeye`); new sheets get matching Google Sheets validation.
+- **Observer gamification**: Observer Hub, XP, weekly quests, badges, and reward flows on upload/home for **any logged-in role** (community, staff, admin). Progress is stored **per user id** in SQLite (`community_game`) and survives role promotion/demotion; guests see a sign-up teaser only (no anonymous progress). Client: Redux (`communityGameSlice`), local fallback when sync fails, debounced `GET`/`PUT /auth/community-game`. Navigation includes Observer HQ for staff/admin; staff match uploads can update progress before navigating to the match page. Backend validates payload bounds.
+- **Auth backend**: `npm run delete-user` script (by email, refuses last admin; `CASCADE` cleans related rows).
 
 ### Fixed
 
@@ -22,12 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Email verification (frontend)**: Unverified logged-in users may open `/observer` (still redirected from other app areas until verified). After hydrating community game state, the verified observer badge is granted when the account is verified.
 - **Admin turtle form**: Changing Sheet/Location clears General Location, then sheet default rules re-apply; General Location `Select` remounts on sheet change so Mantine does not show a stale label.
 - **Staff photo upload (Home)**: Match-scope `Select` always keeps a value that exists in its option list (required, no deselect); avoids an empty-looking control when the stored value is not in `data`. (This is separate from the admin turtle form General Location field.)
-- **Upload instructions (frontend)**: Redesigned photo submission instructions modal with clearer layout, spacing, and alignment; prominent “plastron must have” checklist (full frame, no reflections, centered/sharp, clear pattern). Added note that the example image is an ideal lab photo and field photos need not match it. When reopening instructions after first visit (reminder), modal can be closed via X or click-outside without scrolling or checkbox. Optional hint for microhabitat/condition photos. Home page header simplified to centered title, subtitle, and “View instructions” button below.
 - **CI (Playwright E2E)**: Workflow uses a smoke job, parallel `--shard` matrix over `tests/e2e` (full browser matrix unchanged), shared `.github/actions/e2e-playwright-prepare` for Docker Compose + Playwright install, and an `e2e-success` job to aggregate status; HTML reports uploaded per smoke/shard.
+- **Auth backend**: Primary store is SQLite (`auth.sqlite`, `better-sqlite3`) instead of `auth.json`; one-time import from legacy `auth.json` when the DB is empty; WAL/foreign keys; `email_verifications.used_at` added for existing DBs when missing.
+- **Google OAuth / signup**: New Google users get explicit verification timestamps on insert; duplicate-account path handles SQLite `UNIQUE` constraint errors (and removes the old post-insert delay).
 
 ### Testing
 
 - **Integration (admin role)**: `test_patch_user_role_as_admin_success` targets the seeded role-test community user (`E2E_ROLE_TEST_EMAIL`, default `role-test-community@test.com`) so role demotion does not revoke JWTs used by other tests.
+- **Observer / auth**: Playwright E2E for Observer HQ (`observer-hub.spec.ts`: guest teaser, community hub, staff nav, mobile “Learn more”) and gamification (`observer-hq-gamification.spec.ts`: community upload → rewards modal +XP, `PUT /auth/community-game`, quests/badges on `/observer`; serial suite for shared seed user). Backend integration: `test_community_game_api.py` (401/400, roundtrip, user isolation) and `community_token` fixture in `conftest.py`.
 
 ---
 
