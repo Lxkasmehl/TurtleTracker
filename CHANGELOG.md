@@ -8,21 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Replaced the free-text General Location field with a state-dependent dropdown and add-new flow in the admin turtle forms.
-- Added shared general-location catalog support with sheet-specific auto-fill rules for fixed mappings (e.g. `NebraskaCPBS`, `IowaHawkeye`).
-- Applied Google Sheets validation for General Location so new sheets use the same allowed options.
+- **General Location**: Admin turtle forms use a state-dependent dropdown and add-new flow (replacing free text), backed by a shared catalog with sheet-specific auto-fill (e.g. `NebraskaCPBS`, `IowaHawkeye`); new sheets get matching Google Sheets validation.
 
 ### Fixed
-
-- **General location catalog**: Normalization no longer merges placeholder example states into an existing `general_locations.json`, so POST add-location does not persist fake keys; in-repo defaults match `general_locations.json` for first-run seeding.
-- **Google Sheets General Location dropdown**: `POST /api/general-locations` now applies validation using the real Sheets API client (`GoogleSheetsService.service`); previously sync silently updated 0 tabs, so new locations stayed invalid in Sheets. Research turtle create/update also re-syncs validation for the affected tab.
+- **General location catalog**: Normalization no longer injects placeholder states into existing `general_locations.json`; POST add-location won't persist fake keys; first-run seed matches repo defaults.
+- **Sheets validation**: `POST /api/general-locations` applies dropdown rules via the real Sheets client (fixes silent “0 tabs” sync); research turtle create/update re-syncs the affected tab.
 
 ### Changed
-
-- **Admin turtle form**: Changing Sheet/Location clears General Location, then sheet default rules re-apply; General Location `Select` remounts on sheet change so Mantine does not show a stale label.
-- **Staff photo upload (Home)**: Match-scope `Select` always keeps a value that exists in its option list (required, no deselect); avoids an empty-looking control when the stored value is not in `data`. (This is separate from the admin turtle form General Location field.)
-- **Upload instructions (frontend)**: Redesigned photo submission instructions modal with clearer layout, spacing, and alignment; prominent “plastron must have” checklist (full frame, no reflections, centered/sharp, clear pattern). Added note that the example image is an ideal lab photo and field photos need not match it. When reopening instructions after first visit (reminder), modal can be closed via X or click-outside without scrolling or checkbox. Optional hint for microhabitat/condition photos. Home page header simplified to centered title, subtitle, and “View instructions” button below.
-- **CI (Playwright E2E)**: Workflow uses a smoke job, parallel `--shard` matrix over `tests/e2e` (full browser matrix unchanged), shared `.github/actions/e2e-playwright-prepare` for Docker Compose + Playwright install, and an `e2e-success` job to aggregate status; HTML reports uploaded per smoke/shard.
+- **Admin turtle form**: Sheet/location changes clear General Location, re-apply defaults, and remount the Select to avoid stale Mantine labels.
+- **Home (staff upload)**: Match-scope Select always reflects a valid option (no empty control when the stored value is missing from loaded data).
+- **Upload instructions**: Clearer modal layout and plastron checklist; lab vs field photo note; reminder view closable without scroll/checkbox; simpler header with “View instructions”.
+- **CI (Playwright E2E)**: Smoke run, parallel `--shard` matrix on `tests/e2e`, shared `e2e-playwright-prepare` action, `e2e-success` gate, HTML reports per smoke/shard (browser matrix unchanged).
 
 ---
 
