@@ -400,10 +400,12 @@ test.describe('Admin Turtle Match', () => {
       timeout: 15_000,
     });
 
-    // Section only appears when there are matches; skip assertion if no matches
+    // Wait for either outcome — avoids racing upload/match load on slow mobile WebKit.
     const noMatches = page.getByText('No matches found');
-    if ((await noMatches.isVisible())) return;
-    await expect(page.getByText('Microhabitat / Condition photos')).toBeVisible();
+    const microSection = page.getByText('Microhabitat / Condition photos');
+    await expect(noMatches.or(microSection)).toBeVisible({ timeout: 25_000 });
+    if (await noMatches.isVisible()) return;
+    await expect(microSection).toBeVisible({ timeout: 10_000 });
   });
 
   test('Upload with extra microhabitat: image appears under From this upload, then can be removed', async ({

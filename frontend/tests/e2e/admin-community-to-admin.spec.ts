@@ -188,18 +188,40 @@ test.describe('Admin Community turtle move to admin', () => {
       .getByRole('textbox', { name: 'Sheet / Location' })
       .or(page.getByRole('combobox', { name: 'Sheet / Location' }));
     await expect(sheetLocationInput).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel(/General Location/)).toBeVisible({
-      timeout: 5000,
-    });
+    // Scope to the match column so getByLabel does not see the portaled Mantine listbox (strict / wrong control on desktop).
+    const sheetsPanel = page
+      .locator('div.mantine-Grid-col')
+      .filter({ has: page.getByRole('button', { name: 'Save to Sheets & Confirm Match' }) });
+    const generalLocationInput = sheetsPanel
+      .getByRole('textbox', { name: /General Location/ })
+      .or(sheetsPanel.getByRole('combobox', { name: /General Location/ }))
+      .or(sheetsPanel.getByLabel(/General Location/));
+    await expect(generalLocationInput).toBeVisible({ timeout: 5000 });
 
     const isNativeSelect = await sheetLocationInput.evaluate((el) => (el as HTMLElement).tagName === 'SELECT');
     if (isNativeSelect) {
       await sheetLocationInput.selectOption({ label: 'Kansas' });
     } else {
       await sheetLocationInput.click();
-      await page.getByRole('listbox').getByRole('option', { name: 'Kansas' }).click();
+      await page
+        .getByRole('listbox', { name: 'Sheet / Location' })
+        .getByRole('option', { name: 'Kansas', exact: true })
+        .click();
+      await page.getByRole('listbox', { name: 'Sheet / Location' }).waitFor({ state: 'hidden', timeout: 10_000 });
     }
-    await page.getByLabel(/General Location/).fill('Wichita');
+    const isNativeGeneral = await generalLocationInput.evaluate((el) => (el as HTMLElement).tagName === 'SELECT');
+    if (isNativeGeneral) {
+      await generalLocationInput
+        .getByRole('option', { name: 'Wichita', exact: true })
+        .waitFor({ state: 'attached', timeout: 15_000 });
+      await generalLocationInput.selectOption({ label: 'Wichita' });
+    } else {
+      await generalLocationInput.click();
+      await page
+        .getByRole('listbox', { name: /General Location/ })
+        .getByRole('option', { name: 'Wichita', exact: true })
+        .click();
+    }
 
     await page.getByRole('button', { name: 'Save to Sheets & Confirm Match' }).click();
 

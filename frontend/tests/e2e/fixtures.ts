@@ -202,6 +202,9 @@ export async function selectSheetInCreateTurtleDialog(
   await option.waitFor({ state: 'visible', timeout: SHEET_DROPDOWN_TIMEOUT });
   await option.scrollIntoViewIfNeeded();
   await option.click();
+  await page
+    .getByRole('listbox', { name: SHEET_SELECT_LABEL })
+    .waitFor({ state: 'hidden', timeout: SHEET_DROPDOWN_TIMEOUT });
 }
 
 const GENERAL_LOCATION_LABEL = /General Location/;
@@ -215,23 +218,37 @@ export async function selectGeneralLocationInCreateTurtleDialog(
   dialog: ReturnType<Page['getByRole']>,
   locationName: string,
 ): Promise<void> {
-  const field = dialog.getByLabel(GENERAL_LOCATION_LABEL);
+  // Portaled Mantine listboxes are outside `dialog`, so dialog-scoped getByLabel hits only the control
+  // (avoids strict mode). NativeSelect <select> is not always exposed as textbox; combobox + label cover mobile/WebKit.
+  const field = dialog
+    .getByRole('textbox', { name: GENERAL_LOCATION_LABEL })
+    .or(dialog.getByRole('combobox', { name: GENERAL_LOCATION_LABEL }))
+    .or(dialog.getByLabel(GENERAL_LOCATION_LABEL));
   await field.waitFor({ state: 'visible', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT });
 
   const isNativeSelect = await field.evaluate((el) => el.tagName === 'SELECT');
   if (isNativeSelect) {
-    await field.selectOption(locationName);
+    const optionByRole = field.getByRole('option', { name: locationName, exact: true });
+    await optionByRole.waitFor({ state: 'attached', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT });
+    await field.selectOption({ label: locationName });
     return;
   }
 
   await field.click();
-  // Mantine may not set listbox accessible name; single open listbox in this dialog.
-  const listbox = page.getByRole('listbox');
+  // WebKit often omits the accessible name on the portaled listbox; fall back to the topmost open listbox.
+  const namedListbox = page.getByRole('listbox', { name: GENERAL_LOCATION_LABEL });
+  const useNamed = await namedListbox
+    .waitFor({ state: 'visible', timeout: 2500 })
+    .then(() => true)
+    .catch(() => false);
+  const listbox = useNamed ? namedListbox : page.getByRole('listbox').last();
   await listbox.waitFor({ state: 'visible', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT });
-  const option = listbox.getByRole('option', { name: locationName, exact: true });
-  await option.waitFor({ state: 'visible', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT });
-  await option.scrollIntoViewIfNeeded();
-  await option.click();
+  const option = listbox
+    .getByRole('option', { name: locationName, exact: true })
+    .or(listbox.getByText(locationName, { exact: true }));
+  await option.first().waitFor({ state: 'visible', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT });
+  await option.first().scrollIntoViewIfNeeded();
+  await option.first().click();
   await listbox.waitFor({ state: 'hidden', timeout: GENERAL_LOCATION_DROPDOWN_TIMEOUT }).catch(() => {});
 }
 
