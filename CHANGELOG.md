@@ -12,10 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Three-tier user roles**: Roles are now **community**, **staff**, and **admin**. Community unchanged. **Staff** has the same app access as admins (Turtle Records, Release, Sheets, review, create turtle) but cannot manage users. **Admin** can promote/demote users and access User Management (GET users, PATCH user role, promote to admin/invite). Auth backend: `requireStaff` for operational routes, `requireAdmin` only for user management; new `PATCH /admin/users/:id/role`. Frontend: `isStaffRole(role)`, User Management page shows all users with role dropdown; only admins see the User Management nav link and page. Python backend `require_admin` allows both staff and admin. E2E: `loginAsStaff`, seed scripts create staff@test.com.
 - **CI/E2E**: Staff test user credentials (`E2E_STAFF_EMAIL`, `E2E_STAFF_PASSWORD`) are passed in backend-integration and Playwright workflows and used by seed-test-users. Frontend E2E adds Staff login test; photo upload treats staff like admin for match sheet and post-upload navigation.
 - **Auth**: Last-admin protection—demoting the last admin is blocked with a 400 error. New POST /auth/validate for token validation (signature and revocation). Flask backend optional AUTH_URL; when set, staff/admin routes call the auth service so demotion revocation (tokens_valid_after) is enforced.
+- **Observer gamification**: Observer Hub, XP, weekly quests, badges, and reward flows on upload/home for **any logged-in role** (community, staff, admin). Progress is stored **per user id** in SQLite (`community_game`) and survives role promotion/demotion; guests see a sign-up teaser only (no anonymous progress). Client: Redux (`communityGameSlice`), optional local fallback, debounced `GET`/`PUT /auth/community-game`. Backend validates payload bounds.
+- **Auth backend**: `npm run delete-user` script (by email, refuses last admin; CASCADE cleans related rows).
 
 ### Changed
 
 - **Upload instructions (frontend)**: Redesigned photo submission instructions modal with clearer layout, spacing, and alignment; prominent “plastron must have” checklist (full frame, no reflections, centered/sharp, clear pattern). Added note that the example image is an ideal lab photo and field photos need not match it. When reopening instructions after first visit (reminder), modal can be closed via X or click-outside without scrolling or checkbox. Optional hint for microhabitat/condition photos. Home page header simplified to centered title, subtitle, and “View instructions” button below.
+- **Auth backend**: Primary store is SQLite (`auth.sqlite`, `better-sqlite3`) instead of `auth.json`; one-time import from legacy `auth.json` when the DB is empty; WAL/foreign keys; `email_verifications.used_at` added for existing DBs when missing.
+- **Google OAuth / signup**: New Google users get explicit verification timestamps on insert; duplicate-account path handles SQLite `UNIQUE` constraint errors (and removes the old post-insert delay).
 
 ## Fixed
 
@@ -26,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend**: Staff/admin photo upload enforces token revocation (`check_auth_revocation`); temp file is removed on 403. `check_auth_revocation` exported from `auth` for use in upload route.
 - **E2E**: More reliable nav and staff tests: `data-testid="nav-drawer"` on mobile drawer; `navClick` scopes button to drawer and waits for it to avoid detach; Staff "Turtle Records" test uses wide viewport (1400×800) so header nav is used. Playwright webServer uses `cwd` and `127.0.0.1`; Vite `strictPort: true`. Unused `loginAsCommunity` import removed from staff-and-user-management spec.
 - **Admin match page**: `useEffect` dependency for loading turtle images fixed to `selectedMatchData` instead of `selectedMatchData?.location`.
+
+## Testing
+
+- **Tests (Observer / auth)**: Playwright E2E for Observer HQ (`observer-hub.spec.ts`: guest teaser, community hub, staff nav, mobile “Learn more”) and end-to-end gamification (`observer-hq-gamification.spec.ts`: community upload → rewards modal +XP, `PUT /auth/community-game`, quests/badges on `/observer`; serial suite for shared seed user). Backend integration: `test_community_game_api.py` (401/400, roundtrip, user isolation) and `community_token` fixture in `conftest.py`.
 
 ---
 
