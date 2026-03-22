@@ -8,9 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Replaced the free-text General Location field with a state-dependent dropdown and add-new flow in the admin turtle forms.
-- Added shared general-location catalog support with sheet-specific auto-fill rules for fixed mappings (e.g. `NebraskaCPBS`, `IowaHawkeye`).
-- Applied Google Sheets validation for General Location so new sheets use the same allowed options.
+- **General Location**: Admin turtle forms use a state-dependent dropdown and add-new flow (replacing free text), backed by a shared catalog with sheet-specific auto-fill (e.g. `NebraskaCPBS`, `IowaHawkeye`); new sheets get matching Google Sheets validation.
 
 ### Fixed
 
