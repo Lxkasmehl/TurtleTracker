@@ -7,18 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-23
+
+Version 1.0.0 is the milestone where the updated, properly functioning backend logic is merged and integrated with the latest frontend, so the stack finally works together end-to-end as one coherent application.
+
 ### Added
-- **General Location**: Admin turtle forms use a state-dependent dropdown and add-new flow (replacing free text), backed by a shared catalog with sheet-specific auto-fill (e.g. `NebraskaCPBS`, `IowaHawkeye`); new sheets get matching Google Sheets validation.
+
+- **General locations**: State-dependent catalog in admin turtle forms (dropdown + add-new), sheet-specific defaults, and Google Sheets validation on new tabs.
+- **Docker**: `docker-compose.gpu.yml` and `scripts/docker-up.ps1` / `docker-up.sh` (prefer GPU, fall back to CPU).
 
 ### Fixed
-- **General location catalog**: Normalization no longer injects placeholder states into existing `general_locations.json`; POST add-location won't persist fake keys; first-run seed matches repo defaults.
-- **Sheets validation**: `POST /api/general-locations` applies dropdown rules via the real Sheets client (fixes silent “0 tabs” sync); research turtle create/update re-syncs the affected tab.
+
+- **Catalog & Sheets**: Safer `general_locations.json` handling (no placeholder injection; POST add-location does not persist fake keys; first-run seed matches repo); `POST /api/general-locations` applies dropdown rules via the real Sheets client; research turtle create/update re-syncs the affected tab.
+- **Search & staff upload**: Normalized location filters aligned with the cached index; match-scope select always shows a valid option when stored values are missing from loaded data.
 
 ### Changed
-- **Admin turtle form**: Sheet/location changes clear General Location, re-apply defaults, and remount the Select to avoid stale Mantine labels.
-- **Home (staff upload)**: Match-scope Select always reflects a valid option (no empty control when the stored value is missing from loaded data).
-- **Upload instructions**: Clearer modal layout and plastron checklist; lab vs field photo note; reminder view closable without scroll/checkbox; simpler header with “View instructions”.
-- **CI (Playwright E2E)**: Smoke run, parallel `--shard` matrix on `tests/e2e`, shared `e2e-playwright-prepare` action, `e2e-success` gate, HTML reports per smoke/shard (browser matrix unchanged).
+
+- **Matching**: SuperPoint/LightGlue outputs (`score`, `confidence`) consistent across backend, admin, and GUI; LightGlue pinned to `v0.2`; SIFT paths removed; VLAD/FAISS left as deprecated compatibility-only.
+- **Admin & uploads**: Sheet/location changes clear and remount General Location to avoid stale Mantine labels; clearer upload instructions (layout, plastron checklist, lab vs field note, closable reminder, “View instructions” header).
+- **Review queue**: Safer packet IDs and staged reference-image replacement so failed feature extraction does not wipe existing reference data.
+- **CI**: Playwright smoke run, sharded `tests/e2e` matrix, shared `e2e-playwright-prepare`, `e2e-success` gate, HTML reports per smoke/shard; `bash -n` and `shellcheck` on Docker launchers (Linux).
+
+### Removed
+
+- Unused root `package.json` (frontend remains the npm entry point).
 
 ---
 
@@ -58,17 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E**: Review queue upload-source badges (Admin vs Community), community-turtle-move-to-admin flow (`data-testid` on badges). Create New Turtle duplicate-name tests mock `/api/locations` and fill General Location. Home page match-scope helper text and sheet dropdown (top-level states only, no sublocations/system folders). admin-community-to-admin and Create New Turtle support both Mantine Select and native `<select>` for Sheet/Location.
 - **Integration**: Tests for `GET /api/locations` and for `POST /api/sheets/generate-id` with `target_spreadsheet` (research/community).
 
-### Changed
-
-- **Matching pipeline**: Admin and GUI match flows now use SuperPoint/LightGlue match outputs (`score`, `confidence`) consistently across backend and frontend.
-- **Search filtering**: Fixed default and location-filtered matching in GUI/API by normalizing location filters and aligning filter labels with cached index locations.
-- **Review safety**: Hardened review-packet processing with safer packet IDs and staged reference-image replacement to avoid losing existing reference data if feature extraction fails.
-- **Dependencies**: Pinned LightGlue to `v0.2` for reproducible backend installs.
-- **Legacy compatibility**: Removed remaining SIFT-based processing calls and marked VLAD/FAISS helpers as deprecated compatibility modules (non-default path).
-- **Docker runtime UX**: Added GPU compose override (`docker-compose.gpu.yml`) plus cross-platform launchers (`scripts/docker-up.ps1`, `scripts/docker-up.sh`) that prefer GPU when available and fall back to CPU automatically.
-- **CI hardening**: Added Linux launcher validation in GitHub Actions (`bash -n` + `shellcheck`) to keep Docker startup parity healthy across platforms.
-- **Repository cleanup**: Removed unused root-level `package.json` to avoid confusion with the actual frontend package.
-
 ---
 
 ## [0.1.0] - 2026-02-27
@@ -88,6 +89,7 @@ First release of TurtleTracker: a community-driven web platform for turtle popul
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/TurtleProject/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/TurtleProject/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v1.0.0
 [0.2.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.1.0
