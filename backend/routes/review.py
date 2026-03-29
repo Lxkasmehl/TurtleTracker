@@ -132,9 +132,23 @@ def format_review_packet_item(packet_dir, request_id):
             break
 
     candidates_dir = os.path.join(packet_dir, 'candidate_matches')
-    # candidate_matches is only created after SuperPoint search finishes in
-    # create_review_packet / admin upload; missing dir => matching still running.
-    match_search_pending = not os.path.isdir(candidates_dir)
+    failed_path = os.path.join(packet_dir, 'match_search_failed.json')
+    match_search_failed = os.path.isfile(failed_path)
+    match_search_error = None
+    if match_search_failed:
+        try:
+            with open(failed_path, 'r', encoding='utf-8') as f:
+                fail_data = json.load(f)
+            if isinstance(fail_data, dict):
+                err = (fail_data.get('error') or '').strip()
+                match_search_error = err or None
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+        if match_search_error is None:
+            match_search_error = 'Match search failed.'
+    # candidate_matches is created after SuperPoint search succeeds in create_review_packet;
+    # missing dir + no failure marker => matching still running (or legacy stuck packet).
+    match_search_pending = not os.path.isdir(candidates_dir) and not match_search_failed
     candidates = []
     if os.path.isdir(candidates_dir):
         for candidate_file in sorted(os.listdir(candidates_dir)):
@@ -159,6 +173,8 @@ def format_review_packet_item(packet_dir, request_id):
         'additional_images': additional_images,
         'candidates': sorted(candidates, key=lambda x: x['rank']),
         'match_search_pending': match_search_pending,
+        'match_search_failed': match_search_failed,
+        'match_search_error': match_search_error,
         'status': 'pending',
     }
 

@@ -27,8 +27,23 @@ def test_match_search_pending_true_when_candidate_matches_missing(packet_dir):
     _write_minimal_jpeg(str(packet_dir / "query.jpg"))
     item = format_review_packet_item(str(packet_dir), "Req_unit_test_packet")
     assert item["match_search_pending"] is True
+    assert item["match_search_failed"] is False
+    assert item["match_search_error"] is None
     assert item["candidates"] == []
     assert item["request_id"] == "Req_unit_test_packet"
+
+
+def test_match_search_failed_marker_not_pending(packet_dir):
+    """After create_review_packet errors before candidate_matches, API must not stay pending."""
+    packet_dir.mkdir()
+    _write_minimal_jpeg(str(packet_dir / "query.jpg"))
+    with open(packet_dir / "match_search_failed.json", "w") as f:
+        json.dump({"error": "GPU oops"}, f)
+    item = format_review_packet_item(str(packet_dir), "Req_unit_test_packet")
+    assert item["match_search_pending"] is False
+    assert item["match_search_failed"] is True
+    assert item["match_search_error"] == "GPU oops"
+    assert item["candidates"] == []
 
 
 def test_match_search_pending_false_when_candidate_matches_empty_dir(packet_dir):
@@ -40,6 +55,7 @@ def test_match_search_pending_false_when_candidate_matches_empty_dir(packet_dir)
         json.dump({"finder": "test"}, f)
     item = format_review_packet_item(str(packet_dir), "Req_unit_test_packet")
     assert item["match_search_pending"] is False
+    assert item["match_search_failed"] is False
     assert item["candidates"] == []
     assert item["metadata"].get("finder") == "test"
 
@@ -53,6 +69,7 @@ def test_match_search_pending_false_with_ranked_candidate(packet_dir):
     _write_minimal_jpeg(str(cm / "Rank1_IDT42_Conf85.jpg"))
     item = format_review_packet_item(str(packet_dir), "Req_unit_test_packet")
     assert item["match_search_pending"] is False
+    assert item["match_search_failed"] is False
     assert len(item["candidates"]) == 1
     assert item["candidates"][0]["turtle_id"] == "T42"
     assert item["candidates"][0]["rank"] == 1

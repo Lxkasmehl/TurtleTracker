@@ -29,6 +29,22 @@ function mockReadyItem(requestId: string) {
       },
     ],
     match_search_pending: false,
+    match_search_failed: false,
+    match_search_error: null,
+    status: 'pending',
+  };
+}
+
+function mockFailedMatchingItem(requestId: string) {
+  return {
+    request_id: requestId,
+    uploaded_image: `Review_Queue/${requestId}/query.jpg`,
+    metadata: { finder: 'E2E Failed', state: '', location: '' },
+    additional_images: [],
+    candidates: [],
+    match_search_pending: false,
+    match_search_failed: true,
+    match_search_error: 'SuperPoint unavailable',
     status: 'pending',
   };
 }
@@ -132,5 +148,68 @@ test.describe('Admin Review Queue – match search pending', () => {
     await expect(tabPanel.getByText(/Finding matches/i)).toBeVisible();
     await expect(tabPanel.getByText('1 matches')).toBeVisible({ timeout: 60_000 });
     await expect(tabPanel.getByText(/Finding matches/i)).not.toBeVisible();
+  });
+
+  test('list shows Match search failed when match_search_failed is true', async ({ page }) => {
+    const failed = mockFailedMatchingItem('Req_e2e_failed_match');
+
+    await page.route('**/api/review-queue', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, items: [failed] }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await loginAsAdmin(page);
+    await navClick(page, 'Turtle Records');
+    const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
+    await tabPanel.waitFor({ state: 'visible', timeout: 10_000 });
+
+    await expect(tabPanel.getByText(/Match search failed/i)).toBeVisible();
+    await expect(tabPanel.getByText(/Finding matches/i)).not.toBeVisible();
+    await expect(tabPanel.getByText('0 matches')).not.toBeVisible();
+  });
+
+  test('failed matching detail shows error and Create New Turtle', async ({ page }) => {
+    const failed = mockFailedMatchingItem('Req_e2e_failed_detail');
+
+    await page.route('**/api/review-queue', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, items: [failed] }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.route(`**/api/review-queue/${encodeURIComponent(failed.request_id)}`, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, item: failed }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await loginAsAdmin(page);
+    await navClick(page, 'Turtle Records');
+    const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
+    await tabPanel.waitFor({ state: 'visible', timeout: 10_000 });
+    await tabPanel.getByText(/Match search failed/i).click();
+
+    await expect(page.getByText(/Automatic matching failed/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/SuperPoint unavailable/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Create New Turtle/i })).toBeVisible();
   });
 });

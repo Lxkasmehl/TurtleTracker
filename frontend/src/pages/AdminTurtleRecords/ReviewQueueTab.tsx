@@ -1,4 +1,5 @@
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -15,6 +16,7 @@ import {
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import {
+  IconAlertCircle,
   IconCheck,
   IconList,
   IconMapPin,
@@ -204,6 +206,27 @@ export function ReviewQueueTab() {
                         </Text>
                       </Stack>
                     </Center>
+                  ) : selectedItem.match_search_failed === true ? (
+                    <Stack gap='md'>
+                      <Alert
+                        icon={<IconAlertCircle size={18} />}
+                        title='Automatic matching failed'
+                        color='red'
+                        variant='light'
+                      >
+                        <Text size='sm'>
+                          {selectedItem.match_search_error?.trim() ||
+                            'The server could not run match search for this upload. You can still create a new turtle or remove this item from the queue.'}
+                        </Text>
+                      </Alert>
+                      <Text size='sm' c='dimmed' ta='center' maw={440}>
+                        No suggested matches are available. Use{' '}
+                        <Text span fw={600}>
+                          Create New Turtle
+                        </Text>{' '}
+                        below if this is a new individual.
+                      </Text>
+                    </Stack>
                   ) : (
                   <Flex gap='sm' wrap='wrap' align='stretch'>
                     {selectedItem.candidates.map((candidate) => (
@@ -424,6 +447,24 @@ export function ReviewQueueTab() {
                 </Text>
               </Center>
             </Paper>
+          ) : selectedItem.match_search_failed === true ? (
+            <Paper shadow='sm' p='xl' radius='md' withBorder>
+              <Center py='xl'>
+                <Stack gap='md' align='center'>
+                  <Text size='sm' c='dimmed' ta='center' maw={420}>
+                    Matching did not complete, so there are no suggested turtles to pick from. You
+                    can still add this find as a new turtle.
+                  </Text>
+                  <Button
+                    leftSection={<IconPlus size={16} />}
+                    onClick={onCreateNewTurtle}
+                    variant='light'
+                  >
+                    Create New Turtle
+                  </Button>
+                </Stack>
+              </Center>
+            </Paper>
           ) : (
             <Paper shadow='sm' p='xl' radius='md' withBorder>
               <Center py='xl'>
@@ -522,6 +563,13 @@ export function ReviewQueueTab() {
                             <Loader size='xs' />
                             <Text size='sm' c='dimmed'>
                               Finding matches…
+                            </Text>
+                          </Group>
+                        ) : item.match_search_failed === true ? (
+                          <Group gap='xs' wrap='nowrap'>
+                            <IconAlertCircle size={16} color='var(--mantine-color-red-6)' />
+                            <Text size='sm' c='red'>
+                              Match search failed
                             </Text>
                           </Group>
                         ) : (
