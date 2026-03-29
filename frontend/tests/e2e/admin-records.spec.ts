@@ -51,9 +51,12 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
     await expect(page.getByRole('tab', { name: /Review Queue/ })).toBeVisible();
 
     const tabPanel = page.getByRole('tabpanel', { name: /Review Queue/ });
-    const hasItems = await tabPanel.getByText(/\d+ matches/).count() > 0;
+    const hasItems =
+      (await tabPanel.getByText(/\d+ matches/).count()) > 0 ||
+      (await tabPanel.getByText(/Finding matches/i).count()) > 0;
     if (hasItems) {
-      await tabPanel.getByText(/\d+ matches/).first().click();
+      const entry = tabPanel.getByText(/\d+ matches/).first().or(tabPanel.getByText(/Finding matches/i).first());
+      await entry.click();
       await expect(page.getByRole('button', { name: /Back to list/ })).toBeVisible();
       await expect(page.getByText('Uploaded Photo')).toBeVisible();
     } else {
@@ -74,8 +77,12 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
     await Promise.race([
       tabPanel.getByText('No pending reviews').waitFor({ state: 'visible', timeout: 10_000 }),
       tabPanel.getByText(/\d+ matches/).first().waitFor({ state: 'visible', timeout: 10_000 }),
+      tabPanel.getByText(/Finding matches/i).first().waitFor({ state: 'visible', timeout: 10_000 }),
     ]);
-    const matchLink = tabPanel.getByText(/\d+ matches/).first();
+    const matchLink = tabPanel
+      .getByText(/\d+ matches/)
+      .first()
+      .or(tabPanel.getByText(/Finding matches/i).first());
     const hasItems = (await matchLink.count()) > 0;
     if (hasItems) {
       await matchLink.click();
@@ -97,9 +104,13 @@ test.describe('Admin Turtle Records (Review Queue)', () => {
     await expect(
       tabPanel
         .getByText('No pending reviews')
-        .or(tabPanel.getByText(/\d+ matches/).first()),
+        .or(tabPanel.getByText(/\d+ matches/).first())
+        .or(tabPanel.getByText(/Finding matches/i).first()),
     ).toBeVisible({ timeout: 15_000 });
-    const matchLink = tabPanel.getByText(/\d+ matches/).first();
+    const matchLink = tabPanel
+      .getByText(/\d+ matches/)
+      .first()
+      .or(tabPanel.getByText(/Finding matches/i).first());
     const hasItems = (await matchLink.count()) > 0;
     if (!hasItems) {
       await expect(page.getByText('No pending reviews')).toBeVisible();

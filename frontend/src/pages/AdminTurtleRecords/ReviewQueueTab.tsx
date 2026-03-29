@@ -194,6 +194,17 @@ export function ReviewQueueTab() {
                     </Text>
                     {loadingCandidateNames && <Loader size='xs' />}
                   </Group>
+                  {selectedItem.match_search_pending === true ? (
+                    <Center py='xl'>
+                      <Stack align='center' gap='md'>
+                        <Loader size='md' />
+                        <Text size='sm' c='dimmed' ta='center' maw={440}>
+                          Still running photo matching in the background. This can take a few
+                          minutes. The list refreshes automatically; you can leave and come back.
+                        </Text>
+                      </Stack>
+                    </Center>
+                  ) : (
                   <Flex gap='sm' wrap='wrap' align='stretch'>
                     {selectedItem.candidates.map((candidate) => (
                       <Card
@@ -265,6 +276,7 @@ export function ReviewQueueTab() {
                       </Card>
                     ))}
                   </Flex>
+                  )}
                 </Stack>
               </Grid.Col>
             </Grid>
@@ -290,7 +302,7 @@ export function ReviewQueueTab() {
                 }))}
                 requestId={selectedItem.request_id}
                 onRefresh={() => refreshQueueItem(selectedItem.request_id)}
-                disabled={!!processing}
+                disabled={!!processing || selectedItem.match_search_pending === true}
               />
               {selectedCandidate && (
                 <AdditionalImagesSection
@@ -403,6 +415,15 @@ export function ReviewQueueTab() {
                 </Group>
               </Paper>
             </>
+          ) : selectedItem.match_search_pending === true ? (
+            <Paper shadow='sm' p='xl' radius='md' withBorder>
+              <Center py='xl'>
+                <Text size='sm' c='dimmed' ta='center' maw={420}>
+                  Match suggestions are not ready yet. You can review photos above, or wait until
+                  matching finishes to choose a match or create a new turtle.
+                </Text>
+              </Center>
+            </Paper>
           ) : (
             <Paper shadow='sm' p='xl' radius='md' withBorder>
               <Center py='xl'>
@@ -496,9 +517,18 @@ export function ReviewQueueTab() {
                             style={{ maxHeight: 180, objectFit: 'contain' }}
                           />
                         )}
-                        <Text size='sm' c='dimmed'>
-                          {item.candidates.length} matches
-                        </Text>
+                        {item.match_search_pending === true ? (
+                          <Group gap='xs' wrap='nowrap'>
+                            <Loader size='xs' />
+                            <Text size='sm' c='dimmed'>
+                              Finding matches…
+                            </Text>
+                          </Group>
+                        ) : (
+                          <Text size='sm' c='dimmed'>
+                            {item.candidates.length} matches
+                          </Text>
+                        )}
                         {item.metadata.state && item.metadata.location && (
                           <Text size='xs' c='dimmed'>
                             {item.metadata.state} / {item.metadata.location}
