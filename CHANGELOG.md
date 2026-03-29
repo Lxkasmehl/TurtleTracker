@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Backup (Google Sheets)**: Export admin and community spreadsheets to CSV and JSON for backup and history. Run `python -m backup.run` from backend; output under `BACKUP_OUTPUT_DIR/sheets/YYYY-MM-DD/` (one CSV per sheet plus optional JSON per spreadsheet). `BACKUP_OUTPUT_DIR` configurable via env (default `./backups`). Docker Compose mounts `./backups` on the host so backups survive container/volume removal. Strategy and retention in `docs/BACKUP.md`; backend README and env.template updated. `.gitignore` excludes `backups/`. `.env.docker.example` documents `GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID` for Docker.
 - **Observer gamification**: Observer Hub, XP, weekly quests, badges, and reward flows on upload/home for **any logged-in role** (community, staff, admin). Progress is stored **per user id** in SQLite (`community_game`) and survives role promotion/demotion; guests see a sign-up teaser only (no anonymous progress). Client: Redux (`communityGameSlice`), local fallback when sync fails, debounced `GET`/`PUT /auth/community-game`. Navigation includes Observer HQ for staff/admin; staff match uploads can update progress before navigating to the match page. Backend validates payload bounds.
 - **Auth backend**: `npm run delete-user` script (by email, refuses last admin; `CASCADE` cleans related rows).
 
