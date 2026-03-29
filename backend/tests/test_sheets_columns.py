@@ -30,3 +30,9 @@ def test_field_to_column_includes_morphometrics():
     for header, field_name in MORPHOMETRICS_HEADERS.items():
         assert field_name in FIELD_TO_COLUMN, f"Missing field {field_name!r}"
         assert FIELD_TO_COLUMN[field_name] == header
+
+
+def test_column_mapping_includes_deceased():
+    assert 'Deceased?' in COLUMN_MAPPING
+    assert COLUMN_MAPPING['Deceased?'] == 'deceased'
+    assert FIELD_TO_COLUMN['deceased'] == 'Deceased?'

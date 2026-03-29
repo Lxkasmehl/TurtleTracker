@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Badge,
   Box,
   Button,
   Card,
@@ -15,7 +16,7 @@ import {
   Text,
   TextInput,
 } from '@mantine/core';
-import { IconDatabase, IconMapPin, IconPhoto, IconSearch } from '@tabler/icons-react';
+import { IconDatabase, IconMapPin, IconPhoto, IconSearch, IconSkull } from '@tabler/icons-react';
 import { getImageUrl, getTurtleImages, getTurtlePrimariesBatch, type TurtleImagesResponse } from '../../services/api';
 import { TurtleSheetsDataForm } from '../../components/TurtleSheetsDataForm';
 import { AdditionalImagesSection } from '../../components/AdditionalImagesSection';
@@ -25,6 +26,11 @@ function turtleKey(turtle: { primary_id?: string | null; id?: string | null; she
   const id = turtle.primary_id || turtle.id || '';
   const sheet = turtle.sheet_name ?? '';
   return `${id}|${sheet}`;
+}
+
+function isSheetsDeceasedYes(v?: string | null): boolean {
+  const s = (v || '').trim().toLowerCase();
+  return ['yes', 'y', 'true', '1', 'deceased', 'dead'].includes(s);
 }
 
 export function SheetsBrowserTab() {
@@ -168,21 +174,31 @@ export function SheetsBrowserTab() {
                         selectedTurtle?.primary_id ===
                         (turtle.primary_id || turtle.id)
                           ? '#e7f5ff'
-                          : 'white',
+                          : isSheetsDeceasedYes(turtle.deceased)
+                            ? '#f4f4f5'
+                            : 'white',
                     }}
                     onClick={() => setSelectedTurtle(turtle)}
                   >
                     <Group justify='space-between' align='flex-start' wrap='nowrap' gap='sm'>
                       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-                        {turtle.name ? (
-                          <Text fw={600} size='md' c='blue'>
-                            {turtle.name}
-                          </Text>
-                        ) : (
+                        <Group gap="xs" wrap="wrap">
+                          {turtle.name ? (
+                            <Text fw={600} size='md' c='blue'>
+                              {turtle.name}
+                            </Text>
+                          ) : null}
+                          {isSheetsDeceasedYes(turtle.deceased) && (
+                            <Badge size="sm" color="gray" variant="filled" leftSection={<IconSkull size={12} />}>
+                              Deceased
+                            </Badge>
+                          )}
+                        </Group>
+                        {!turtle.name ? (
                           <Text fw={500} size='sm' c='dimmed' fs='italic'>
                             No name
                           </Text>
-                        )}
+                        ) : null}
 
                         <Stack gap={2}>
                           {turtle.location && (

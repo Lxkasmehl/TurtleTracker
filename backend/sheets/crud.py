@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 from googleapiclient.errors import HttpError
 from .helpers import escape_sheet_name, get_sheet_name_for_region
 from .columns import COLUMN_MAPPING
+from .row_formatting import apply_deceased_row_background, is_deceased_yes
 
 
 def get_turtle_data(service, spreadsheet_id: str, primary_id: str, sheet_name: str, 
@@ -170,6 +171,11 @@ def create_turtle_data(service, spreadsheet_id: str, turtle_data: Dict[str, Any]
             valueInputOption='RAW',
             body=body
         ).execute()
+
+        if is_deceased_yes(turtle_data.get('deceased')):
+            apply_deceased_row_background(
+                service, spreadsheet_id, sheet_name, next_row, True,
+            )
         
         # Return the primary ID
         return primary_id
@@ -211,8 +217,10 @@ def update_turtle_data(service, spreadsheet_id: str, primary_id: str, turtle_dat
         # Ensure Primary ID column exists
         ensure_primary_id_column_func(sheet_name)
         
-        # Find the row
-        row_idx = find_row_by_primary_id_func(sheet_name, primary_id)
+        # Find the row (Primary ID first, then biology ID column — same as get_turtle_data)
+        row_idx = find_row_by_primary_id_func(sheet_name, primary_id, 'Primary ID')
+        if not row_idx:
+            row_idx = find_row_by_primary_id_func(sheet_name, primary_id, 'ID')
         if not row_idx:
             return False
         
@@ -243,12 +251,20 @@ def update_turtle_data(service, spreadsheet_id: str, primary_id: str, turtle_dat
                         row_data.append('')
                     row_data[col_idx] = str(turtle_data[field_name])
         
-        # Ensure Primary ID is updated (it's required and must match)
+        # Primary ID: keep existing cell if the row was matched via biology ID (ID column)
         if 'Primary ID' in column_indices:
             primary_id_col_idx = column_indices['Primary ID']
             while len(row_data) <= primary_id_col_idx:
                 row_data.append('')
-            row_data[primary_id_col_idx] = str(primary_id)
+            existing_primary = ''
+            if primary_id_col_idx < len(row_data) and row_data[primary_id_col_idx]:
+                existing_primary = str(row_data[primary_id_col_idx]).strip()
+            if 'primary_id' in turtle_data and str(turtle_data.get('primary_id') or '').strip():
+                row_data[primary_id_col_idx] = str(turtle_data['primary_id']).strip()
+            elif existing_primary:
+                row_data[primary_id_col_idx] = existing_primary
+            else:
+                row_data[primary_id_col_idx] = str(primary_id)
         
         # Write the updated row
         range_name = f"{escaped_sheet}!{row_idx}:{row_idx}"
@@ -262,6 +278,16 @@ def update_turtle_data(service, spreadsheet_id: str, primary_id: str, turtle_dat
             valueInputOption='RAW',
             body=body
         ).execute()
+
+        deceased_raw = ''
+        if 'Deceased?' in column_indices:
+            ix = column_indices['Deceased?']
+            deceased_raw = row_data[ix] if ix < len(row_data) else ''
+        elif 'deceased' in turtle_data:
+            deceased_raw = str(turtle_data.get('deceased') or '')
+        apply_deceased_row_background(
+            service, spreadsheet_id, sheet_name, row_idx, is_deceased_yes(deceased_raw),
+        )
         
         return True
     except HttpError as e:
