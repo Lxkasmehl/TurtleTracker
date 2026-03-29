@@ -42,6 +42,16 @@ export const TURTLE_SHEETS_FORM_FIELDS: TurtleFormFieldConfig[] = [
     infoTooltip: HEALTH_STATUS_INFO_TOOLTIP,
     span: { base: 12, md: 12 },
   },
+  {
+    key: 'deceased',
+    label: 'Deceased?',
+    placeholder: 'Yes / No',
+    description:
+      'When Yes, the row is shaded in Google Sheets. Use for confirmed mortalities (including identifiable remains without a usable plastron photo).',
+    type: 'select',
+    selectData: ['No', 'Yes'],
+    span: { base: 12, md: 6 },
+  },
   // Optional mass and morphometrics
   { key: 'mass_g', label: 'Mass (g)', placeholder: 'e.g. 250', description: 'Body mass in grams', type: 'text', span: { base: 12, md: 4 } },
   { key: 'curved_carapace_length_mm', label: 'Curved carapace length (mm)', placeholder: 'mm', type: 'text', span: { base: 12, md: 4 } },

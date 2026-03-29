@@ -14,7 +14,7 @@ import {
   Loader,
 } from '@mantine/core';
 import { useImperativeHandle, forwardRef } from 'react';
-import { IconInfoCircle } from '@tabler/icons-react';
+import { IconInfoCircle, IconSkull } from '@tabler/icons-react';
 import { useTurtleSheetsDataForm } from '../hooks/useTurtleSheetsDataForm';
 import type { UseTurtleSheetsDataFormReturn } from './TurtleSheetsDataForm.types';
 import {
@@ -28,6 +28,11 @@ import { TurtleSheetsDataFormFields } from './TurtleSheetsDataFormFields';
 import type { TurtleSheetsDataFormProps, TurtleSheetsDataFormRef } from './TurtleSheetsDataForm.types';
 
 export type { TurtleSheetsDataFormRef } from './TurtleSheetsDataForm.types';
+
+function isSheetsDeceasedYes(v?: string): boolean {
+  const s = (v || '').trim().toLowerCase();
+  return ['yes', 'y', 'true', '1', 'deceased', 'dead'].includes(s);
+}
 
 export const TurtleSheetsDataForm = forwardRef<
   TurtleSheetsDataFormRef,
@@ -109,6 +114,14 @@ export const TurtleSheetsDataForm = forwardRef<
         }}
       >
         <FormHeader mode={mode} primaryId={primaryId} />
+
+        {isSheetsDeceasedYes(hook.formData.deceased) && (
+          <Alert icon={<IconSkull size={18} />} color="gray" title="Recorded as deceased" radius="md">
+            <Text size="sm">
+              This turtle is marked deceased in Google Sheets (gray row and Deceased? column when present).
+            </Text>
+          </Alert>
+        )}
 
         <Alert icon={<IconInfoCircle size={18} />} color='blue' radius='md'>
           <Text size='sm'>

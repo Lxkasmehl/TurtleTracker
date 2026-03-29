@@ -23,6 +23,7 @@ COLUMN_MAPPING = {
     'General Location': 'general_location',
     'Location': 'location',
     'Health Status': 'health_status',
+    'Deceased?': 'deceased',
     'Notes': 'notes',
     'Transmitter put on by': 'transmitter_put_on_by',
     'Transmitter On Date': 'transmitter_on_date',

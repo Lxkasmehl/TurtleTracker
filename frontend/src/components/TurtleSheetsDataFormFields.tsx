@@ -24,6 +24,7 @@ const FORM_FIELD_ORDER: (keyof TurtleSheetsData | '__dates_refound__' | '__commu
   'general_location',
   'location',
   'health_status',
+  'deceased',
   'mass_g',
   'curved_carapace_length_mm',
   'straight_carapace_length_mm',
