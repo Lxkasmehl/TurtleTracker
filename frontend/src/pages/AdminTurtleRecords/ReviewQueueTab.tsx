@@ -3,13 +3,13 @@ import {
   Button,
   Card,
   Center,
-  Flex,
   Grid,
   Group,
   Image,
   Loader,
   Paper,
   ScrollArea,
+  SimpleGrid,
   Stack,
   Text,
 } from '@mantine/core';
@@ -165,109 +165,133 @@ export function ReviewQueueTab() {
             </div>
           )}
 
+          {/* Uploaded photo — full width */}
           <Paper shadow='sm' p='md' radius='md' withBorder>
-            <Grid gutter='lg'>
-              <Grid.Col span={{ base: 12, md: 4 }}>
-                <Stack gap='xs'>
-                  <Text fw={600} size='sm' c='dimmed'>
-                    Uploaded Photo
-                  </Text>
-                  {selectedItem.uploaded_image && (
+            <Stack gap='sm'>
+              <Text fw={500} size='lg'>
+                Uploaded Photo
+              </Text>
+              {selectedItem.uploaded_image && (
+                <Image
+                  src={getImageUrl(selectedItem.uploaded_image)}
+                  alt='Uploaded photo'
+                  radius='md'
+                  style={{
+                    maxHeight: 'min(500px, 60vh)',
+                    objectFit: 'contain',
+                    width: '100%',
+                  }}
+                />
+              )}
+            </Stack>
+          </Paper>
+
+          {/* Top 5 Matches — responsive grid with large cards */}
+          <Paper shadow='sm' p='md' radius='md' withBorder>
+            <Group justify='space-between' mb='md'>
+              <Group gap='xs'>
+                <Text fw={500} size='lg'>
+                  Top 5 Matches
+                </Text>
+                {loadingCandidateNames && <Loader size='xs' />}
+              </Group>
+            </Group>
+
+            <Text size='sm' c='dimmed' mb='md'>
+              Select a match to view details
+            </Text>
+
+            <SimpleGrid
+              cols={{ base: 1, xs: 2, md: 3, lg: 5 }}
+              spacing='md'
+            >
+              {selectedItem.candidates.map((candidate) => (
+                <Card
+                  key={candidate.turtle_id}
+                  shadow='sm'
+                  padding='sm'
+                  radius='md'
+                  withBorder
+                  style={{
+                    cursor: 'pointer',
+                    border:
+                      selectedCandidate === candidate.turtle_id
+                        ? '2px solid #228be6'
+                        : '1px solid #dee2e6',
+                    backgroundColor:
+                      selectedCandidate === candidate.turtle_id
+                        ? '#e7f5ff'
+                        : 'white',
+                    transition: 'transform 0.1s, box-shadow 0.1s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = '';
+                    e.currentTarget.style.boxShadow = '';
+                  }}
+                  onClick={() => onItemSelect(selectedItem, candidate.turtle_id)}
+                >
+                  {candidate.image_path ? (
                     <Image
-                      src={getImageUrl(selectedItem.uploaded_image)}
-                      alt='Uploaded photo'
+                      src={getImageUrl(candidate.image_path)}
+                      alt={`Match ${candidate.rank}`}
                       radius='md'
                       style={{
-                        maxHeight: '320px',
-                        objectFit: 'contain',
+                        aspectRatio: '1',
+                        objectFit: 'cover',
                         width: '100%',
                       }}
+                      mb='sm'
+                    />
+                  ) : (
+                    <Center
+                      style={{
+                        aspectRatio: '1',
+                        backgroundColor: '#f8f9fa',
+                        borderRadius: 'var(--mantine-radius-md)',
+                      }}
+                      mb='sm'
+                    >
+                      <IconPhoto size={48} stroke={1.5} style={{ opacity: 0.3 }} />
+                    </Center>
+                  )}
+
+                  <Group justify='space-between' mb={4}>
+                    <Badge color='blue' size='sm' variant='filled'>
+                      #{candidate.rank}
+                    </Badge>
+                    <Badge color='gray' size='sm' variant='light'>
+                      {candidate.confidence}%
+                    </Badge>
+                  </Group>
+                  <Text
+                    fw={500}
+                    size='sm'
+                    truncate
+                    title={
+                      candidateNames[candidate.turtle_id] || candidate.turtle_id
+                    }
+                  >
+                    {candidateNames[candidate.turtle_id] || candidate.turtle_id}
+                  </Text>
+                  <Text size='xs' c='dimmed' truncate>
+                    ID:{' '}
+                    {candidateOriginalIds[candidate.turtle_id] ??
+                      candidate.turtle_id}
+                  </Text>
+                  {selectedCandidate === candidate.turtle_id && (
+                    <IconCheck
+                      size={18}
+                      color='#228be6'
+                      style={{ alignSelf: 'center', marginTop: 4 }}
                     />
                   )}
-                </Stack>
-              </Grid.Col>
-              <Grid.Col span={{ base: 12, md: 8 }}>
-                <Stack gap='xs'>
-                  <Group gap='xs'>
-                    <Text fw={600} size='sm' c='dimmed'>
-                      Top 5 Matches
-                    </Text>
-                    {loadingCandidateNames && <Loader size='xs' />}
-                  </Group>
-                  <Flex gap='sm' wrap='wrap' align='stretch'>
-                    {selectedItem.candidates.map((candidate) => (
-                      <Card
-                        key={candidate.turtle_id}
-                        shadow='sm'
-                        padding='sm'
-                        radius='md'
-                        withBorder
-                        style={{
-                          flex: '1 1 0',
-                          minWidth: 140,
-                          maxWidth: 220,
-                          cursor: 'pointer',
-                          border:
-                            selectedCandidate === candidate.turtle_id
-                              ? '2px solid #228be6'
-                              : '1px solid #dee2e6',
-                          backgroundColor:
-                            selectedCandidate === candidate.turtle_id
-                              ? '#e7f5ff'
-                              : 'white',
-                        }}
-                        onClick={() => onItemSelect(selectedItem, candidate.turtle_id)}
-                      >
-                        <Stack gap={6}>
-                          {candidate.image_path ? (
-                            <Image
-                              src={getImageUrl(candidate.image_path)}
-                              alt={`Match ${candidate.rank}`}
-                              radius='sm'
-                              style={{
-                                height: 200,
-                                objectFit: 'cover',
-                                width: '100%',
-                              }}
-                            />
-                          ) : (
-                            <Center style={{ height: 200 }} c='dimmed'>
-                              <IconPhoto size={48} />
-                            </Center>
-                          )}
-                          <Text
-                            fw={600}
-                            size='sm'
-                            lineClamp={1}
-                            title={
-                              candidateNames[candidate.turtle_id] || candidate.turtle_id
-                            }
-                          >
-                            {candidateNames[candidate.turtle_id] || candidate.turtle_id}
-                          </Text>
-                          <Text size='xs' c='dimmed'>
-                            ID:{' '}
-                            {candidateOriginalIds[candidate.turtle_id] ??
-                              candidate.turtle_id}{' '}
-                            · Confidence: {candidate.confidence}%
-                          </Text>
-                          <Badge size='sm' variant='light' color='blue'>
-                            #{candidate.rank}
-                          </Badge>
-                          {selectedCandidate === candidate.turtle_id && (
-                            <IconCheck
-                              size={18}
-                              color='#228be6'
-                              style={{ alignSelf: 'center' }}
-                            />
-                          )}
-                        </Stack>
-                      </Card>
-                    ))}
-                  </Flex>
-                </Stack>
-              </Grid.Col>
-            </Grid>
+                </Card>
+              ))}
+            </SimpleGrid>
           </Paper>
 
           <Paper shadow='sm' p='md' radius='md' withBorder>
@@ -350,39 +374,37 @@ export function ReviewQueueTab() {
                 <Text fw={600} size='md' mb='sm'>
                   Google Sheets – selected match
                 </Text>
-                <ScrollArea h={520} type='auto'>
-                  <TurtleSheetsDataForm
-                    ref={sheetsFormRef}
-                    initialData={sheetsData || undefined}
-                    sheetName={sheetsData?.sheet_name}
-                    initialAvailableSheets={
-                      availableSheets.length > 0 ? availableSheets : undefined
-                    }
-                    sheetSource={
-                      selectedItem.request_id?.startsWith('admin_') ? 'admin' : 'community'
-                    }
-                    state={state}
-                    location={location}
-                    hintLocationFromCommunity={
-                      state && location ? `${state} / ${location}` : state || location || undefined
-                    }
-                    hintCoordinates={
-                      selectedItem?.metadata?.location_hint_lat != null &&
-                      selectedItem?.metadata?.location_hint_lon != null
-                        ? {
-                            latitude: selectedItem.metadata.location_hint_lat,
-                            longitude: selectedItem.metadata.location_hint_lon,
-                            source: selectedItem.metadata.location_hint_source,
-                          }
-                        : undefined
-                    }
-                    primaryId={primaryId || undefined}
-                    mode={sheetsData ? 'edit' : 'create'}
-                    onSave={onSaveSheetsData}
-                    hideSubmitButton
-                    onCombinedSubmit={onSaveAndApprove}
-                  />
-                </ScrollArea>
+                <TurtleSheetsDataForm
+                  ref={sheetsFormRef}
+                  initialData={sheetsData || undefined}
+                  sheetName={sheetsData?.sheet_name}
+                  initialAvailableSheets={
+                    availableSheets.length > 0 ? availableSheets : undefined
+                  }
+                  sheetSource={
+                    selectedItem.request_id?.startsWith('admin_') ? 'admin' : 'community'
+                  }
+                  state={state}
+                  location={location}
+                  hintLocationFromCommunity={
+                    state && location ? `${state} / ${location}` : state || location || undefined
+                  }
+                  hintCoordinates={
+                    selectedItem?.metadata?.location_hint_lat != null &&
+                    selectedItem?.metadata?.location_hint_lon != null
+                      ? {
+                          latitude: selectedItem.metadata.location_hint_lat,
+                          longitude: selectedItem.metadata.location_hint_lon,
+                          source: selectedItem.metadata.location_hint_source,
+                        }
+                      : undefined
+                  }
+                  primaryId={primaryId || undefined}
+                  mode={sheetsData ? 'edit' : 'create'}
+                  onSave={onSaveSheetsData}
+                  hideSubmitButton
+                  onCombinedSubmit={onSaveAndApprove}
+                />
                 <Group justify='space-between' gap='md' mt='md'>
                   <Button
                     variant='subtle'
@@ -460,8 +482,12 @@ export function ReviewQueueTab() {
                       <Stack gap='sm'>
                         <Group justify='space-between' wrap='wrap' gap='xs'>
                           <Group gap='xs'>
-                            <Badge color='orange' variant='light' size='sm'>
-                              Pending
+                            <Badge
+                              color={item.status === 'matched' ? 'green' : 'orange'}
+                              variant='light'
+                              size='sm'
+                            >
+                              {item.status === 'matched' ? 'Matched' : 'Pending'}
                             </Badge>
                             <Badge
                               color={uploadSourceBadgeColor(item.request_id)}

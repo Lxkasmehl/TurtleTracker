@@ -256,7 +256,7 @@ def register_review_routes(app):
             'metadata': metadata,
             'additional_images': additional_images,
             'candidates': sorted(candidates, key=lambda x: x['rank']),
-            'status': 'pending',
+            'status': 'matched' if candidates else 'pending',
         }
 
     @app.route('/api/review-queue/<request_id>', methods=['GET'])

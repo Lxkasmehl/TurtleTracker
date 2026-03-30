@@ -168,18 +168,14 @@ class TurtleDeepMatcher:
             torch.cuda.empty_cache()
         return results
 
-    # --- NEW: VRAM FAST SEARCH METHOD ---
-    def match_query_robust_vram(self, query_path, location_filter="All Locations"):
-        """Bypasses disk I/O entirely by searching the pre-loaded cache."""
-        if not getattr(self, 'vram_cache', None):
-            logger.warning("⚠️ VRAM cache empty! Returning no matches.")
-            return []
-
+    def extract_query_features(self, query_path):
+        """Extract SuperPoint features for 4 rotations of a query image.
+        Returns list of 4 feature dicts, or None if image can't be read."""
         img_raw = cv2.imread(query_path, cv2.IMREAD_GRAYSCALE)
-        if img_raw is None: return []
+        if img_raw is None:
+            return None
 
         img_base = self.preprocess_image_robust(img_raw)
-
         rotations = [
             img_base,
             cv2.rotate(img_base, cv2.ROTATE_90_CLOCKWISE),
@@ -188,11 +184,20 @@ class TurtleDeepMatcher:
         ]
 
         query_feats_list = []
-        with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,
-                                                    enabled=self.use_amp):
+        with torch.inference_mode(), torch.autocast(
+            device_type=self.device.type, dtype=torch.float16, enabled=self.use_amp
+        ):
             for rot_img in rotations:
                 t_img = utils.numpy_image_to_torch(rot_img).to(self.device)
                 query_feats_list.append(self.extractor.extract(t_img))
+
+        return query_feats_list
+
+    def match_against_cache(self, query_feats_list, location_filter="All Locations"):
+        """Run LightGlue matching of pre-extracted query features against the VRAM cache."""
+        if not getattr(self, 'vram_cache', None):
+            logger.warning("⚠️ VRAM cache empty! Returning no matches.")
+            return []
 
         results = []
 
@@ -205,16 +210,13 @@ class TurtleDeepMatcher:
                 if not any(cand['location'] == a or cand['location'].startswith(a + '/') for a in allowed):
                     continue
 
-            # --- NEW: Bulletproof device alignment check ---
             cand_feats_safe = {k: v.to(self.device) for k, v in cand['feats'].items()}
 
             best_score = 0
             best_conf = 0
 
             for q_feats in query_feats_list:
-                # Pass the safe, aligned features into the matcher
                 score, match_count = self._run_glue(q_feats, cand_feats_safe)
-
                 if match_count > best_score:
                     best_score = match_count
                     best_conf = score
@@ -232,6 +234,13 @@ class TurtleDeepMatcher:
         if self.device_str == "cuda":
             torch.cuda.empty_cache()
         return results
+
+    def match_query_robust_vram(self, query_path, location_filter="All Locations"):
+        """Convenience wrapper: extract + match in one call."""
+        query_feats = self.extract_query_features(query_path)
+        if query_feats is None:
+            return []
+        return self.match_against_cache(query_feats, location_filter)
 
     def _run_glue(self, feats0, feats1):
         with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=torch.float16,

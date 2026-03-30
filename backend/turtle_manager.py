@@ -758,13 +758,20 @@ class TurtleManager:
         scope = f" (Location: {loc_filter})" if loc_filter else " (all locations)"
         print(f"🔍 Searching {filename} (VRAM Cached Mode){scope}...")
 
-        results = brain.match_query_robust_vram(query_image_path, loc_filter)
+        # Extract query features ONCE (expensive SuperPoint step)
+        query_feats = brain.extract_query_features(query_image_path)
+        if query_feats is None:
+            print(f"⚠️ Could not read query image")
+            return [], time.time() - t_start
+
+        results = brain.match_against_cache(query_feats, loc_filter)
 
         # Fallback: if the location-scoped search found fewer than 5 results,
         # re-run against the entire dataset so the admin always gets candidates.
+        # Reuses the already-extracted query features (no duplicate SuperPoint cost).
         if loc_filter and len(results) < 5:
             print(f"📢 Only {len(results)} match(es) in scope — expanding to all locations...")
-            results = brain.match_query_robust_vram(query_image_path, None)
+            results = brain.match_against_cache(query_feats, None)
 
         t_elapsed = time.time() - t_start
 
