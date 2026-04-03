@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Forms**: Community general location no longer behaves as a catalog dropdown or gets cleared by catalog validation when the sheet is not part of the research location catalog.
+- **Google Sheets (community spreadsheet)**: The community-facing spreadsheet no longer receives admin-catalog data validation on “General Location”. New tabs skip the dropdown; after each successful create/update row on a community tab, any existing validation on that column is cleared so the cell stays free text (independent of research `general_locations` sync).
 - **Auth**: Authenticated requests fail with 403 when the user row no longer exists (e.g. after admin deletion); a valid JWT signature alone is not enough. Legacy `auth.json` import treats a missing `email_verified` field as verified and backfills `email_verified_at` from existing timestamps.
 - **Community game (frontend)**: When syncing to the server fails after load or on debounced save, progress is written to local storage via `writePersistedGame` so offline or error paths do not silently drop state; local cache is cleared only after a successful server round-trip.
 

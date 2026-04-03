@@ -134,6 +134,55 @@ def _apply_general_location_validation(
         return False
 
 
+def clear_general_location_validation(
+    service,
+    spreadsheet_id: str,
+    sheet_name: str,
+    sheet_id: Optional[int] = None,
+    column_index: Optional[int] = None,
+) -> bool:
+    """
+    Remove data validation from the General Location column (free text in Sheets UI).
+    Used for the community-facing spreadsheet where general_location is not catalog-constrained.
+    """
+    if is_backup_sheet(sheet_name):
+        return False
+
+    try:
+        if sheet_id is None:
+            sheet_id = _get_sheet_id(service, spreadsheet_id, sheet_name)
+        if sheet_id is None:
+            return False
+        if column_index is None:
+            column_index = _get_general_location_column_index(service, spreadsheet_id, sheet_name)
+        if column_index is None:
+            return False
+
+        # Omitting `rule` clears validation for the range (Sheets API v4).
+        requests = [{
+            'setDataValidation': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': GENERAL_LOCATION_VALIDATION_START_ROW,
+                    'endRowIndex': GENERAL_LOCATION_VALIDATION_END_ROW,
+                    'startColumnIndex': column_index,
+                    'endColumnIndex': column_index + 1,
+                },
+            },
+        }]
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={'requests': requests},
+        ).execute()
+        return True
+    except HttpError as e:
+        print(f"Error clearing General Location validation for '{sheet_name}': {e}")
+        return False
+    except Exception as e:
+        print(f"Error clearing General Location validation for '{sheet_name}': {e}")
+        return False
+
+
 def sync_general_location_validations(service, sheet_names: Optional[List[str]] = None) -> int:
     """Sync General Location dropdown validation across one or more sheets."""
     api, spreadsheet_id = _sheets_v4_client_and_id(service)
@@ -543,7 +592,8 @@ def list_sheets(service, spreadsheet_id: str, reinitialize_service_func, max_ret
 
 
 def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, column_mapping: Dict[str, str], list_sheets_func,
-                              header_order: Optional[List[str]] = None) -> bool:
+                              header_order: Optional[List[str]] = None,
+                              apply_general_location_validation: bool = True) -> bool:
     """
     Create a new sheet (tab) with all required headers.
     
@@ -553,6 +603,7 @@ def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, col
         sheet_name: Name of the new sheet to create
         column_mapping: Dictionary mapping column headers to field names
         list_sheets_func: Function to list available sheets
+        apply_general_location_validation: When False (community spreadsheet), skip catalog dropdown on General Location.
         
     Returns:
         True if successful, False otherwise
@@ -615,7 +666,8 @@ def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, col
         ).execute()
 
         general_location_idx = headers.index('General Location') if 'General Location' in headers else None
-        _apply_general_location_validation(service, spreadsheet_id, sheet_name, sheet_id, general_location_idx)
+        if apply_general_location_validation:
+            _apply_general_location_validation(service, spreadsheet_id, sheet_name, sheet_id, general_location_idx)
         
         print(f"✅ Created new sheet '{sheet_name}' with {len(headers)} headers")
         return True
