@@ -48,10 +48,12 @@ def _safe_folder_name(sheet_name):
 # Flat structure: when drive has location folders directly at root (no State parent),
 # map each folder name to "State/Location". Takes precedence over hierarchical logic.
 DRIVE_LOCATION_TO_BACKEND_PATH = {
-    "North Topeka": "Kansas/North Topeka",
-    "Lawrence": "Kansas/Lawrence",
+    "Dee Hobelman": "Kansas/Dee Hobelman",
     "Karlyle Woods": "Kansas/Karlyle Woods",
-    "Valencia": "Kansas/Valencia",
+    "Lawrence": "Kansas/Lawrence",
+    "North Topeka": "Kansas/North Topeka",
+    "Other": "Kansas/Other",
+    "West Topeka": "Kansas/West Topeka",
     "CPBS": "NebraskaCPBS/CPBS",
     "Crescent Lake": "NebraskaCL/Crescent Lake",
 }

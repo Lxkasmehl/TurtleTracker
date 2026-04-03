@@ -8,10 +8,15 @@ export interface TurtleSheetsData {
   primary_id?: string;
   sheet_name?: string; // Which Google Sheets tab this turtle belongs to
   transmitter_id?: string;
+  /** Sheet column "Freq" */
+  freq?: string;
   id?: string;
   id2?: string;
   pit?: string;
+  /** Legacy sheet header "Pic in 2024 Archive?" (still read from old tabs) */
   pic_in_2024_archive?: string;
+  plastron_picture_in_archive?: string;
+  carapace_picture_in_archive?: string;
   adopted?: string;
   ibutton?: string;
   dna_extracted?: string;
@@ -22,6 +27,8 @@ export interface TurtleSheetsData {
   ibutton_last_set?: string;
   last_assay_date?: string;
   dates_refound?: string;
+  /** Sheet column between Dates refound and General Location */
+  specific_location?: string;
   general_location?: string;
   location?: string;
   health_status?: string;
@@ -34,6 +41,7 @@ export interface TurtleSheetsData {
   old_frequencies?: string;
   // Optional mass and morphometrics
   mass_g?: string;
+  flesh_flies?: string;
   curved_carapace_length_mm?: string;
   straight_carapace_length_mm?: string;
   carapace_width_mm?: string;

@@ -2,11 +2,17 @@
 Sheet management functions for Google Sheets
 """
 
-from typing import Optional, Dict, List
+from typing import Any, Dict, List, Optional
 from googleapiclient.errors import HttpError
 import ssl
 import time
-from .helpers import escape_sheet_name, is_backup_sheet
+from .helpers import escape_sheet_name, column_index_to_letter, is_backup_sheet
+from .columns import (
+    CANONICAL_COLUMN_ORDER,
+    FIELD_TO_COLUMN,
+    collect_missing_headers_for_turtle_data,
+    compute_insert_index_for_missing_column,
+)
 from general_locations_catalog import get_general_location_options_for_sheet
 
 GENERAL_LOCATION_VALIDATION_START_ROW = 1  # Row 2 in Sheets UI
@@ -164,6 +170,106 @@ def sync_general_location_validations(service, sheet_names: Optional[List[str]] 
     return processed
 
 
+def _read_header_row_list(service, spreadsheet_id: str, sheet_name: str) -> List[str]:
+    """Return row 1 cell values as a list (may be empty)."""
+    try:
+        escaped_sheet = escape_sheet_name(sheet_name)
+        range_name = f"{escaped_sheet}!1:1"
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+        ).execute()
+        values = result.get('values', [])
+        if not values:
+            return []
+        return list(values[0])
+    except HttpError:
+        return []
+
+
+def ensure_missing_columns_for_turtle_write(
+    service,
+    spreadsheet_id: str,
+    sheet_name: str,
+    turtle_data: Dict[str, Any],
+    get_all_column_indices_func,
+    invalidate_column_indices_cache_func=None,
+    field_to_column: Dict[str, str] = None,
+) -> bool:
+    """
+    Insert any sheet columns required by non-empty turtle_data fields that are missing
+    from row 1, placed according to CANONICAL_COLUMN_ORDER.
+    """
+    if is_backup_sheet(sheet_name):
+        return False
+    if field_to_column is None:
+        field_to_column = FIELD_TO_COLUMN
+
+    try:
+        column_indices = get_all_column_indices_func(sheet_name)
+        if not column_indices:
+            return False
+
+        missing = collect_missing_headers_for_turtle_data(
+            turtle_data, column_indices, field_to_column=field_to_column
+        )
+        if not missing:
+            return True
+
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheet_id = None
+        for sheet in spreadsheet.get('sheets', []):
+            if sheet['properties']['title'] == sheet_name:
+                sheet_id = sheet['properties']['sheetId']
+                break
+        if sheet_id is None:
+            print(f"ERROR: Could not find sheet '{sheet_name}' for column insert")
+            return False
+
+        for header in missing:
+            headers = _read_header_row_list(service, spreadsheet_id, sheet_name)
+            normalized = [(h or '').strip() for h in headers]
+            if header in normalized:
+                continue
+
+            insert_at = compute_insert_index_for_missing_column(headers, header)
+            requests = [{
+                'insertDimension': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': insert_at,
+                        'endIndex': insert_at + 1,
+                    }
+                }
+            }]
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={'requests': requests},
+            ).execute()
+
+            escaped_sheet = escape_sheet_name(sheet_name)
+            col_letter = column_index_to_letter(insert_at)
+            range_name = f"{escaped_sheet}!{col_letter}1"
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body={'values': [[header]]},
+            ).execute()
+
+            if invalidate_column_indices_cache_func:
+                invalidate_column_indices_cache_func(sheet_name)
+
+        return True
+    except HttpError as e:
+        print(f"Error ensuring missing columns for '{sheet_name}': {e}")
+        return False
+    except Exception as e:
+        print(f"Error ensuring missing columns for '{sheet_name}': {e}")
+        return False
+
+
 def ensure_primary_id_column(service, spreadsheet_id: str, sheet_name: str, get_all_column_indices_func,
                              invalidate_column_indices_cache_func=None) -> bool:
     """
@@ -297,7 +403,7 @@ def find_row_by_primary_id(service, spreadsheet_id: str, sheet_name: str, primar
         
         # Get all values in the sheet
         escaped_sheet = escape_sheet_name(sheet_name)
-        range_name = f"{escaped_sheet}!A:Z"  # Adjust range as needed
+        range_name = f"{escaped_sheet}!A:ZZ"
         result = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=range_name
@@ -436,7 +542,8 @@ def list_sheets(service, spreadsheet_id: str, reinitialize_service_func, max_ret
     return []
 
 
-def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, column_mapping: Dict[str, str], list_sheets_func) -> bool:
+def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, column_mapping: Dict[str, str], list_sheets_func,
+                              header_order: Optional[List[str]] = None) -> bool:
     """
     Create a new sheet (tab) with all required headers.
     
@@ -462,8 +569,11 @@ def create_sheet_with_headers(service, spreadsheet_id: str, sheet_name: str, col
             print(f"Sheet '{sheet_name}' already exists")
             return True  # Sheet exists, that's fine
         
-        # Get all column headers from COLUMN_MAPPING
-        headers = list(column_mapping.keys())
+        # Header row: canonical order (stable layout); fall back to mapping keys
+        if header_order:
+            headers = list(header_order)
+        else:
+            headers = list(column_mapping.keys())
         
         # Create the new sheet
         requests = [{

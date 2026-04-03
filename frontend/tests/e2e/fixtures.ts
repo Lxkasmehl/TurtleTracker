@@ -300,16 +300,16 @@ export async function fillGeneralLocationInCreateTurtleDialog(
 
 /**
  * Kansas option for Create New Turtle E2E — must exist in {@link registerKansasGeneralLocationsCatalogMock}.
- * Prefer this over "Wichita": CI/minimal catalogs often omit Wichita (options come from GET /api/general-locations).
  */
 export const E2E_KANSAS_GENERAL_LOCATION = 'Lawrence';
 
 const E2E_MOCK_KANSAS_GENERAL_LOCATIONS = [
+  'Dee Hobelman',
   'Karlyle Woods',
   'Lawrence',
   'North Topeka',
-  'Valencia',
-  'Wichita',
+  'Other',
+  'West Topeka',
 ] as const;
 
 /**

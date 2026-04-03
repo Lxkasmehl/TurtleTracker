@@ -14,7 +14,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Import modules
-from sheets.columns import COLUMN_MAPPING, FIELD_TO_COLUMN
+from sheets.columns import CANONICAL_COLUMN_ORDER, COLUMN_MAPPING, FIELD_TO_COLUMN
 from sheets import helpers
 from sheets import crud
 from sheets import migration
@@ -183,7 +183,8 @@ class GoogleSheetsService:
         with self._api_lock:
             return crud.create_turtle_data(
                 self.service, self.spreadsheet_id, turtle_data, sheet_name, state, location,
-                self._ensure_primary_id_column, self._get_all_column_indices
+                self._ensure_primary_id_column, self._get_all_column_indices,
+                self._invalidate_column_indices_cache,
             )
     
     def update_turtle_data(self, primary_id: str, turtle_data: Dict[str, Any], sheet_name: str, state: Optional[str] = None, location: Optional[str] = None) -> bool:
@@ -191,7 +192,8 @@ class GoogleSheetsService:
         with self._api_lock:
             return crud.update_turtle_data(
                 self.service, self.spreadsheet_id, primary_id, turtle_data, sheet_name, state, location,
-                self._ensure_primary_id_column, self._find_row_by_primary_id, self._get_all_column_indices
+                self._ensure_primary_id_column, self._find_row_by_primary_id, self._get_all_column_indices,
+                self._invalidate_column_indices_cache,
             )
     
     def delete_turtle_data(self, primary_id: str, sheet_name: str) -> bool:
@@ -297,7 +299,12 @@ class GoogleSheetsService:
         """Create a new sheet (tab) with all required headers."""
         with self._api_lock:
             result = sheet_management.create_sheet_with_headers(
-                self.service, self.spreadsheet_id, sheet_name, self.COLUMN_MAPPING, self.list_sheets
+                self.service,
+                self.spreadsheet_id,
+                sheet_name,
+                self.COLUMN_MAPPING,
+                self.list_sheets,
+                header_order=list(CANONICAL_COLUMN_ORDER),
             )
             if result:
                 self._invalidate_list_sheets_cache()
