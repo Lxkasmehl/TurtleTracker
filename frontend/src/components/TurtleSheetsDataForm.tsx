@@ -133,7 +133,11 @@ export const TurtleSheetsDataForm = forwardRef<
             <Grid.Col span={12}>
               <SheetSelectionRow
                 loadingSheets={hook.loadingSheets}
-                isFieldModeRestricted={hook.isFieldModeRestricted && !requireNewSheetForCommunityMatch}
+                isFieldModeRestricted={
+                  hook.isFieldModeRestricted &&
+                  !requireNewSheetForCommunityMatch &&
+                  mode !== 'create'
+                }
                 isFieldUnlocked={hook.isFieldUnlocked}
                 requestUnlock={hook.requestUnlock}
                 selectedSheetName={hook.selectedSheetName}

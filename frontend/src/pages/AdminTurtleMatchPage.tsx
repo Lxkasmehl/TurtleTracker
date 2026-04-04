@@ -942,6 +942,12 @@ export default function AdminTurtleMatchPage() {
             onSave={handleSaveNewTurtleSheetsData}
             onCancel={() => setShowNewTurtleModal(false)}
             useBackendLocations
+            sheetSource='admin'
+            addOnlyMode
+            matchPageColumnLayout
+            initialAvailableSheets={
+              availableSheets.length > 0 ? availableSheets : undefined
+            }
           />
         </Stack>
       </Modal>

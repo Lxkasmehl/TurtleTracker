@@ -57,8 +57,10 @@ export function TurtleSheetsDataFormFields({
   const effectiveRestrictedForField = (field: keyof TurtleSheetsData) =>
     requireNewSheetForCommunityMatch && field === 'general_location' ? false : isFieldModeRestricted;
 
+  /** Edit match: hard read-only (no unlock). Create match: never; those fields use unlock instead. */
   const matchReadOnlyDisplay = (field: keyof TurtleSheetsData): boolean => {
     if (!useMatchEditLocks) return false;
+    if (mode === 'create') return false;
     if (requireNewSheetForCommunityMatch && field === 'general_location') return false;
     return !TURTLE_MATCH_PAGE_UNLOCKABLE_FIELDS.has(field);
   };
@@ -66,6 +68,8 @@ export function TurtleSheetsDataFormFields({
   const matchRestrictedForUnlock = (field: keyof TurtleSheetsData): boolean => {
     if (!useMatchEditLocks) return effectiveRestrictedForField(field);
     if (requireNewSheetForCommunityMatch && field === 'general_location') return false;
+    if (field === 'id') return false;
+    if (mode === 'create') return true;
     return TURTLE_MATCH_PAGE_UNLOCKABLE_FIELDS.has(field);
   };
 
