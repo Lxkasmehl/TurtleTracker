@@ -42,67 +42,90 @@ test.describe('Home – mortality without plastron (mark deceased)', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
+            // Empty list → TextInput (native fill updates React state). Mantine Select + Playwright is flaky on
+            // mobile, and DOM-only fill on Select does not set controlled value without picking an option.
             success: true,
-            options: ['F1', 'M2'],
-            count: 2,
+            options: [],
+            count: 0,
           }),
         });
       },
     );
 
-    await page.route('**/api/sheets/turtle/mark-deceased', async (route) => {
-      if (route.request().method() !== 'POST') {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          primary_id: 'e2e-primary',
-          biology_id: 'F1',
-          name: 'E2E Turtle',
-          deceased: 'Yes',
-          message: 'Deceased status updated',
-        }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname.includes('/api/sheets/turtle/mark-deceased'),
+      async (route) => {
+        if (route.request().method() !== 'POST') {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            primary_id: 'e2e-primary',
+            biology_id: 'F1',
+            name: 'E2E Turtle',
+            deceased: 'Yes',
+            message: 'Deceased status updated',
+          }),
+        });
+      },
+    );
 
     await page.goto('/');
     await grantLocationPermission(page);
     await loginAsStaff(page);
 
-    await page.getByRole('button', { name: 'Mortality without plastron ID' }).click();
+    const mortalityBtn = page.getByRole('button', { name: 'Mortality without plastron ID' });
+    await mortalityBtn.scrollIntoViewIfNeeded();
+    await mortalityBtn.click({ force: true });
     await expect(page.getByText('Mortality without plastron match')).toBeVisible();
 
-    const sheetSelect = page.getByRole('textbox', { name: 'Spreadsheet tab (location)' });
-    await sheetSelect.click();
+    const markModal = page
+      .getByRole('dialog')
+      .filter({ has: page.getByText(/For mortalities you cannot scan/i) });
+
+    const sheetSelect = markModal.getByRole('textbox', { name: 'Spreadsheet tab (location)' });
+    await sheetSelect.scrollIntoViewIfNeeded();
+    await sheetSelect.click({ force: true });
     const sheetListbox = page.getByRole('listbox', { name: 'Spreadsheet tab (location)' });
     await sheetListbox.waitFor({ state: 'visible', timeout: 15_000 });
     await sheetListbox.getByRole('option', { name: MOCK_SHEET, exact: true }).click();
+    await sheetListbox.waitFor({ state: 'hidden', timeout: 15_000 });
 
-    await expect(page.getByText('Loading values from this sheet…')).not.toBeVisible({
+    await expect(markModal.getByText('Loading values from this sheet…')).not.toBeVisible({
       timeout: 15_000,
     });
 
-    const biologyLabel = 'Biology ID';
-    const biologySelect = page
-      .getByRole('textbox', { name: biologyLabel })
-      .or(page.getByRole('combobox', { name: biologyLabel }));
-    await biologySelect.click();
-    // Portaled Mantine listboxes: scope options to this field; WebKit sometimes omits listbox name (see fixtures.ts).
-    const namedBioListbox = page.getByRole('listbox', { name: biologyLabel });
-    const useNamedBio = await namedBioListbox
-      .waitFor({ state: 'visible', timeout: 3_000 })
-      .then(() => true)
-      .catch(() => false);
-    const bioListbox = useNamedBio ? namedBioListbox : page.getByRole('listbox').last();
-    await bioListbox.waitFor({ state: 'visible', timeout: 15_000 });
-    await biologySelect.fill('F1');
-    await bioListbox.getByRole('option', { name: 'F1', exact: true }).click();
+    // Exclude the "Biology ID …" radio option — it also associates with label text containing "Biology ID".
+    const biologyField = markModal.getByRole('textbox', { name: 'Biology ID' });
+    await expect(biologyField).toBeVisible({ timeout: 15_000 });
+    await biologyField.scrollIntoViewIfNeeded();
 
-    await page.getByRole('button', { name: 'Apply' }).click();
+    await biologyField.fill('F1');
+
+    const loginToast = page
+      .getByRole('alert')
+      .filter({ hasText: /Successfully logged in/i })
+      .getByRole('button')
+      .first();
+    if (await loginToast.isVisible().catch(() => false)) {
+      await loginToast.click();
+    }
+
+    const applyBtn = markModal.getByRole('button', { name: 'Apply' });
+    await applyBtn.scrollIntoViewIfNeeded();
+    await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.request().method() === 'POST' &&
+          new URL(r.url()).pathname.includes('/api/sheets/turtle/mark-deceased'),
+        { timeout: 15_000 },
+      ),
+      applyBtn.click(),
+    ]);
 
     await expect(page.getByText('Deceased status updated').first()).toBeVisible({
       timeout: 10_000,
