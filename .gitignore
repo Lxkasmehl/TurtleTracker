@@ -19,3 +19,6 @@ Thumbs.db
 
 # Local backup output (see docs/BACKUP.md)
 backups/
+
+github_actions_deploy
+github_actions_deploy.pub
