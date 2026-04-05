@@ -7,50 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-05 — Observer hub, backups, mortality tooling, and SQLite auth
+
 ### Added
 
-- **Review queue (admin)**: While a community upload is still running SuperPoint matching, the API exposes `match_search_pending` and the Turtle Records queue shows **Finding matches…** instead of a misleading **0 matches**; the detail view explains that matching runs in the background and the list auto-refreshes (faster polling while any item is pending).
-- **Backup (Google Sheets)**: Export admin and community spreadsheets to CSV and JSON for backup and history. Run `python -m backup.run` from backend; output under `BACKUP_OUTPUT_DIR/sheets/YYYY-MM-DD/` (one CSV per sheet plus optional JSON per spreadsheet). `BACKUP_OUTPUT_DIR` configurable via env (default `./backups`). Docker Compose mounts `./backups` on the host so backups survive container/volume removal. Strategy and retention in `docs/BACKUP.md`; backend README and env.template updated. `.gitignore` excludes `backups/`. `.env.docker.example` documents `GOOGLE_SHEETS_COMMUNITY_SPREADSHEET_ID` for Docker.
-- **Observer gamification**: Observer Hub, XP, weekly quests, badges, and reward flows on upload/home for **any logged-in role** (community, staff, admin). Progress is stored **per user id** in SQLite (`community_game`) and survives role promotion/demotion; guests see a sign-up teaser only (no anonymous progress). Client: Redux (`communityGameSlice`), local fallback when sync fails, debounced `GET`/`PUT /auth/community-game`. Navigation includes Observer HQ for staff/admin; staff match uploads can update progress before navigating to the match page. Backend validates payload bounds.
-- **Auth backend**: `npm run delete-user` script (by email, refuses last admin; `CASCADE` cleans related rows).
-- **Deceased turtles (Google Sheets)**: `Deceased?` column (auto-added when needed), row background styling, and `PUT`-time sync with sheet updates. **Mark deceased without plastron**: `POST /api/sheets/turtle/mark-deceased` (lookup by biology ID, name, or primary ID within one tab) and `GET /api/sheets/mark-deceased/lookup-options` for a searchable picker (avoids route clash with `GET /api/sheets/turtle/<primary_id>`). **Frontend**: `Deceased?` on turtle sheets form, deceased hint + badge in Sheets browser; staff **Home** opens a modal (“Mortality without plastron ID”) with sheet tab + picker. Unit tests for column mapping and sheet lookup helpers.
-- **E2E**: Playwright coverage for Review Queue → community upload → Create New Turtle: General Location is a plain text field (optional hint, no catalog “add new”), and the value stays after choosing sheet and sex; `expectGeneralLocationIsFreeTextInDialog` helper in `frontend/tests/e2e/fixtures.ts`.
-- **Google Sheets (research)**: Canonical column order for new tabs (`CANONICAL_COLUMN_ORDER`): **Frequency**, **Date DNA Extracted?**, **Cow Interactions?**, **Flesh Flies?** before **Mass (g)**, short morphometrics (**CCL**, **Cflat**, **Cwidth**, **PlasCL**, **Pflat**, **P1**, **P2**, **Pwidth**, **DomeHeight**). Row 1 headers must match exactly (no legacy alias mapping). Missing columns needed for a save are inserted in canonical positions; reads use wider ranges (e.g. `A:ZZ`). Biology IDs support more legacy cell shapes and normalize to MFJU + three-digit sequence for display and generation.
-- **CI/CD**: GitHub Actions workflow **Deploy on GitHub Release** (`.github/workflows/deploy-release.yml`): on `release` `published`, SSH to the server with `appleboy/ssh-action`, `git fetch` / checkout the release tag, then `docker compose up --build -d`. Configure secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_SSH_FINGERPRINT`) and repository variable `DEPLOY_PATH`. Root `.gitignore` excludes `github_actions_deploy` and `github_actions_deploy.pub` so deploy keys are not committed.
+- **Google Sheets backup**: `python -m backup.run` exports admin and community spreadsheets to CSV/JSON under `BACKUP_OUTPUT_DIR` (default `./backups`); Docker documents a host mount; see `docs/BACKUP.md`.
+- **Observer gamification**: Observer Hub with XP, quests, badges, and rewards for logged-in users; state in SQLite (`community_game`) with `GET`/`PUT /auth/community-game`, Redux on the client and local fallback when sync fails.
+- **Deceased turtles**: `Deceased?` column and sheet styling; APIs to mark deceased without plastron ID (`mark-deceased`, lookup options); staff UI on home and turtle forms.
+- **Review queue**: `match_search_pending` and UI for in-progress SuperPoint matching (no misleading “0 matches”); faster list polling while any item is pending.
+- **Deploy on GitHub Release**: Workflow checks out the release tag over SSH and runs `docker compose up --build -d` (`.github/workflows/deploy-release.yml`; secrets and `DEPLOY_PATH` documented in repo).
+- **Auth tooling**: `npm run delete-user` in auth-backend (by email; refuses removing the last admin).
 
 ### Changed
 
-- **Community turtles**: General Location is optional free text in the community spreadsheet flow (review queue / new turtle); the catalog dropdown stays for research paths (admin sheets, backend locations, and matching community turtles into admin).
-- **Email verification (frontend)**: Unverified logged-in users may open `/observer` (still redirected from other app areas until verified). After hydrating community game state, the verified observer badge is granted when the account is verified.
-- **Auth backend**: Primary store is SQLite (`auth.sqlite`, `better-sqlite3`) instead of `auth.json`; one-time import from legacy `auth.json` when the DB is empty; WAL/foreign keys; `email_verifications.used_at` added for existing DBs when missing.
-- **Google OAuth / signup**: New Google users get explicit verification timestamps on insert; duplicate-account path handles SQLite `UNIQUE` constraint errors (and removes the old post-insert delay).
-- **Backend**: `reset_complete_backend.py` removes leftover Django artifacts (`backend/turtles/db.sqlite3`, `backend/turtles/media/`) instead of clearing tables via the Django ORM.
-- **General locations & Drive**: Default Kansas general-location list and flat `DRIVE_LOCATION_TO_BACKEND_PATH` entries updated (e.g. Dee Hobelman, Other, West Topeka).
-- **Admin turtle form / API types**: Form fields and `TurtleSheetsData` extended for the new sheet columns.
-- **Admin turtle form / Turtle Match**: Form column order follows the research sheet; **Pit?**, archive/adoption/iButton/**Cow Interactions?**/**Flesh Flies?** use free-text fields instead of Yes/No dropdowns. Turtle Match shows a subset of columns (read-only vs unlock-to-edit); saving from that layout uses the main notes/dates fields directly (no append-only merge). **`value_normalize`**: only the biology **ID** column is normalized; other cells are unchanged end-to-end.
+- **Auth storage**: Primary store is SQLite (`auth.sqlite`, `better-sqlite3`) with one-time import from legacy `auth.json`; WAL, foreign keys, and `email_verifications.used_at` when missing. Google signup handles verification timestamps and duplicate SQLite `UNIQUE` errors cleanly.
+- **Auth behavior**: JWTs are rejected with 403 if the user row no longer exists. Unverified users may use `/observer` (other areas still require verification).
+- **Community general location**: Optional free text in community flows (review queue, new turtle); research paths keep the catalog dropdown. Community sheet tabs do not use research catalog validation on that column (including clearing validation after row writes).
+- **Research sheet schema**: Canonical column order and exact headers for new tabs (frequency, DNA, cow interactions, flesh flies, morphometrics, etc.); wider read ranges; biology ID parsing/normalization for display and generation. Admin turtle form and Turtle Match follow the same layout; Pit/archive/adoption/iButton/cow/flesh fields are free text; `value_normalize` applies only to the biology ID column.
+- **General locations & Drive**: Default Kansas list and `DRIVE_LOCATION_TO_BACKEND_PATH` updates.
+- **`reset_complete_backend.py`**: Removes leftover Django DB/media paths instead of clearing via the old ORM.
 
 ### Fixed
 
-- **Forms**: Community general location no longer behaves as a catalog dropdown or gets cleared by catalog validation when the sheet is not part of the research location catalog.
-- **Google Sheets (community spreadsheet)**: The community-facing spreadsheet no longer receives admin-catalog data validation on “General Location”. New tabs skip the dropdown; after each successful create/update row on a community tab, any existing validation on that column is cleared so the cell stays free text (independent of research `general_locations` sync).
-- **Auth**: Authenticated requests fail with 403 when the user row no longer exists (e.g. after admin deletion); a valid JWT signature alone is not enough. Legacy `auth.json` import treats a missing `email_verified` field as verified and backfills `email_verified_at` from existing timestamps.
-- **Community game (frontend)**: When syncing to the server fails after load or on debounced save, progress is written to local storage via `writePersistedGame` so offline or error paths do not silently drop state; local cache is cleared only after a successful server round-trip.
+- **Community game**: Progress persists to local storage when server sync fails; cache clears only after a successful round-trip.
+- **Legacy auth import**: Missing `email_verified` in imported JSON treated as verified with sensible `email_verified_at` backfill.
 
 ### Testing
 
-- **Review queue**: Unit tests `tests/test_review_packet_format.py` for `format_review_packet_item` (`match_search_pending` vs empty `candidate_matches`); integration asserts `match_search_pending` on queue/packet GET; Playwright `admin-review-queue-matching-pending.spec.ts` (mocked API: list + detail + poll to ready).
-- **Integration (admin role)**: `test_patch_user_role_as_admin_success` targets the seeded role-test community user (`E2E_ROLE_TEST_EMAIL`, default `role-test-community@test.com`) so role demotion does not revoke JWTs used by other tests.
-- **Observer / auth**: Playwright E2E for Observer HQ (`observer-hub.spec.ts`: guest teaser, community hub, staff nav, mobile “Learn more”) and gamification (`observer-hq-gamification.spec.ts`: community upload → rewards modal +XP, `PUT /auth/community-game`, quests/badges on `/observer`; serial suite for shared seed user). Backend integration: `test_community_game_api.py` (401/400, roundtrip, user isolation) and `community_token` fixture in `conftest.py`.
+- Playwright and pytest coverage expanded for review-queue pending state, Observer HQ and gamification, community general location in create flow, and community-game API behavior.
 
 ### Removed
 
-- **Backend**: Legacy Django project under `backend/turtles/` (identification app, `manage.py`, related tests). The HTTP API remains Flask-only; `backend/turtles/image_processing.py` (SuperPoint/LightGlue) is kept.
-- **Backend**: Deprecated VLAD/FAISS helper `search_utils.py` and duplicate `vlad_utils` modules; removed direct `faiss-cpu` and explicit `scipy` from `requirements.txt` (scikit-learn may still install scipy as a dependency).
-- **Backend**: Unused Flask imports in `app.py`.
+- Legacy Django app under `backend/turtles/` (Flask-only API; `image_processing.py` for SuperPoint/LightGlue retained).
+- Deprecated VLAD/FAISS helpers (`search_utils.py`, duplicate `vlad_utils` modules); direct `faiss-cpu` and explicit `scipy` dropped from `requirements.txt` (transitive installs may still apply).
+- Unused Flask imports in `app.py`.
 
-## [1.0.0] - 2026-03-23
-
-Version 1.0.0 is the milestone where the updated, properly functioning backend logic is merged and integrated with the latest frontend, so the stack finally works together end-to-end as one coherent application.
+## [1.0.0] - 2026-03-23 — End-to-end stack: matching, general locations, and ops polish
 
 ### Added
 
@@ -75,7 +67,7 @@ Version 1.0.0 is the milestone where the updated, properly functioning backend l
 
 ---
 
-## [0.2.0] - 2026-03-14
+## [0.2.0] - 2026-03-14 — Sheet/location hierarchy, community spreadsheets, and verified accounts
 
 ### Added
 
@@ -113,9 +105,7 @@ Version 1.0.0 is the milestone where the updated, properly functioning backend l
 
 ---
 
-## [0.1.0] - 2026-02-27
-
-First release of TurtleTracker: a community-driven web platform for turtle population monitoring using image-based identification.
+## [0.1.0] - 2026-02-27 — First release: community turtle ID and review workflow
 
 ### Added
 
@@ -130,7 +120,8 @@ First release of TurtleTracker: a community-driven web platform for turtle popul
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/TurtleProject/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/TurtleProject/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v1.0.0
 [0.2.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.1.0
