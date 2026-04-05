@@ -8,6 +8,7 @@ import {
   Button,
   Select,
   Loader,
+  Modal,
 } from '@mantine/core';
 import { Dropzone } from '@mantine/dropzone';
 import type { FileRejection, FileWithPath } from '@mantine/dropzone';
@@ -20,6 +21,7 @@ import {
   IconAlertCircle,
   IconCamera,
   IconInfoCircle,
+  IconSkull,
 } from '@tabler/icons-react';
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { validateFile } from '../utils/fileValidation';
@@ -38,6 +40,7 @@ import {
 import { SightingRewardsModal } from '../components/game/SightingRewardsModal';
 import { ObserverHomeSummary } from '../components/game/ObserverHomeSummary';
 import { ObserverGamificationTeaser } from '../components/game/ObserverGamificationTeaser';
+import { MarkDeceasedPanel } from '../components/MarkDeceasedPanel';
 
 const MATCH_ALL_VALUE = '__all__';
 const SYSTEM_FOLDERS = ['Community_Uploads', 'Review_Queue', 'Incidental_Finds', 'Incidental Places', 'benchmarks'];
@@ -52,6 +55,7 @@ export default function HomePage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [instructionsOpened, setInstructionsOpened] = useState(false);
+  const [markDeceasedModalOpen, setMarkDeceasedModalOpen] = useState(false);
   // Admin: backend folder locations for match scope (State and State/Location)
   const [availableLocations, setAvailableLocations] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
@@ -283,15 +287,28 @@ export default function HomePage() {
                   ? 'Submit a plastron sighting — your upload earns XP and counts toward Observer HQ quests'
                   : 'Submit a plastron sighting to support the project. Log in or create an account to earn XP and track Observer HQ progress.'}
             </Text>
-            <Button
-              variant="subtle"
-              size="sm"
-              c="dimmed"
-              leftSection={<IconInfoCircle size={16} />}
-              onClick={() => setInstructionsOpened(true)}
-            >
-              View instructions
-            </Button>
+            <Group justify="center" gap="sm" wrap="wrap">
+              <Button
+                variant="subtle"
+                size="sm"
+                c="dimmed"
+                leftSection={<IconInfoCircle size={16} />}
+                onClick={() => setInstructionsOpened(true)}
+              >
+                View instructions
+              </Button>
+              {isStaff && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  c="dimmed"
+                  leftSection={<IconSkull size={16} stroke={1.5} />}
+                  onClick={() => setMarkDeceasedModalOpen(true)}
+                >
+                  Mortality without plastron ID
+                </Button>
+              )}
+            </Group>
           </Stack>
 
           {/* Staff/Admin: select which location (backend folder / state) to test against */}
@@ -457,6 +474,21 @@ export default function HomePage() {
           canUseObserverGamification ? () => dispatch(markTrainingCompleted()) : undefined
         }
       />
+
+      <Modal
+        opened={markDeceasedModalOpen}
+        onClose={() => setMarkDeceasedModalOpen(false)}
+        title={
+          <Group gap="sm" wrap="nowrap">
+            <IconSkull size={22} stroke={1.5} />
+            <span>Mortality without plastron match</span>
+          </Group>
+        }
+        size="lg"
+        centered
+      >
+        <MarkDeceasedPanel embedded />
+      </Modal>
 
       {canUseObserverGamification && (
         <SightingRewardsModal

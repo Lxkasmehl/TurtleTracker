@@ -193,6 +193,14 @@ class GoogleSheetsService:
     def create_turtle_data(self, turtle_data: Dict[str, Any], sheet_name: str, state: Optional[str] = None, location: Optional[str] = None) -> Optional[str]:
         """Create a new turtle entry in Google Sheets."""
         with self._api_lock:
+            if turtle_data.get('deceased') is not None:
+                sheet_management.ensure_deceased_column(
+                    self.service,
+                    self.spreadsheet_id,
+                    self._get_sheet_name_for_region(sheet_name, state, location),
+                    self.list_sheets,
+                    self._invalidate_column_indices_cache,
+                )
             created = crud.create_turtle_data(
                 self.service, self.spreadsheet_id, turtle_data, sheet_name, state, location,
                 self._ensure_primary_id_column, self._get_all_column_indices,
@@ -213,6 +221,14 @@ class GoogleSheetsService:
     def update_turtle_data(self, primary_id: str, turtle_data: Dict[str, Any], sheet_name: str, state: Optional[str] = None, location: Optional[str] = None) -> bool:
         """Update existing turtle data in Google Sheets."""
         with self._api_lock:
+            if turtle_data.get('deceased') is not None:
+                sheet_management.ensure_deceased_column(
+                    self.service,
+                    self.spreadsheet_id,
+                    self._get_sheet_name_for_region(sheet_name, state, location),
+                    self.list_sheets,
+                    self._invalidate_column_indices_cache,
+                )
             ok = crud.update_turtle_data(
                 self.service, self.spreadsheet_id, primary_id, turtle_data, sheet_name, state, location,
                 self._ensure_primary_id_column, self._find_row_by_primary_id, self._get_all_column_indices,

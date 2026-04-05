@@ -42,6 +42,12 @@ def test_field_to_column_prefers_short_morph_headers_for_writes():
         assert FIELD_TO_COLUMN[field_name] == header
 
 
+def test_column_mapping_includes_deceased():
+    assert 'Deceased?' in COLUMN_MAPPING
+    assert COLUMN_MAPPING['Deceased?'] == 'deceased'
+    assert FIELD_TO_COLUMN['deceased'] == 'Deceased?'
+
+
 def test_transmitter_type_write_header_prefers_canonical_casing():
     assert FIELD_TO_COLUMN['transmitter_type'] == 'Transmitter Type'
 

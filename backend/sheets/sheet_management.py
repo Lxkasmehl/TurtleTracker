@@ -494,6 +494,68 @@ def find_row_by_primary_id(service, spreadsheet_id: str, sheet_name: str, primar
         return None
 
 
+def ensure_deceased_column(
+    service,
+    spreadsheet_id: str,
+    sheet_name: str,
+    list_sheets_func,
+    invalidate_column_indices_cache_func=None,
+) -> bool:
+    """
+    If the sheet has no 'Deceased?' header, insert a new column at the end and set the header.
+    """
+    if is_backup_sheet(sheet_name):
+        return False
+    available_sheets = list_sheets_func()
+    if sheet_name not in available_sheets:
+        return False
+    escaped = escape_sheet_name(sheet_name)
+    try:
+        r = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f'{escaped}!1:1',
+        ).execute()
+        headers = (r.get('values') or [[]])[0]
+        if 'Deceased?' in headers:
+            return True
+        sheet_id = _get_sheet_id(service, spreadsheet_id, sheet_name)
+        if sheet_id is None:
+            return False
+        insert_at = len(headers)
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                'requests': [
+                    {
+                        'insertDimension': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'dimension': 'COLUMNS',
+                                'startIndex': insert_at,
+                                'endIndex': insert_at + 1,
+                            },
+                            'inheritFromBefore': False,
+                        }
+                    }
+                ]
+            },
+        ).execute()
+        col_letter = column_index_to_letter(insert_at)
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f'{escaped}!{col_letter}1',
+            valueInputOption='RAW',
+            body={'values': [['Deceased?']]},
+        ).execute()
+        if invalidate_column_indices_cache_func:
+            invalidate_column_indices_cache_func(sheet_name)
+        print(f"Added 'Deceased?' column to sheet '{sheet_name}'")
+        return True
+    except Exception as e:
+        print(f'ensure_deceased_column failed: {e}')
+        return False
+
+
 def list_sheets(service, spreadsheet_id: str, reinitialize_service_func, max_retries: int = 2) -> list:
     """
     List all available sheets (tabs) in the spreadsheet.

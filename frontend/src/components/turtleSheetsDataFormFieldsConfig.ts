@@ -84,6 +84,16 @@ export const TURTLE_SHEETS_FORM_FIELDS: TurtleFormFieldConfig[] = [
     infoTooltip: HEALTH_STATUS_INFO_TOOLTIP,
     span: { base: 12, md: 12 },
   },
+  {
+    key: 'deceased',
+    label: 'Deceased?',
+    placeholder: 'Yes / No',
+    description:
+      'When Yes, the row is shaded in Google Sheets. Use for confirmed mortalities (including identifiable remains without a usable plastron photo).',
+    type: 'select',
+    selectData: ['No', 'Yes'],
+    span: { base: 12, md: 6 },
+  },
   { key: 'notes', label: 'Notes', placeholder: 'Additional notes', type: 'textarea', span: { base: 12, md: 12 } },
   { key: 'transmitter_put_on_by', label: 'Transmitter put on by', placeholder: 'Name', type: 'text', span: { base: 12, md: 6 } },
   { key: 'transmitter_on_date', label: 'Transmitter On Date', placeholder: 'Date', type: 'text', span: { base: 12, md: 6 } },
