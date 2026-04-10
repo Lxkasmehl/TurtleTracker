@@ -20,6 +20,7 @@ import { IconDatabase, IconMapPin, IconPhoto, IconSearch, IconSkull } from '@tab
 import { getImageUrl, getTurtleImages, getTurtlePrimariesBatch, type TurtleImagesResponse } from '../../services/api';
 import { TurtleSheetsDataForm } from '../../components/TurtleSheetsDataForm';
 import { AdditionalImagesSection } from '../../components/AdditionalImagesSection';
+import { formatSingleDateTokenToUs } from '../../utils/usDateFormat';
 import { useAdminTurtleRecordsContext } from './AdminTurtleRecordsContext';
 
 function turtleKey(turtle: { primary_id?: string | null; id?: string | null; sheet_name?: string | null }) {
@@ -268,7 +269,7 @@ export function SheetsBrowserTab() {
           <Stack gap='md'>
             {turtleId && (
               <AdditionalImagesSection
-                title={`Turtle photos (Microhabitat / Condition)${latestDate ? ` - ${latestDate}` : ''}`}
+                title={`Turtle photos (Microhabitat / Condition)${latestDate ? ` - ${formatSingleDateTokenToUs(latestDate)}` : ''}`}
                 images={recentAdditionalImages.map((a) => ({
                   imagePath: a.path,
                   filename: a.path.split(/[/\\]/).pop() ?? a.path,
