@@ -13,7 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Frontend dates**: Google Sheet turtle date fields (e.g. date 1st found, last assay, dates refound, transmitter/radio/iButton dates) are normalized to **MM/DD/YYYY** when the form loads and before save; placeholders use the same hint. Photo card/modal timestamps use US date + 12-hour time instead of `toLocaleString()` (browser locale). Sheets browser titles for microhabitat/condition photos show the folder date in US format.
 - **Frontend**: Default document title set to **Turtle Project** (replacing “Turtle Frontend”).
+
+### Fixed
+
+- **PhotoCard**: Removed unused `onPhotoClick` prop to satisfy ESLint.
+- **Dates refound**: Space-separated refound dates (e.g. `2021-06-15 2022-07-04` without commas) are normalized to US format for every date; previously only the first date was kept and later values were dropped on load/save.
+
+### Testing
+
+- Playwright: `tests/e2e/us-date-format.spec.ts` asserts Turtle Match form fields show **MM/DD/YYYY** when the mocked sheet API returns ISO date strings.
 
 ## [1.1.0] - 2026-04-05 — Observer hub, backups, mortality tooling, and SQLite auth
 
