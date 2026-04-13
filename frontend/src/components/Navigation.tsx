@@ -11,6 +11,7 @@ import {
   useMantineColorScheme,
   ActionIcon,
   Badge,
+  Anchor,
 } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { useMemo } from 'react';
@@ -171,7 +172,11 @@ export default function Navigation({ children }: NavigationProps) {
   );
 
   return (
-    <AppShell header={{ height: isMobile ? 56 : 60 }} padding={isMobile ? 'xs' : 'md'}>
+    <AppShell
+      header={{ height: isMobile ? 56 : 60 }}
+      footer={{ height: isMobile ? 52 : 44 }}
+      padding={isMobile ? 'xs' : 'md'}
+    >
       <AppShell.Header>
         <Group
           h='100%'
@@ -380,6 +385,41 @@ export default function Navigation({ children }: NavigationProps) {
       </Drawer>
 
       <AppShell.Main>{children}</AppShell.Main>
+
+      <AppShell.Footer p='xs'>
+        <Text size='xs' c='dimmed' ta='center' m={0}>
+          Favicon:{' '}
+          <Anchor
+            href='https://www.flaticon.com/free-icon/turtle_8493027'
+            target='_blank'
+            rel='noopener noreferrer'
+            size='xs'
+            c='dimmed'
+          >
+            turtle icon
+          </Anchor>
+          . Icons made by{' '}
+          <Anchor
+            href='https://www.freepik.com'
+            target='_blank'
+            rel='noopener noreferrer'
+            size='xs'
+            c='dimmed'
+          >
+            Freepik
+          </Anchor>{' '}
+          from{' '}
+          <Anchor
+            href='https://www.flaticon.com/'
+            target='_blank'
+            rel='noopener noreferrer'
+            size='xs'
+            c='dimmed'
+          >
+            www.flaticon.com
+          </Anchor>
+        </Text>
+      </AppShell.Footer>
     </AppShell>
   );
 }

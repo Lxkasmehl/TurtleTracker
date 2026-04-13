@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Frontend favicon & attribution**: Turtle favicon from Flaticon (`frontend/public/favicon.png`) with `rel="icon"` and `apple-touch-icon` in `index.html`; global app footer with required Freepik / www.flaticon.com links and a link to the specific icon for license compliance.
+
 ### Changed
 
 - **Frontend dates**: Google Sheet turtle date fields (e.g. date 1st found, last assay, dates refound, transmitter/radio/iButton dates) are normalized to **MM/DD/YYYY** when the form loads and before save; placeholders use the same hint. Photo card/modal timestamps use US date + 12-hour time instead of `toLocaleString()` (browser locale). Sheets browser titles for microhabitat/condition photos show the folder date in US format.
+- **Frontend**: Default document title set to **Turtle Project** (replacing “Turtle Frontend”).
 
 ### Fixed
 
