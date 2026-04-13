@@ -27,7 +27,8 @@ class TurtleDeepMatcher:
             logger.warning(
                 "⚠️ GPU NOT DETECTED. Running in CPU slow mode. "
                 "torch=%s torch.version.cuda=%r (if None, image has CPU-only PyTorch; "
-                "if set but still CPU, check nvidia-container-toolkit / docker --gpus).",
+                "if set but still CPU, check nvidia-container-toolkit / docker --gpus; "
+                "do not set CUDA_VISIBLE_DEVICES=all — use unset or e.g. 0).",
                 torch.__version__,
                 cuda_build,
             )

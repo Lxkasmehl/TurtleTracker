@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-04-13 — GPU visible to PyTorch (CUDA_VISIBLE_DEVICES)
+
+### Fixed
+
+- **`docker-compose.gpu.yml`**: Removed default `CUDA_VISIBLE_DEVICES=all`. That variable is **not** the same as `NVIDIA_VISIBLE_DEVICES`: CUDA expects numeric GPU indices (`0`, `1`, …). The value `all` is invalid for `CUDA_VISIBLE_DEVICES` and commonly yields `torch.cuda.is_available() == False` even with a correct CUDA PyTorch build (`torch.version.cuda` still set). Optional pin via `.env` only (e.g. `CUDA_VISIBLE_DEVICES=0`).
+- **GPU reservation**: Added `deploy.resources.reservations.devices` (NVIDIA, `capabilities: [gpu]`) alongside `gpus: all` for Compose setups where device requests need the explicit block.
+
 ## [1.2.2] - 2026-04-13 — CUDA PyTorch not overwritten by pip; clearer GPU diagnostics
 
 ### Fixed
@@ -155,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.3
 [1.2.2]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.2
 [1.2.1]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.1
 [1.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.0
