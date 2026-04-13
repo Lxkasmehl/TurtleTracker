@@ -40,4 +40,4 @@ jobs:
             for n in turtleproject-backend-1 turtleproject-auth-backend-1 turtleproject-frontend-1; do
               docker rm -f "$n" 2>/dev/null || true
             done
-            docker compose up --build -d
+            docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
