@@ -54,6 +54,8 @@ export {
   getTurtlePrimariesBatch,
   uploadTurtleAdditionalImages,
   deleteTurtleAdditionalImage,
+  searchTurtleImagesByLabel,
+  updateTurtleAdditionalImageLabels,
 } from './api/turtle';
 export type {
   TurtleMatch,
@@ -69,6 +71,7 @@ export type {
   UploadExtraFile,
   TurtleImageAdditional,
   TurtleImagesResponse,
+  TurtleAdditionalLabelSearchMatch,
 } from './api/turtle';
 
 export {
