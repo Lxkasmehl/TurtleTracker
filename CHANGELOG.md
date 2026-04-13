@@ -7,26 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-13 — PicTur branding, US date fields, admin ZIP backup, favicon
+
 ### Added
 
-- **Frontend favicon & attribution**: Turtle favicon from Flaticon (`frontend/public/favicon.png`) with `rel="icon"` and `apple-touch-icon` in `index.html`; global app footer with required Freepik / www.flaticon.com links and a link to the specific icon for license compliance.
-- **Admin offline backup (ZIP)**: `GET /api/admin/backup/archive` (`scope=all` or `scope=sheet&sheet=…`) returns a ZIP mirroring `data/` plus Google Sheets CSV/JSON exports (`require_admin_only`, not staff). **Google Sheets Browser** shows an admin-only “Offline backup (ZIP)” menu (full archive or current tab). Client: `downloadAdminBackupArchive`, `isAdminRole`.
+- **Favicon & attribution**: Turtle favicon (`frontend/public/favicon.png`) with `rel="icon"` and `apple-touch-icon` in `index.html`; global footer with Freepik / Flaticon links and a link to the icon asset for compliance.
+- **Admin offline backup (ZIP)**: `GET /api/admin/backup/archive` (`scope=all` or `scope=sheet&sheet=…`) returns a ZIP of `data/` plus Google Sheets CSV/JSON exports (admin-only, not staff). **Google Sheets Browser** adds “Offline backup (ZIP)” (full archive or current tab). Client: `downloadAdminBackupArchive`, `isAdminRole`.
 
 ### Changed
 
-- **Branding**: App and documentation renamed from TurtleTracker / Turtle Project to **PicTur** (npm packages `picturfrontend`, `pictur-auth-backend`; example paths `pictur`; GitHub repo [`Lxkasmehl/PicTur`](https://github.com/Lxkasmehl/PicTur)).
-- **Frontend**: Default document title set to **PicTur** (replacing “Turtle Frontend”).
-- **Frontend dates**: Google Sheet turtle date fields (e.g. date 1st found, last assay, dates refound, transmitter/radio/iButton dates) are normalized to **MM/DD/YYYY** when the form loads and before save; placeholders use the same hint. Photo card/modal timestamps use US date + 12-hour time instead of `toLocaleString()` (browser locale). Sheets browser titles for microhabitat/condition photos show the folder date in US format.
-- **Frontend**: Default document title set to **Turtle Project** (replacing “Turtle Frontend”).
+- **Branding & document title**: App and docs use **PicTur** (renamed from TurtleTracker / Turtle Project); npm packages `picturfrontend`, `pictur-auth-backend`; example paths `pictur`; GitHub repo [`Lxkasmehl/PicTur`](https://github.com/Lxkasmehl/PicTur). Default browser tab title **PicTur**.
+- **Frontend dates**: Turtle date fields in Google Sheets forms (first found, last assay, dates refound, transmitter/radio/iButton, etc.) normalize to **MM/DD/YYYY** on load and before save; placeholders match. Photo card/modal timestamps use US date + 12-hour time (not `toLocaleString()`). Sheets browser titles for microhabitat/condition photos use US folder dates.
 
 ### Fixed
 
-- **PhotoCard**: Removed unused `onPhotoClick` prop to satisfy ESLint.
-- **Dates refound**: Space-separated refound dates (e.g. `2021-06-15 2022-07-04` without commas) are normalized to US format for every date; previously only the first date was kept and later values were dropped on load/save.
+- **PhotoCard**: Removed unused `onPhotoClick` prop (ESLint).
+- **Dates refound**: Space-separated refound dates (e.g. two ISO dates without commas) normalize every value to US format; previously only the first date was kept on load/save.
 
 ### Testing
 
-- Playwright: `tests/e2e/us-date-format.spec.ts` asserts Turtle Match form fields show **MM/DD/YYYY** when the mocked sheet API returns ISO date strings.
+- Playwright: `tests/e2e/us-date-format.spec.ts` — Turtle Match fields show **MM/DD/YYYY** when the mocked sheet API returns ISO date strings.
 
 ## [1.1.0] - 2026-04-05 — Observer hub, backups, mortality tooling, and SQLite auth
 
@@ -86,8 +86,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Unused root `package.json` (frontend remains the npm entry point).
 
----
-
 ## [0.2.0] - 2026-03-14 — Sheet/location hierarchy, community spreadsheets, and verified accounts
 
 ### Added
@@ -124,8 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E**: Review queue upload-source badges (Admin vs Community), community-turtle-move-to-admin flow (`data-testid` on badges). Create New Turtle duplicate-name tests mock `/api/locations` and fill General Location. Home page match-scope helper text and sheet dropdown (top-level states only, no sublocations/system folders). admin-community-to-admin and Create New Turtle support both Mantine Select and native `<select>` for Sheet/Location.
 - **Integration**: Tests for `GET /api/locations` and for `POST /api/sheets/generate-id` with `target_spreadsheet` (research/community).
 
----
-
 ## [0.1.0] - 2026-02-27 — First release: community turtle ID and review workflow
 
 ### Added
@@ -141,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.0.0
 [0.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v0.2.0
