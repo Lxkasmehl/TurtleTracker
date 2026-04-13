@@ -99,13 +99,16 @@ export function formatSingleDateTokenToUs(raw: string): string {
   return formatLocalDateUsSlash(d);
 }
 
+/**
+ * Normalize a refound-dates string to US slash form, joining with ", ".
+ * Splits on commas and semicolons, then on whitespace within each segment so
+ * legacy values like "2021-06-15 2022-07-04" keep every date (not only the first).
+ */
 export function formatCommaSeparatedDatesToUs(raw: string): string {
-  return raw
+  const tokens = raw
     .split(/[,;]+/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => formatSingleDateTokenToUs(p))
-    .join(', ');
+    .flatMap((segment) => segment.trim().split(/\s+/).filter(Boolean));
+  return tokens.map((p) => formatSingleDateTokenToUs(p)).join(', ');
 }
 
 export function normalizeTurtleSheetsDateFieldsToUs(data: TurtleSheetsData): TurtleSheetsData {

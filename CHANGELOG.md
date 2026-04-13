@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **PhotoCard**: Removed unused `onPhotoClick` prop to satisfy ESLint.
+- **Dates refound**: Space-separated refound dates (e.g. `2021-06-15 2022-07-04` without commas) are normalized to US format for every date; previously only the first date was kept and later values were dropped on load/save.
 
 ### Testing
 
