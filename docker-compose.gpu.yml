@@ -5,4 +5,7 @@ services:
       dockerfile: Dockerfile.cuda
     gpus: all
     environment:
+      # Host driver + libs inside the container (nvidia-container-toolkit)
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-all}

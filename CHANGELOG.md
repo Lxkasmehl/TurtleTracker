@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-04-13 — CUDA PyTorch not overwritten by pip; clearer GPU diagnostics
+
+### Fixed
+
+- **CUDA PyTorch after `pip install -r`**: `kornia` and other deps can pull `torch` from PyPI and replace the cu121 wheels with a **CPU-only** build. `Dockerfile.cuda` now force-reinstalls `torch` / `torchvision` from the PyTorch CUDA index after all other packages and fails the image build if `torch.version.cuda` is unset.
+- **Compose GPU env**: `docker-compose.gpu.yml` sets `NVIDIA_VISIBLE_DEVICES` and `NVIDIA_DRIVER_CAPABILITIES` so the NVIDIA Container Toolkit passes driver capabilities into the backend container.
+
+### Changed
+
+- **Logs when GPU missing**: `TurtleBrain` logs `torch.__version__` and `torch.version.cuda` to distinguish “CPU-only wheel in image” vs “CUDA build but no device / toolkit”.
+
 ## [1.2.1] - 2026-04-13 — Production GPU deploy (CUDA PyTorch + Compose)
 
 ### Fixed
@@ -144,7 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.2
 [1.2.1]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.1
 [1.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.1.0
