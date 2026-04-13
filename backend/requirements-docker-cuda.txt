@@ -1,5 +1,5 @@
 # Same as requirements.txt but without torch/torchvision — those are installed in
-# Dockerfile.cuda from the PyTorch CUDA wheel index (PyPI default wheels are CPU-only).
+# Dockerfile.cuda from the PyTorch cu128 wheel index (PyPI default wheels are CPU-only).
 flask==3.0.0
 flask-cors==4.0.0
 Pillow>=10.0

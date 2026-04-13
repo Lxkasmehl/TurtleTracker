@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-04-13 — PyTorch cu128 for NVIDIA Blackwell (RTX 5080 / sm_120)
+
+### Fixed
+
+- **RTX 50-series (Blackwell, sm_120)**: Official cu121 wheels only ship GPU archs through **sm_90**, so PyTorch warned and could misbehave on e.g. RTX 5080. CUDA backend image is now **`nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`** with **torch / torchvision from `https://download.pytorch.org/whl/cu128`** (**torch ≥ 2.7**, **torchvision ≥ 0.22**) so sm_120 is supported.
+
 ## [1.2.3] - 2026-04-13 — GPU visible to PyTorch (CUDA_VISIBLE_DEVICES)
 
 ### Fixed
@@ -162,7 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.4
 [1.2.3]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.3
 [1.2.2]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.2
 [1.2.1]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.1
