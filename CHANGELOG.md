@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Frontend**: Default document title set to **Turtle Project** (replacing “Turtle Frontend”).
 - **CORS**: `PATCH` included in allowed methods for cross-origin tag updates.
 - **Upload route**: Shared `_collect_extra_upload_files` parses `extra_carapace_*`, `extra_other_*`, and per-index labels.
+- **Turtle additional photos**: POST stores `original_filename`; when images are merged into turtle folders, the stored file name uses the upload’s original basename instead of only the temp path. Integration test for review-queue carapace + labels; HTTP test client supports `PATCH`.
 
 ## [1.1.0] - 2026-04-05 — Observer hub, backups, mortality tooling, and SQLite auth
 

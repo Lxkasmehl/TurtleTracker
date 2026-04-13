@@ -270,16 +270,19 @@ def register_turtle_routes(app):
                 f.seek(0)
                 if size > MAX_FILE_SIZE:
                     continue
-                ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
+                orig_safe = secure_filename(f.filename) or ''
+                ext = os.path.splitext(orig_safe)[1] or '.jpg'
                 temp_path = os.path.join(
                     UPLOAD_FOLDER,
                     f"turtle_extra_{turtle_id}_{idx}_{int(time.time())}{ext}".replace(os.sep, '_'),
                 )
                 f.save(temp_path)
+                orig_base = os.path.basename(orig_safe) if orig_safe else f'upload{ext}'
                 item = {
                     'path': temp_path,
                     'type': typ,
                     'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    'original_filename': orig_base,
                 }
                 if lbs:
                     item['labels'] = lbs

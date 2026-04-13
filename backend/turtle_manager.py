@@ -854,7 +854,9 @@ class TurtleManager:
             lbs = normalize_label_list(item.get('labels'))
             ts = item.get('timestamp') or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
             if not src or not os.path.isfile(src): continue
-            safe_name = f"{typ}_{int(time.time() * 1000)}_{os.path.basename(src)}"
+            raw_name = item.get('original_filename')
+            name_suffix = os.path.basename(raw_name) if raw_name else os.path.basename(src)
+            safe_name = f"{typ}_{int(time.time() * 1000)}_{name_suffix}"
             safe_name = "".join(c for c in safe_name if c.isalnum() or c in '._-')
             dest = os.path.join(date_dir, safe_name)
             shutil.copy2(src, dest)
