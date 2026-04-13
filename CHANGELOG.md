@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-13 — Production GPU deploy (CUDA PyTorch + Compose)
+
+### Fixed
+
+- **Production deploy uses GPU stack**: GitHub Release deploy (`.github/workflows/deploy-release.yml`) now runs `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d` so the backend image is built from `Dockerfile.cuda` and receives `gpus: all`. Previously the workflow only used the default Compose file, which builds the CPU-only backend (`Dockerfile`).
+- **CUDA image installs PyTorch with CUDA**: `backend/Dockerfile.cuda` installs `torch` / `torchvision` from the PyTorch CUDA 12.1 wheel index (`cu121`); remaining dependencies use `backend/requirements-docker-cuda.txt` so pip does not pull CPU-only PyPI wheels. Added `python-is-python3` for healthchecks that invoke `python`.
+
 ## [1.2.0] - 2026-04-13 — PicTur branding, US date fields, admin ZIP backup, favicon
 
 ### Added
@@ -137,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.1
 [1.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.0.0
