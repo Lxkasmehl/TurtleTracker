@@ -27,9 +27,11 @@ def normalize_to_jpeg(src_path):
     dest = os.path.splitext(src_path)[0] + '.jpg'
     with Image.open(src_path) as img:
         img = ImageOps.exif_transpose(img)
-        img.convert('RGB').save(
-            dest, 'JPEG', quality=95, optimize=True,
-            exif=img.info.get('exif', b''),
-        )
+        save_kwargs = {'quality': 95, 'optimize': True}
+        # Only attach EXIF when present — Pillow's JPEG encoder chokes on None.
+        exif_bytes = img.info.get('exif') or b''
+        if exif_bytes:
+            save_kwargs['exif'] = exif_bytes
+        img.convert('RGB').save(dest, 'JPEG', **save_kwargs)
     os.remove(src_path)
     return dest
