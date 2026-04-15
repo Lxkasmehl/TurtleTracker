@@ -27,6 +27,50 @@ except ImportError as e1:
 # --- CONFIGURATION ---
 BASE_DATA_DIR = 'data'
 
+_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+
+
+def _find_image_next_to_pt(pt_path):
+    """Case-insensitive lookup: return the actual image file next to a .pt path.
+
+    Linux is case-sensitive, so a hardcoded lowercase-only extension list fails
+    for files named e.g. ``F128.JPG``. Scan the directory and match the stem
+    with any supported image extension regardless of case.
+
+    Returns the discovered image path, or ``None`` when no image is found.
+    """
+    if not pt_path or not pt_path.endswith('.pt'):
+        return None
+    base = pt_path[:-3]
+    dir_path = os.path.dirname(base) or '.'
+    base_name = os.path.basename(base)
+    if not os.path.isdir(dir_path):
+        return None
+    try:
+        entries = os.listdir(dir_path)
+    except OSError:
+        return None
+    for fname in entries:
+        stem, ext = os.path.splitext(fname)
+        if stem == base_name and ext.lower() in _IMAGE_EXTENSIONS:
+            return os.path.join(dir_path, fname)
+    return None
+
+
+def _find_image_in_dir(dir_path, stem):
+    """Case-insensitive sibling: find ``<stem>.<ext>`` in ``dir_path`` for any image ext."""
+    if not os.path.isdir(dir_path):
+        return None
+    try:
+        entries = os.listdir(dir_path)
+    except OSError:
+        return None
+    for fname in entries:
+        fstem, ext = os.path.splitext(fname)
+        if fstem == stem and ext.lower() in _IMAGE_EXTENSIONS:
+            return os.path.join(dir_path, fname)
+    return None
+
 # Characters invalid in folder names (Windows + common Unix); replaced with _ when syncing sheet names to disk
 _FOLDER_NAME_INVALID = r'\/:*?"<>|'
 
@@ -398,14 +442,8 @@ class TurtleManager:
                 score = int(match.get('score', 0))
                 pt_path = match.get('file_path', '')
 
-                # Resolve original image
-                ref_img_path = None
-                if pt_path and pt_path.endswith('.pt'):
-                    base_path = pt_path[:-3]
-                    for ext in ['.jpg', '.jpeg', '.png']:
-                        if os.path.exists(base_path + ext):
-                            ref_img_path = base_path + ext
-                            break
+                # Resolve original image — case-insensitive so .JPG works on Linux
+                ref_img_path = _find_image_next_to_pt(pt_path)
 
                 if ref_img_path:
                     ext = os.path.splitext(ref_img_path)[1]
@@ -487,12 +525,8 @@ class TurtleManager:
             if replace_reference:
                 print(f"✨ UPGRADING REFERENCE for {match_turtle_id}...")
                 old_pt_path = os.path.join(ref_dir, f"{match_turtle_id}.pt")
-                old_img_path = None
-                for ext in ['.jpg', '.jpeg', '.png']:
-                    possible = os.path.join(ref_dir, f"{match_turtle_id}{ext}")
-                    if os.path.exists(possible):
-                        old_img_path = possible
-                        break
+                # Case-insensitive lookup so .JPG old references are found on Linux
+                old_img_path = _find_image_in_dir(ref_dir, match_turtle_id)
 
                 op_ts = int(time.time() * 1000)
                 new_ext = os.path.splitext(query_image)[1]
