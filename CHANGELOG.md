@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-04-15 — HEIC uploads + case-insensitive image lookup
+
 ### Fixed
 
 - **Match thumbnails missing for `.JPG` references (Linux)**: Reference images saved with uppercase extensions (e.g. `F128.JPG`) were not resolving on the production Linux server because `convert_pt_to_image_path` and the related candidate-copy / replace-reference paths hard-coded a lowercase extension list (`['.jpg', '.jpeg', '.png']`) combined with `os.path.exists`. Case-sensitive filesystems silently returned the raw `.pt` path, which the frontend then couldn't render. Added case-insensitive helpers `routes.upload.find_image_for_pt`, `turtle_manager._find_image_next_to_pt`, and `turtle_manager._find_image_in_dir` that scan the containing directory and match the file stem against any supported image extension regardless of case. Windows/NTFS was never affected because its filesystem is case-insensitive.
