@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-04-16 - Add pillow-heif to CUDA image and libheif runtime deps
+
+### Fixed 
+
+- **GPU backend crash on startup (production)**: `Dockerfile.cuda` installs only `backend/requirements-docker-cuda.txt`, which did not include `pillow-heif` after HEIC support landed in `requirements.txt`. `app.py` imports upload routes → `image_utils` → `pillow_heif` at startup, so the container exited with `ModuleNotFoundError` and the API never stayed up. Added `pillow-heif>=0.16.0` to `requirements-docker-cuda.txt`. Installed **`libheif1`** and **`libde265-0`** via `apt` in `Dockerfile` and `Dockerfile.cuda` so the HEIF stack has runtime libraries inside the image (no host-level installs required).
+
+## [1.2.6] - 2026-04-15 — HEIC uploads + case-insensitive image lookup
+
 ### Fixed
 
 - **Match thumbnails missing for `.JPG` references (Linux)**: Reference images saved with uppercase extensions (e.g. `F128.JPG`) were not resolving on the production Linux server because `convert_pt_to_image_path` and the related candidate-copy / replace-reference paths hard-coded a lowercase extension list (`['.jpg', '.jpeg', '.png']`) combined with `os.path.exists`. Case-sensitive filesystems silently returned the raw `.pt` path, which the frontend then couldn't render. Added case-insensitive helpers `routes.upload.find_image_for_pt`, `turtle_manager._find_image_next_to_pt`, and `turtle_manager._find_image_in_dir` that scan the containing directory and match the file stem against any supported image extension regardless of case. Windows/NTFS was never affected because its filesystem is case-insensitive.
@@ -188,7 +196,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.7...HEAD
+[1.2.7]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.7
+[1.2.6]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.6
 [1.2.5]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.5
 [1.2.4]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.4
 [1.2.3]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.3

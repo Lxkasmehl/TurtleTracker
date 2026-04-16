@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     libglib2.0-0 \
     libgl1 \
+    libheif1 \
+    libde265-0 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
