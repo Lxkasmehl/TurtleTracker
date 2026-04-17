@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copy backend turtle images and folder tree from Docker (/app/data) to the host backup tree.
 # Writes to: BACKUP_OUTPUT_DIR/data/YYYY-MM-DD/ (same root as Google Sheets CSV/JSON backups).
+# Folder name uses the host's local calendar date (see `date +%Y-%m-%d`), or BACKUP_DATE if set.
 #
 # Usage (from repo root on the server):
 #   COMPOSE_DIR=/srv/pictur/TurtleTracker ./scripts/backup-backend-data.sh
@@ -13,8 +14,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 BACKUP_ROOT="${BACKUP_OUTPUT_DIR:-$COMPOSE_DIR/backups}"
-DATE_UTC="${BACKUP_DATE:-$(date -u +%Y-%m-%d)}"
-DEST="$BACKUP_ROOT/data/$DATE_UTC"
+DATE_LABEL="${BACKUP_DATE:-$(date +%Y-%m-%d)}"
+DEST="$BACKUP_ROOT/data/$DATE_LABEL"
 
 cd "$COMPOSE_DIR"
 

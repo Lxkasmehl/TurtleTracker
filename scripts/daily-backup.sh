@@ -18,12 +18,16 @@ DOCKER="${DOCKER:-docker}"
 
 cd "$COMPOSE_DIR"
 
-echo "=== $(date -u -Iseconds) daily-backup: Sheets (CSV/JSON) ==="
-$DOCKER compose exec -T backend python -m backup.run
+# One calendar date for both Sheets export and data/ copy (host TZ when run from cron on the server).
+BACKUP_DATE="$(date +%Y-%m-%d)"
+export BACKUP_DATE
 
-echo "=== $(date -u -Iseconds) daily-backup: backend data/ (images) ==="
+echo "=== $(date -Iseconds) daily-backup: Sheets (CSV/JSON) ==="
+$DOCKER compose exec -T -e "BACKUP_DATE=$BACKUP_DATE" backend python -m backup.run
+
+echo "=== $(date -Iseconds) daily-backup: backend data/ (images) ==="
 BACKUP_OUTPUT_DIR="${BACKUP_OUTPUT_DIR:-$COMPOSE_DIR/backups}" \
   COMPOSE_DIR="$COMPOSE_DIR" \
-  "$SCRIPT_DIR/backup-backend-data.sh"
+  bash "$SCRIPT_DIR/backup-backend-data.sh"
 
-echo "=== $(date -u -Iseconds) daily-backup: done ==="
+echo "=== $(date -Iseconds) daily-backup: done ==="

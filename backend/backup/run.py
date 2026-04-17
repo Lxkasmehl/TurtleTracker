@@ -4,6 +4,8 @@ Run from backend directory: python -m backup.run
 Or: python backup/run.py (from backend dir)
 
 Uses BACKUP_OUTPUT_DIR from environment (default: ./backups).
+Optional BACKUP_DATE=YYYY-MM-DD (set by scripts/daily-backup.sh from the host clock) selects the folder name;
+if unset, uses the container's local date (datetime.now()).
 Writes to BACKUP_OUTPUT_DIR/sheets/YYYY-MM-DD/ with one CSV per sheet
 and optional one JSON file per spreadsheet.
 """
@@ -84,11 +86,12 @@ def run_backup(backup_root: str = None, export_json: bool = True) -> bool:
     """
     Export admin and community spreadsheets to backup_root/sheets/YYYY-MM-DD/.
     backup_root defaults to env BACKUP_OUTPUT_DIR or ./backups.
+    Folder name uses env BACKUP_DATE (YYYY-MM-DD) if set; else datetime.now() in the container.
     Returns True if at least one spreadsheet was exported successfully.
     """
     backup_root = backup_root or os.environ.get('BACKUP_OUTPUT_DIR') or os.path.join(_backend_dir, 'backups')
     out_dir = Path(backup_root) / 'sheets'
-    date_str = datetime.utcnow().strftime('%Y-%m-%d')
+    date_str = (os.environ.get('BACKUP_DATE') or '').strip() or datetime.now().strftime('%Y-%m-%d')
     try:
         from services import manager_service
         admin_svc = manager_service.get_sheets_service()

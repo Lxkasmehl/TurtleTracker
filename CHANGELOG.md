@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-04-17 — Backup dates follow host TZ; daily-backup invokes data script with bash
+
+### Changed
+
+- **Backup folder dates (`sheets/…/YYYY-MM-DD/`, `data/…/YYYY-MM-DD/`)**: `scripts/daily-backup.sh` sets **`BACKUP_DATE`** from the host (`date +%Y-%m-%d`) and passes it into `python -m backup.run` so Sheets exports match the same calendar day as `backup-backend-data.sh`. **`scripts/backup-backend-data.sh`** uses the host local date by default (no longer UTC-only). **`backend/backup/run.py`** reads optional env **`BACKUP_DATE`**; otherwise uses `datetime.now()` in the container.
+- **`scripts/daily-backup.sh`**: Calls **`bash`** on `backup-backend-data.sh` so the data backup runs without the execute bit on `.sh` files.
+
 ## [1.2.8] - 2026-04-16 - Host data/ backups + daily backup scripts
 
 ### Added
@@ -208,7 +215,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.7...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.9...HEAD
+[1.2.9]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.9
+[1.2.8]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.8
 [1.2.7]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.7
 [1.2.6]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.6
 [1.2.5]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.5
