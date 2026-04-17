@@ -1,35 +1,108 @@
 # Changelog
 
-All notable changes to TurtleTracker will be documented in this file.
+All notable changes to PicTur will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+### CI
 
+- **CUDA requirements parity**: `backend/scripts/check_requirements_cuda_sync.py` ensures `requirements-docker-cuda.txt` lists every pip package from `requirements.txt` except `torch` and `torchvision` (installed separately in `Dockerfile.cuda`). Covered by `backend/tests/test_requirements_cuda_sync.py`; wired as job `cuda-requirements-sync` in **Backend Integration Tests**.
+- **Production GPU image smoke**: Job `backend-cuda-image-smoke` builds `backend/Dockerfile.cuda` (GitHub Actions cache for Docker layers) and runs `python3 -c "import app"` inside the image so missing dependencies and import-time crashes in the same stack as production deploy surface before merge. Runs in parallel with the existing integration job after the sync check; Playwright/E2E Compose still uses the CPU `Dockerfile`, so this closes the Dockerfile.cuda gap.
 - **Frontend favicon & attribution**: Turtle favicon from Flaticon (`frontend/public/favicon.png`) with `rel="icon"` and `apple-touch-icon` in `index.html`; global app footer with required Freepik / www.flaticon.com links and a link to the specific icon for license compliance.
 - **Additional turtle photos**: Optional **tags** on extra images (manifest); types **carapace**, **condition**, **microhabitat**, and **other**; admin APIs `GET /api/turtles/images/search-labels` and `PATCH /api/turtles/images/additional-labels`; integration tests in `test_turtles_routes.py`.
 - **Admin UI**: Staged upload with per-image type and tags; inline tag editing on saved photos (turtle folders); **Sheets browser** “Photo tags” mode with grouped results and larger previews; home/upload flow sends tagged extras via `extra_*` + `extra_labels_*`.
-- **Admin offline backup (ZIP)**: `GET /api/admin/backup/archive` (`scope=all` or `scope=sheet&sheet=…`) returns a ZIP mirroring `data/` plus Google Sheets CSV/JSON exports (`require_admin_only`, not staff). **Google Sheets Browser** shows an admin-only “Offline backup (ZIP)” menu (full archive or current tab). Client: `downloadAdminBackupArchive`, `isAdminRole`.
+- **Admin offline backup (ZIP)**: `GET /api/backup/archive` (`scope=all` or `scope=sheet&sheet=…`) returns a ZIP mirroring `data/` plus Google Sheets CSV/JSON exports (`require_admin_only`, not staff). **Google Sheets Browser** shows an admin-only “Offline backup (ZIP)” menu (full archive or current tab). Client: `downloadAdminBackupArchive`, `isAdminRole`.
 
 ### Changed
 
 - **Frontend dates**: Google Sheet turtle date fields (e.g. date 1st found, last assay, dates refound, transmitter/radio/iButton dates) are normalized to **MM/DD/YYYY** when the form loads and before save; placeholders use the same hint. Photo card/modal timestamps use US date + 12-hour time instead of `toLocaleString()` (browser locale). Sheets browser titles for microhabitat/condition photos show the folder date in US format.
-- **Frontend**: Default document title set to **Turtle Project** (replacing “Turtle Frontend”).
+- **Frontend**: Default document title set to **PicTur** (replacing “Turtle Frontend”).
 - **CORS**: `PATCH` included in allowed methods for cross-origin tag updates.
 - **Upload route**: Shared `_collect_extra_upload_files` parses `extra_carapace_*`, `extra_other_*`, and per-index labels.
 - **Turtle additional photos**: POST stores `original_filename`; when images are merged into turtle folders, the stored file name uses the upload’s original basename instead of only the temp path. Integration test for review-queue carapace + labels; HTTP test client supports `PATCH`.
 
+## [1.2.7] - 2026-04-16 - Add pillow-heif to CUDA image and libheif runtime deps
+
 ### Fixed
 
-- **PhotoCard**: Removed unused `onPhotoClick` prop to satisfy ESLint.
-- **Dates refound**: Space-separated refound dates (e.g. `2021-06-15 2022-07-04` without commas) are normalized to US format for every date; previously only the first date was kept and later values were dropped on load/save.
+- **GPU backend crash on startup (production)**: `Dockerfile.cuda` installs only `backend/requirements-docker-cuda.txt`, which did not include `pillow-heif` after HEIC support landed in `requirements.txt`. `app.py` imports upload routes → `image_utils` → `pillow_heif` at startup, so the container exited with `ModuleNotFoundError` and the API never stayed up. Added `pillow-heif>=0.16.0` to `requirements-docker-cuda.txt`. Installed **`libheif1`** and **`libde265-0`** via `apt` in `Dockerfile` and `Dockerfile.cuda` so the HEIF stack has runtime libraries inside the image (no host-level installs required).
+
+## [1.2.6] - 2026-04-15 — HEIC uploads + case-insensitive image lookup
+
+### Fixed
+
+- **Match thumbnails missing for `.JPG` references (Linux)**: Reference images saved with uppercase extensions (e.g. `F128.JPG`) were not resolving on the production Linux server because `convert_pt_to_image_path` and the related candidate-copy / replace-reference paths hard-coded a lowercase extension list (`['.jpg', '.jpeg', '.png']`) combined with `os.path.exists`. Case-sensitive filesystems silently returned the raw `.pt` path, which the frontend then couldn't render. Added case-insensitive helpers `routes.upload.find_image_for_pt`, `turtle_manager._find_image_next_to_pt`, and `turtle_manager._find_image_in_dir` that scan the containing directory and match the file stem against any supported image extension regardless of case. Windows/NTFS was never affected because its filesystem is case-insensitive.
+- **HEIC upload failures without EXIF**: `image_utils.normalize_to_jpeg` previously passed `img.info.get('exif', b'')` to Pillow's JPEG encoder, but some HEIC files store `'exif'` mapped to `None` rather than omitting the key, bypassing the default and crashing the encoder with `TypeError: object of type 'NoneType' has no len()`. Guarded so `exif=` is only passed to `save()` when actual bytes are present.
+
+### Added
+
+- **HEIC/HEIF upload support**: iPhone photos arrive as HEIC by default and Chrome/Firefox cannot render HEIC natively. New `backend/image_utils.py` registers `pillow-heif` at import time and exposes `normalize_to_jpeg()`, which is a no-op for non-HEIC inputs and otherwise converts in-place to a sibling `.jpg` (quality 95, EXIF preserved — including `DateTimeOriginal` for future history-date aggregation — EXIF rotation applied). Called immediately after every `file.save()` in `routes/upload.py`, `routes/review.py`, and `routes/turtles.py` (5 call sites). `heic`/`heif` added to `config.ALLOWED_EXTENSIONS`; `pillow-heif>=0.16.0` added to `backend/requirements.txt`. Frontend `fileValidation.ts` accepts `image/heic` / `image/heif` with an extension fallback (Chrome/Firefox leave `file.type` blank for HEIC), `HomePage.tsx` Dropzone accept list and user-facing "Supported formats" text updated to include HEIC.
 
 ### Testing
 
-- Playwright: `tests/e2e/us-date-format.spec.ts` asserts Turtle Match form fields show **MM/DD/YYYY** when the mocked sheet API returns ISO date strings.
+- **`backend/tests/test_image_lookup.py` (32 tests)**: Regression coverage for the case-insensitive lookup. Parametrised across `.jpg`/`.JPG`/`.jpeg`/`.JPEG`/`.png`/`.PNG`/`.Jpg`/`.JPg` against all three helpers, plus passthrough / missing-sibling / missing-directory / unrelated-file / alias contract cases.
+- **`backend/tests/test_image_utils.py` (13 tests)**: HEIC normalization coverage. Generates HEIC fixtures programmatically via pillow-heif's bundled encoder to exercise real encode → decode round-trips. Verifies sibling `.jpg` creation, original-file deletion, uppercase `.HEIC` / `.heif` handling, EXIF `DateTimeOriginal` preservation, and multi-tag EXIF round-trip.
+
+## [1.2.5] - 2026-04-13 — Admin offline backup URL (Flask vs Express)
+
+### Fixed
+
+- **Admin offline backup (ZIP)**: Endpoint moved from `GET /api/admin/backup/archive` to `GET /api/backup/archive`. The Express auth backend mounts `/api/admin/*`, so requests to the old path never reached Flask and returned **404** in production; the download handler remains admin-only on Flask.
+
+## [1.2.4] - 2026-04-13 — PyTorch cu128 for NVIDIA Blackwell (RTX 5080 / sm_120)
+
+### Fixed
+
+- **RTX 50-series (Blackwell, sm_120)**: Official cu121 wheels only ship GPU archs through **sm_90**, so PyTorch warned and could misbehave on e.g. RTX 5080. CUDA backend image is now **`nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`** with **torch / torchvision from `https://download.pytorch.org/whl/cu128`** (**torch ≥ 2.7**, **torchvision ≥ 0.22**) so sm_120 is supported.
+
+## [1.2.3] - 2026-04-13 — GPU visible to PyTorch (CUDA_VISIBLE_DEVICES)
+
+### Fixed
+
+- **`docker-compose.gpu.yml`**: Removed default `CUDA_VISIBLE_DEVICES=all`. That variable is **not** the same as `NVIDIA_VISIBLE_DEVICES`: CUDA expects numeric GPU indices (`0`, `1`, …). The value `all` is invalid for `CUDA_VISIBLE_DEVICES` and commonly yields `torch.cuda.is_available() == False` even with a correct CUDA PyTorch build (`torch.version.cuda` still set). Optional pin via `.env` only (e.g. `CUDA_VISIBLE_DEVICES=0`).
+- **GPU reservation**: Added `deploy.resources.reservations.devices` (NVIDIA, `capabilities: [gpu]`) alongside `gpus: all` for Compose setups where device requests need the explicit block.
+
+## [1.2.2] - 2026-04-13 — CUDA PyTorch not overwritten by pip; clearer GPU diagnostics
+
+### Fixed
+
+- **CUDA PyTorch after `pip install -r`**: `kornia` and other deps can pull `torch` from PyPI and replace the cu121 wheels with a **CPU-only** build. `Dockerfile.cuda` now force-reinstalls `torch` / `torchvision` from the PyTorch CUDA index after all other packages and fails the image build if `torch.version.cuda` is unset.
+- **Compose GPU env**: `docker-compose.gpu.yml` sets `NVIDIA_VISIBLE_DEVICES` and `NVIDIA_DRIVER_CAPABILITIES` so the NVIDIA Container Toolkit passes driver capabilities into the backend container.
+
+### Changed
+
+- **Logs when GPU missing**: `TurtleBrain` logs `torch.__version__` and `torch.version.cuda` to distinguish “CPU-only wheel in image” vs “CUDA build but no device / toolkit”.
+
+## [1.2.1] - 2026-04-13 — Production GPU deploy (CUDA PyTorch + Compose)
+
+### Fixed
+
+- **Production deploy uses GPU stack**: GitHub Release deploy (`.github/workflows/deploy-release.yml`) now runs `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d` so the backend image is built from `Dockerfile.cuda` and receives `gpus: all`. Previously the workflow only used the default Compose file, which builds the CPU-only backend (`Dockerfile`).
+- **CUDA image installs PyTorch with CUDA**: `backend/Dockerfile.cuda` installs `torch` / `torchvision` from the PyTorch CUDA 12.1 wheel index (`cu121`); remaining dependencies use `backend/requirements-docker-cuda.txt` so pip does not pull CPU-only PyPI wheels. Added `python-is-python3` for healthchecks that invoke `python`.
+
+## [1.2.0] - 2026-04-13 — PicTur branding, US date fields, admin ZIP backup, favicon
+
+### Added
+
+- **Favicon & attribution**: Turtle favicon (`frontend/public/favicon.png`) with `rel="icon"` and `apple-touch-icon` in `index.html`; global footer with Freepik / Flaticon links and a link to the icon asset for compliance.
+- **Admin offline backup (ZIP)**: `GET /api/admin/backup/archive` (`scope=all` or `scope=sheet&sheet=…`) returns a ZIP of `data/` plus Google Sheets CSV/JSON exports (admin-only, not staff). **Google Sheets Browser** adds “Offline backup (ZIP)” (full archive or current tab). Client: `downloadAdminBackupArchive`, `isAdminRole`.
+
+### Changed
+
+- **Branding & document title**: App and docs use **PicTur** (renamed from TurtleTracker / Turtle Project); npm packages `picturfrontend`, `pictur-auth-backend`; example paths `pictur`; GitHub repo [`Lxkasmehl/PicTur`](https://github.com/Lxkasmehl/PicTur). Default browser tab title **PicTur**.
+- **Frontend dates**: Turtle date fields in Google Sheets forms (first found, last assay, dates refound, transmitter/radio/iButton, etc.) normalize to **MM/DD/YYYY** on load and before save; placeholders match. Photo card/modal timestamps use US date + 12-hour time (not `toLocaleString()`). Sheets browser titles for microhabitat/condition photos use US folder dates.
+
+### Fixed
+
+- **PhotoCard**: Removed unused `onPhotoClick` prop (ESLint).
+- **Dates refound**: Space-separated refound dates (e.g. two ISO dates without commas) normalize every value to US format; previously only the first date was kept on load/save.
+
+### Testing
+
+- Playwright: `tests/e2e/us-date-format.spec.ts` — Turtle Match fields show **MM/DD/YYYY** when the mocked sheet API returns ISO date strings.
 
 ## [1.1.0] - 2026-04-05 — Observer hub, backups, mortality tooling, and SQLite auth
 
@@ -89,8 +162,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Unused root `package.json` (frontend remains the npm entry point).
 
----
-
 ## [0.2.0] - 2026-03-14 — Sheet/location hierarchy, community spreadsheets, and verified accounts
 
 ### Added
@@ -127,8 +198,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E**: Review queue upload-source badges (Admin vs Community), community-turtle-move-to-admin flow (`data-testid` on badges). Create New Turtle duplicate-name tests mock `/api/locations` and fill General Location. Home page match-scope helper text and sheet dropdown (top-level states only, no sublocations/system folders). admin-community-to-admin and Create New Turtle support both Mantine Select and native `<select>` for Sheet/Location.
 - **Integration**: Tests for `GET /api/locations` and for `POST /api/sheets/generate-id` with `target_spreadsheet` (research/community).
 
----
-
 ## [0.1.0] - 2026-02-27 — First release: community turtle ID and review workflow
 
 ### Added
@@ -137,15 +206,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Photo upload and matching**: Admins and community users can upload turtle photos; system returns top matches. Community uploads go to a review queue for admin approval.
 - **Admin features**: Review queue for community uploads with suggested matches; admin can confirm match or create new turtle. Photo upload with immediate top-5 match selection.
 - **Turtle records / data**: Turtle data management with optional Google Sheets integration (service account); auto-generated biology IDs and configurable fields.
-- **Frontend**: React (TypeScript) app with Mantine UI, Tailwind, Leaflet maps; configured for auth and turtle API backends.
+- **Frontend**: React (TypeScript) app with Mantine UI, Tailwind, Leaflet maps; configured for auth and PicTur API backends.
 - **Backend**: Flask API (Python) for photo processing and matching; auth backend for user and session management.
 - **Deployment**: Docker Compose setup for frontend, auth-backend, and backend; persistent volumes for DB, uploads, and review state.
 - **Testing**: Playwright E2E tests (Docker-based) and backend integration tests (pytest); CI workflows for main/develop.
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/TurtleProject/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v1.1.0
-[1.0.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v1.0.0
-[0.2.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.2.0
-[0.1.0]: https://github.com/Lxkasmehl/TurtleProject/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.7...HEAD
+[1.2.7]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.7
+[1.2.6]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.6
+[1.2.5]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.5
+[1.2.4]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.4
+[1.2.3]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.3
+[1.2.2]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.2
+[1.2.1]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.1
+[1.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.0
+[1.1.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.1.0
+[1.0.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.0.0
+[0.2.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v0.2.0
+[0.1.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v0.1.0

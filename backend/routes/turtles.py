@@ -9,6 +9,7 @@ from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from auth import require_admin
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
+from image_utils import normalize_to_jpeg
 from services import manager_service
 from additional_image_labels import (
     normalize_label_list,
@@ -277,6 +278,8 @@ def register_turtle_routes(app):
                     f"turtle_extra_{turtle_id}_{idx}_{int(time.time())}{ext}".replace(os.sep, '_'),
                 )
                 f.save(temp_path)
+                # HEIC/HEIF → JPEG (no-op for other formats)
+                temp_path = normalize_to_jpeg(temp_path)
                 orig_base = os.path.basename(orig_safe) if orig_safe else f'upload{ext}'
                 item = {
                     'path': temp_path,

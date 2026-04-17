@@ -12,6 +12,7 @@ from auth import require_admin
 from services import manager_service
 from services.manager_service import get_sheets_service, get_community_sheets_service
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
+from image_utils import normalize_to_jpeg
 from general_locations_catalog import resolve_general_location_from_sheet_and_value
 from additional_image_labels import normalize_label_list, parse_labels_from_form
 
@@ -255,6 +256,8 @@ def register_review_routes(app):
                 ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
                 temp_path = os.path.join(UPLOAD_FOLDER, f"review_extra_{request_id}_{idx}_{int(time.time())}{ext}")
                 f.save(temp_path)
+                # HEIC/HEIF → JPEG (no-op for other formats)
+                temp_path = normalize_to_jpeg(temp_path)
                 item = {'path': temp_path, 'type': typ, 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
                 if lbs:
                     item['labels'] = lbs

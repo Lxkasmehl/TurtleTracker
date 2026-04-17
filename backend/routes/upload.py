@@ -15,6 +15,7 @@ from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 from auth import optional_auth, check_auth_revocation
+from image_utils import normalize_to_jpeg
 from services import manager_service
 from additional_image_labels import normalize_additional_type, parse_labels_from_form
 
@@ -54,6 +55,7 @@ def _collect_extra_upload_files(request, request_id):
         ext = os.path.splitext(secure_filename(f.filename))[1] or '.jpg'
         extra_temp = os.path.join(UPLOAD_FOLDER, f"extra_{request_id}_{typ}_{int(time.time())}{ext}")
         f.save(extra_temp)
+        extra_temp = normalize_to_jpeg(extra_temp)
         item = {
             'path': extra_temp,
             'type': typ,
@@ -64,25 +66,42 @@ def _collect_extra_upload_files(request, request_id):
         files_with_types.append(item)
     return files_with_types
 
-# ARCHITECT NOTE: Kept .pt conversion for SuperPoint integration
-def convert_pt_to_image_path(pt_path):
-    """
-    Convert a .pt file path to the corresponding image file path.
-    Tries common image extensions (.jpg, .jpeg, .png).
-    Returns the image path if found, otherwise returns the original pt_path.
+_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+
+
+def find_image_for_pt(pt_path):
+    """Find the image file next to a .pt file, matching the extension case-insensitively.
+
+    The filesystem on Linux is case-sensitive, so a hard-coded lowercase extension
+    list would miss files named e.g. ``F128.JPG`` (uppercase). This helper scans
+    the containing directory for any file with the same stem and a supported
+    image extension regardless of case.
+
+    Returns the discovered image path, or ``pt_path`` unchanged when no image is
+    found (callers already treat that as "no image").
     """
     if not pt_path or not pt_path.endswith('.pt'):
         return pt_path
-
-    base_path = pt_path[:-3]  # Remove .pt extension
-    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-
-    for ext in image_extensions:
-        image_path = base_path + ext
-        if os.path.exists(image_path) and os.path.isfile(image_path):
-            return image_path
-
+    base = pt_path[:-3]
+    dir_path = os.path.dirname(base) or '.'
+    base_name = os.path.basename(base)
+    if not os.path.isdir(dir_path):
+        return pt_path
+    try:
+        entries = os.listdir(dir_path)
+    except OSError:
+        return pt_path
+    for fname in entries:
+        stem, ext = os.path.splitext(fname)
+        if stem == base_name and ext.lower() in _IMAGE_EXTENSIONS:
+            return os.path.join(dir_path, fname)
     return pt_path
+
+
+# ARCHITECT NOTE: Kept .pt conversion for SuperPoint integration
+def convert_pt_to_image_path(pt_path):
+    """Backwards-compatible wrapper — delegates to case-insensitive lookup."""
+    return find_image_for_pt(pt_path)
 
 def register_upload_routes(app):
     """Register upload routes"""
@@ -140,6 +159,9 @@ def register_upload_routes(app):
             filename = secure_filename(file.filename)
             temp_path = os.path.join(UPLOAD_FOLDER, filename)
             file.save(temp_path)
+            # HEIC/HEIF → JPEG so SuperPoint + frontend can handle it
+            temp_path = normalize_to_jpeg(temp_path)
+            filename = os.path.basename(temp_path)
 
             if not os.path.exists(temp_path):
                 return jsonify({'error': 'Failed to save file'}), 500
@@ -207,18 +229,17 @@ def register_upload_routes(app):
 
                     # Write candidate images to disk so the Review Queue can
                     # display them if the admin backs out of the match page.
+                    # Uses case-insensitive lookup so .JPG files are handled.
                     os.makedirs(candidates_dir, exist_ok=True)
                     for rank, match in enumerate(matches, start=1):
                         pt_path = match.get('file_path', '') or ''
-                        if pt_path and pt_path.endswith('.pt'):
-                            base_path = pt_path[:-3]
-                            for ext in ['.jpg', '.jpeg', '.png']:
-                                if os.path.exists(base_path + ext):
-                                    turtle_id = match.get('site_id', 'Unknown')
-                                    conf_int = int(round(match.get('confidence', 0.0) * 100))
-                                    cand_filename = f"Rank{rank}_ID{turtle_id}_Conf{conf_int}{ext}"
-                                    shutil.copy2(base_path + ext, os.path.join(candidates_dir, cand_filename))
-                                    break
+                        img_src = find_image_for_pt(pt_path)
+                        if img_src and img_src != pt_path and os.path.isfile(img_src):
+                            ext = os.path.splitext(img_src)[1]
+                            turtle_id = match.get('site_id', 'Unknown')
+                            conf_int = int(round(match.get('confidence', 0.0) * 100))
+                            cand_filename = f"Rank{rank}_ID{turtle_id}_Conf{conf_int}{ext}"
+                            shutil.copy2(img_src, os.path.join(candidates_dir, cand_filename))
 
                     formatted_matches = []
                     for match in matches:
