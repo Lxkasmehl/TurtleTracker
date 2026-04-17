@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Home match-scope favorites (staff)**: Star locations (including “All locations”) in the upload scope `Select`; favorites are grouped (“Favorites” / “More locations”), default scope respects saved order after reload (waits for `GET /locations` before locking selection). Preferences sync to **`GET`/`PUT /api/auth/user-ui-preferences`** (SQLite table `user_ui_preferences` in auth-backend) when logged in, with **localStorage** fallback and one-time migration from cache if the profile is empty.
+
 ### CI
 
 - **CUDA requirements parity**: `backend/scripts/check_requirements_cuda_sync.py` ensures `requirements-docker-cuda.txt` lists every pip package from `requirements.txt` except `torch` and `torchvision` (installed separately in `Dockerfile.cuda`). Covered by `backend/tests/test_requirements_cuda_sync.py`; wired as job `cuda-requirements-sync` in **Backend Integration Tests**.
