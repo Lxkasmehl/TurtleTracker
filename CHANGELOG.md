@@ -11,11 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Home match-scope favorites (staff)**: Star locations (including “All locations”) in the upload scope `Select`; favorites are grouped (“Favorites” / “More locations”), default scope respects saved order after reload (waits for `GET /locations` before locking selection). Preferences sync to **`GET`/`PUT /api/auth/user-ui-preferences`** (SQLite table `user_ui_preferences` in auth-backend) when logged in, with **localStorage** fallback and one-time migration from cache if the profile is empty.
 
-### CI
-
-- **CUDA requirements parity**: `backend/scripts/check_requirements_cuda_sync.py` ensures `requirements-docker-cuda.txt` lists every pip package from `requirements.txt` except `torch` and `torchvision` (installed separately in `Dockerfile.cuda`). Covered by `backend/tests/test_requirements_cuda_sync.py`; wired as job `cuda-requirements-sync` in **Backend Integration Tests**.
-- **Production GPU image smoke**: Job `backend-cuda-image-smoke` builds `backend/Dockerfile.cuda` (GitHub Actions cache for Docker layers) and runs `python3 -c "import app"` inside the image so missing dependencies and import-time crashes in the same stack as production deploy surface before merge. Runs in parallel with the existing integration job after the sync check; Playwright/E2E Compose still uses the CPU `Dockerfile`, so this closes the Dockerfile.cuda gap.
-
 ## [1.2.9] - 2026-04-17 — Backup dates follow host TZ; daily-backup invokes data script with bash
 
 ### Changed
@@ -28,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Host backup of backend `data/` (Docker volume)**: `scripts/backup-backend-data.sh` copies `/app/data` from the running backend (or from the `backend-data` volume if the container is down) to `BACKUP_OUTPUT_DIR/data/YYYY-MM-DD/` on the host. `scripts/daily-backup.sh` runs `python -m backup.run` (Sheets CSV/JSON) then the data copy so one cron job covers spreadsheets and images. Documented in **docs/BACKUP.md** and **backend/README.md** (combined `crontab` example with `COMPOSE_DIR` / `BACKUP_OUTPUT_DIR`).
+
+### CI
+
+- **CUDA requirements parity**: `backend/scripts/check_requirements_cuda_sync.py` ensures `requirements-docker-cuda.txt` lists every pip package from `requirements.txt` except `torch` and `torchvision` (installed separately in `Dockerfile.cuda`). Covered by `backend/tests/test_requirements_cuda_sync.py`; wired as job `cuda-requirements-sync` in **Backend Integration Tests**.
+- **Production GPU image smoke**: Job `backend-cuda-image-smoke` builds `backend/Dockerfile.cuda` (GitHub Actions cache for Docker layers) and runs `python3 -c "import app"` inside the image so missing dependencies and import-time crashes in the same stack as production deploy surface before merge. Runs in parallel with the existing integration job after the sync check; Playwright/E2E Compose still uses the CPU `Dockerfile`, so this closes the Dockerfile.cuda gap.
 
 ## [1.2.7] - 2026-04-16 - Add pillow-heif to CUDA image and libheif runtime deps
 
