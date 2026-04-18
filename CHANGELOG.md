@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CUDA requirements parity**: `backend/scripts/check_requirements_cuda_sync.py` ensures `requirements-docker-cuda.txt` lists every pip package from `requirements.txt` except `torch` and `torchvision` (installed separately in `Dockerfile.cuda`). Covered by `backend/tests/test_requirements_cuda_sync.py`; wired as job `cuda-requirements-sync` in **Backend Integration Tests**.
 - **Production GPU image smoke**: Job `backend-cuda-image-smoke` builds `backend/Dockerfile.cuda` (GitHub Actions cache for Docker layers) and runs `python3 -c "import app"` inside the image so missing dependencies and import-time crashes in the same stack as production deploy surface before merge. Runs in parallel with the existing integration job after the sync check; Playwright/E2E Compose still uses the CPU `Dockerfile`, so this closes the Dockerfile.cuda gap.
 
+## [1.2.9] - 2026-04-17 — Backup dates follow host TZ; daily-backup invokes data script with bash
+
+### Changed
+
+- **Backup folder dates (`sheets/…/YYYY-MM-DD/`, `data/…/YYYY-MM-DD/`)**: `scripts/daily-backup.sh` sets **`BACKUP_DATE`** from the host (`date +%Y-%m-%d`) and passes it into `python -m backup.run` so Sheets exports match the same calendar day as `backup-backend-data.sh`. **`scripts/backup-backend-data.sh`** uses the host local date by default (no longer UTC-only). **`backend/backup/run.py`** reads optional env **`BACKUP_DATE`**; otherwise uses `datetime.now()` in the container.
+- **`scripts/daily-backup.sh`**: Calls **`bash`** on `backup-backend-data.sh` so the data backup runs without the execute bit on `.sh` files.
+
+## [1.2.8] - 2026-04-16 - Host data/ backups + daily backup scripts
+
+### Added
+
+- **Host backup of backend `data/` (Docker volume)**: `scripts/backup-backend-data.sh` copies `/app/data` from the running backend (or from the `backend-data` volume if the container is down) to `BACKUP_OUTPUT_DIR/data/YYYY-MM-DD/` on the host. `scripts/daily-backup.sh` runs `python -m backup.run` (Sheets CSV/JSON) then the data copy so one cron job covers spreadsheets and images. Documented in **docs/BACKUP.md** and **backend/README.md** (combined `crontab` example with `COMPOSE_DIR` / `BACKUP_OUTPUT_DIR`).
 
 ## [1.2.7] - 2026-04-16 - Add pillow-heif to CUDA image and libheif runtime deps
 
@@ -206,7 +218,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.7...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.9...HEAD
+[1.2.9]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.9
+[1.2.8]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.8
 [1.2.7]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.7
 [1.2.6]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.6
 [1.2.5]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.5
