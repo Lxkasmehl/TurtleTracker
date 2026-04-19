@@ -130,6 +130,30 @@ def test_max_biology_suffix_sees_j666_when_primary_id_empty_in_same_rows():
     assert n == 666
 
 
+def test_max_biology_suffix_sees_j666_with_trailing_ut_note():
+    """Real sheet cells often include ``(UT …)`` after the ID; they must still set max suffix to 666."""
+    grid = [
+        ['Primary ID', 'Frequency', 'ID'],
+        ['T1', '', 'M635'],
+        ['', '', 'M636'],
+        ['', '', 'J666 (UT1 4/13/2026)'],
+    ]
+    assert ground_truth_max_biology_suffix(grid) == 666
+
+    fake = GoogleSheetsValuesFake(grid=[row[:] for row in grid])
+
+    def cols(_name):
+        return {'Primary ID': 0, 'ID': 2}
+
+    n = migration.get_max_biology_id_number(
+        fake,
+        'sid',
+        'Kansas',
+        get_all_column_indices_func=cols,
+    )
+    assert n == 666
+
+
 def test_next_unknown_sex_id_after_j666_is_u667_not_u637():
     """After J666 the shared numeric sequence next is 667 → U667 (regression: U637 was observed)."""
     grid = [
@@ -150,6 +174,27 @@ def test_next_unknown_sex_id_after_j666_is_u667_not_u637():
     )
     assert nxt == 'U667'
     assert nxt != 'U637'
+
+
+def test_next_id_after_j666_with_ut_note_is_u667():
+    """Same as production sheet: ID column includes ``(UT …)`` after the biology code."""
+    grid = [
+        ['Primary ID', 'Frequency', 'ID'],
+        ['', '', 'J666 (UT1 4/13/2026)'],
+    ]
+    fake = GoogleSheetsValuesFake(grid=[row[:] for row in grid])
+
+    def cols(_name):
+        return {'Primary ID': 0, 'ID': 2}
+
+    nxt = migration.generate_biology_id(
+        fake,
+        'sid',
+        'Kansas',
+        get_all_column_indices_func=cols,
+        gender='U',
+    )
+    assert nxt == 'U667'
 
 
 def test_reported_u637_is_consistent_with_missed_j666_max_stuck_at_636():

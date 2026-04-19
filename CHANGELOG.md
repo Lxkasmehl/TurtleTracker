@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-04-18 — Biology ID parsing with trailing sheet notes
+
+### Fixed
+
+- **Max biology ID when the ID cell includes extra text**: Only values matching a strict “letter + digits only” pattern were counted toward the highest numeric suffix. Real sheet cells often append notes (e.g. **`J666 (UT1 4/13/2026)`**, **`M637 (UT 713 …)`**), so those rows were skipped and the next ID could be far too low (e.g. **637** while **666** already existed). **`get_max_biology_id_number`** now treats every **M/F/J/U** + digits token in the cell (and a leading ID before spaces or parentheses) so the shared sequence advances correctly (e.g. **U667** after **J666**). **`normalize_biology_id_display`** strips the same leading ID for canonical **MFJU** + three-digit form.
+
+### Testing
+
+- **`backend/tests/test_sheets_sparse_column_regression.py`**: Cases where **J666** appears with a **(UT …)** suffix; **`generate_biology_id`** yields **U667**.
+- **`backend/tests/test_value_normalize_and_biology.py`**: Parametrised normalize cases for annotated IDs.
+
 ## [1.2.10] - 2026-04-18 — Google Sheets sparse-column reads (new turtle row / max biology ID)
 
 ### Fixed
@@ -226,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.10...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.11...HEAD
+[1.2.11]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.11
 [1.2.10]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.10
 [1.2.9]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.9
 [1.2.8]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.8
