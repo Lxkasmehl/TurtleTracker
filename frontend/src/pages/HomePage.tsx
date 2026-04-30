@@ -480,8 +480,8 @@ export default function HomePage() {
                   ? 'Upload a photo to save it in the backend and run a match. While logged in, successful uploads also count toward your Observer HQ progress.'
                   : 'Upload a photo to save it in the backend'
                 : canUseObserverGamification
-                  ? 'Submit a plastron sighting — your upload earns XP and counts toward Observer HQ quests'
-                  : 'Submit a plastron sighting to support the project. Log in or create an account to earn XP and track Observer HQ progress.'}
+                  ? 'Submit a carapace sighting — your upload earns XP and counts toward Observer HQ quests'
+                  : 'Submit a carapace sighting to support the project. Log in or create an account to earn XP and track Observer HQ progress.'}
             </Text>
             <Group justify="center" gap="sm" wrap="wrap">
               <Button
