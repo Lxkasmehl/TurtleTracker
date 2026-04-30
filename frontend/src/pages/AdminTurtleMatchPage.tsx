@@ -56,6 +56,31 @@ interface MatchData {
   photo_type?: PhotoType;
 }
 
+/**
+ * Extract the lookup id from a folder basename so the Sheets API can find the
+ * row. Folders may be:
+ *   - bio_id only:        ``F002``
+ *   - primary_id only:    ``T1771234567``
+ *   - combined:           ``F002_T1771234567`` (current canonical form)
+ *
+ * The Sheets endpoint searches the Primary ID column first then the ID column
+ * for a verbatim match — neither matches the combined string, so this helper
+ * splits on ``_`` and prefers the primary-like segment (globally unique),
+ * falls back to the bio-id-like segment, and returns the raw value when
+ * nothing recognizable is found. Pre-fix the lookup silently returned no
+ * data for combined-name folders so Bio ID / Primary ID / Name all came up
+ * empty in the comparison view.
+ */
+function lookupIdFromTurtleId(turtleId: string): string {
+  if (!turtleId || !turtleId.includes('_')) return turtleId;
+  const parts = turtleId.split('_').filter(Boolean);
+  const primaryLike = parts.find((p) => /^T\d{5,}$/i.test(p));
+  if (primaryLike) return primaryLike;
+  const bioLike = parts.find((p) => /^[FMJU]\d+$/i.test(p));
+  if (bioLike) return bioLike;
+  return turtleId;
+}
+
 export default function AdminTurtleMatchPage() {
   const { role, authChecked } = useUser();
   const { imageId } = useParams<{ imageId: string }>();
@@ -80,8 +105,12 @@ export default function AdminTurtleMatchPage() {
   const [selectedMatchTurtleImages, setSelectedMatchTurtleImages] = useState<TurtleImagesResponse | null>(null);
   const [crossCheckResults, setCrossCheckResults] = useState<Array<{ turtle_id: string; location: string; confidence: number; score: number; image_path: string }> | null>(null);
   /** Per-candidate summary fetched from the row's Sheets tab.
-   *  Keyed by `${turtle_id}|${location}` because biology IDs are not globally unique. */
-  const [candidateSummaries, setCandidateSummaries] = useState<Record<string, { primary_id?: string; name?: string }>>({});
+   *  Keyed by `${turtle_id}|${location}` because biology IDs are not globally unique.
+   *  `bio_id` is the sheet's biology id column — distinct from the on-disk
+   *  folder basename (which can be the combined `BioID_PrimaryKey` form),
+   *  so the comparison view can show a clean "F002" even when match.turtle_id
+   *  came back as "F002_T177…". */
+  const [candidateSummaries, setCandidateSummaries] = useState<Record<string, { primary_id?: string; name?: string; bio_id?: string }>>({});
   const [crossCheckLoading, setCrossCheckLoading] = useState(false);
   const [replaceReference, setReplaceReference] = useState(false);
   const [replaceCarapaceReference, setReplaceCarapaceReference] = useState(false);
@@ -142,11 +171,12 @@ export default function AdminTurtleMatchPage() {
         const locArg = isCommunity ? (parts[1] || '') : parts.slice(1).join('/');
         if (!sheet) return null;
         try {
-          const res = await getTurtleSheetsData(it.turtleId, sheet, stateArg, locArg);
+          const lookupId = lookupIdFromTurtleId(it.turtleId);
+          const res = await getTurtleSheetsData(lookupId, sheet, stateArg, locArg);
           if (res.success && res.data) {
             return [
               `${it.turtleId}|${it.location}`,
-              { primary_id: res.data.primary_id, name: res.data.name },
+              { primary_id: res.data.primary_id, name: res.data.name, bio_id: res.data.id },
             ] as const;
           }
         } catch {
@@ -252,21 +282,24 @@ export default function AdminTurtleMatchPage() {
     try {
       // Prefer request WITH sheet name when we have it from the match – backend then skips
       // slow find_turtle_sheet (searching all sheets) and loads data directly. Much faster.
+      // Combined-name folders (BioID_PrimaryKey) need to be split before the lookup —
+      // see lookupIdFromTurtleId for rationale.
+      const lookupId = lookupIdFromTurtleId(turtleId);
       let response: Awaited<ReturnType<typeof getTurtleSheetsData>>;
       if (matchState) {
         try {
           response = await getTurtleSheetsData(
-            turtleId,
+            lookupId,
             matchState,
             matchState,
             matchLocationSpecific,
             abortController.signal,
           );
         } catch {
-          response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
+          response = await getTurtleSheetsData(lookupId, undefined, undefined, undefined, abortController.signal);
         }
       } else {
-        response = await getTurtleSheetsData(turtleId, undefined, undefined, undefined, abortController.signal);
+        response = await getTurtleSheetsData(lookupId, undefined, undefined, undefined, abortController.signal);
       }
 
       if (response.success && response.data) {
@@ -788,39 +821,58 @@ export default function AdminTurtleMatchPage() {
                     );
                   })()}
 
-                  {/* Match metadata */}
-                  <Grid mt='xs'>
-                    <Grid.Col span={{ base: 12, sm: 4 }}>
-                      <Text size='sm' c='dimmed'>
-                        Turtle ID
-                      </Text>
-                      <Text fw={500}>{selectedMatch}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 12, sm: 4 }}>
-                      <Text size='sm' c='dimmed'>
-                        Location
-                      </Text>
-                      <Text fw={500}>{selectedMatchData?.location}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 6, sm: 2 }}>
-                      <Text size='sm' c='dimmed'>
-                        Confidence
-                      </Text>
-                      <Text fw={500}>
-                        {typeof selectedMatchData?.confidence === 'number'
-                          ? `${(selectedMatchData.confidence * 100).toFixed(1)}%`
-                          : '0.0%'}
-                      </Text>
-                    </Grid.Col>
-                    {primaryId && (
-                      <Grid.Col span={{ base: 6, sm: 2 }}>
-                        <Text size='sm' c='dimmed'>
-                          Primary ID
-                        </Text>
-                        <Text fw={500}>{primaryId}</Text>
-                      </Grid.Col>
-                    )}
-                  </Grid>
+                  {/* Match metadata. Bio ID and Name come from the sheet
+                      (when present), so we get a clean "F002" + chosen name
+                      even for combined-name folders where match.turtle_id
+                      is "F002_T177…". Falls back to selectedMatch if the
+                      Sheets summary hasn't loaded yet. */}
+                  {(() => {
+                    const summary = candidateSummaries[
+                      `${selectedMatch}|${selectedMatchData?.location || ''}`
+                    ];
+                    const displayBioId = summary?.bio_id || selectedMatch;
+                    const displayName = summary?.name || '';
+                    return (
+                      <Grid mt='xs'>
+                        <Grid.Col span={{ base: 12, sm: 3 }}>
+                          <Text size='sm' c='dimmed'>
+                            Bio ID
+                          </Text>
+                          <Text fw={500}>{displayBioId}</Text>
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, sm: 3 }}>
+                          <Text size='sm' c='dimmed'>
+                            Name
+                          </Text>
+                          <Text fw={500}>{displayName || '—'}</Text>
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, sm: 2 }}>
+                          <Text size='sm' c='dimmed'>
+                            Location
+                          </Text>
+                          <Text fw={500}>{selectedMatchData?.location}</Text>
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 6, sm: 2 }}>
+                          <Text size='sm' c='dimmed'>
+                            Confidence
+                          </Text>
+                          <Text fw={500}>
+                            {typeof selectedMatchData?.confidence === 'number'
+                              ? `${(selectedMatchData.confidence * 100).toFixed(1)}%`
+                              : '0.0%'}
+                          </Text>
+                        </Grid.Col>
+                        {(summary?.primary_id || primaryId) && (
+                          <Grid.Col span={{ base: 6, sm: 2 }}>
+                            <Text size='sm' c='dimmed'>
+                              Primary ID
+                            </Text>
+                            <Text fw={500}>{summary?.primary_id || primaryId}</Text>
+                          </Grid.Col>
+                        )}
+                      </Grid>
+                    );
+                  })()}
                 </Stack>
               </Paper>
 
@@ -1163,11 +1215,18 @@ export default function AdminTurtleMatchPage() {
                             </Center>
                           )}
 
-                          <Group justify='space-between' mb={4}>
-                            <Badge color='blue' size='sm' variant='filled'>
-                              #{index + 1}
-                            </Badge>
-                            <Badge color='gray' size='sm' variant='light'>
+                          <Group justify='space-between' mb={4} wrap='nowrap' gap='xs'>
+                            <Group gap={6} wrap='nowrap' style={{ minWidth: 0, flex: 1 }}>
+                              <Badge color='blue' size='sm' variant='filled' style={{ flexShrink: 0 }}>
+                                #{index + 1}
+                              </Badge>
+                              {summary?.name && (
+                                <Text size='xs' fw={500} c='dark' truncate>
+                                  {summary.name}
+                                </Text>
+                              )}
+                            </Group>
+                            <Badge color='gray' size='sm' variant='light' style={{ flexShrink: 0 }}>
                               {typeof match.confidence === 'number'
                                 ? `${(match.confidence * 100).toFixed(1)}%`
                                 : '0.0%'}
@@ -1176,11 +1235,6 @@ export default function AdminTurtleMatchPage() {
                           <Text fw={500} size='sm' truncate>
                             {match.turtle_id}
                           </Text>
-                          {summary?.name && (
-                            <Text size='xs' fw={500} c='dark' truncate>
-                              {summary.name}
-                            </Text>
-                          )}
                           {showSecondaryId && (
                             <Text size='xs' c='dimmed' truncate>
                               {summary!.primary_id}
@@ -1257,22 +1311,24 @@ export default function AdminTurtleMatchPage() {
                                 <IconPhoto size={48} stroke={1.5} style={{ opacity: 0.3 }} />
                               </Center>
                             )}
-                            <Group justify='space-between' mb={4}>
-                              <Badge color='teal' size='sm' variant='filled'>
-                                #{index + 1}
-                              </Badge>
-                              <Badge color='gray' size='sm' variant='light'>
+                            <Group justify='space-between' mb={4} wrap='nowrap' gap='xs'>
+                              <Group gap={6} wrap='nowrap' style={{ minWidth: 0, flex: 1 }}>
+                                <Badge color='teal' size='sm' variant='filled' style={{ flexShrink: 0 }}>
+                                  #{index + 1}
+                                </Badge>
+                                {summary?.name && (
+                                  <Text size='xs' fw={500} c='dark' truncate>
+                                    {summary.name}
+                                  </Text>
+                                )}
+                              </Group>
+                              <Badge color='gray' size='sm' variant='light' style={{ flexShrink: 0 }}>
                                 {Math.round(match.confidence * 100)}%
                               </Badge>
                             </Group>
                             <Text fw={500} size='sm' truncate>
                               {match.turtle_id}
                             </Text>
-                            {summary?.name && (
-                              <Text size='xs' fw={500} c='dark' truncate>
-                                {summary.name}
-                              </Text>
-                            )}
                             {showSecondaryId && (
                               <Text size='xs' c='dimmed' truncate>
                                 {summary!.primary_id}

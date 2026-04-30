@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Admin match page now shows the turtle's chosen name on each candidate card and in the comparison panel, and pulls Bio ID / Primary ID / Name from their actual Sheets columns instead of the folder name**: candidate cards moved the chosen Sheets `name` (column L) from below the turtle id to the top row alongside the rank badge so the name is the first thing the eye lands on; the comparison panel that opens when you click a match was rebuilt to a five-column grid `Bio ID | Name | Location | Confidence | Primary ID` with `Bio ID` (Sheets column C) and `Primary ID` (column B) now displayed separately. New `lookupIdFromTurtleId` helper splits the canonical combined-name folder form (`{bio}_{primary}`) before calling `/api/sheets/turtle/<id>` so the lookup actually finds the row — pre-fix, passing the combined string `F002_T1771234567` matched neither the Primary ID column nor the ID column on the backend, so the candidate summaries effect and `handleSelectMatch` both silently returned no data and the comparison view fell back to displaying the folder basename in both Bio ID and Primary ID slots. Helper prefers the primary-id-like segment (`T<digits>`, globally unique) and falls back to the bio-id-like segment (`[FMJU]\d+`).
+
 ## [2.0.0] - 2026-04-30
 
 Major version bump. The Superpoint-Implementation branch reaches parity with
