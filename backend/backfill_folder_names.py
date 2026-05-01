@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from typing import Dict, List, Optional, Tuple
 
@@ -52,6 +53,26 @@ from ingest_common import (
 )
 
 REFERENCE_SUBDIRS = ('plastron', 'ref_data', 'carapace')
+
+# Sheet bio_ids are mid-migration to canonical 3-digit zero-padded form
+# (M10 → M010, F89 → F089, etc.); the on-disk folders are already padded
+# but plenty of sheet rows still carry the unpadded spelling. Pad here so
+# the folder lookup matches without anyone having to touch the sheets.
+# Leaves anything that doesn't fit a clean letter+digits format unchanged
+# (annotated bio_ids like "F520 (UT50 5-21-2025)" or comma/slash combos
+# like "F46/F74" need separate cleanup — backfill correctly skips those).
+_BIO_ID_PAD_RE = re.compile(r'^([FMJUfmju])(\d+)$')
+
+
+def _pad_bio_id(bio_id: str) -> str:
+    """Zero-pad the numeric portion of a bio_id to 3 digits when possible."""
+    if not bio_id:
+        return bio_id
+    m = _BIO_ID_PAD_RE.match(bio_id.strip())
+    if not m:
+        return bio_id
+    letter, digits = m.group(1).upper(), m.group(2)
+    return f"{letter}{digits.zfill(3)}"
 
 
 def _rename_reference_files(turtle_dir: str, old_stem: str, new_stem: str,
@@ -126,12 +147,17 @@ def _process_row(row: SheetRow, data_root: str,
         )
         return
     state, location = mapped
-    expected_name = f"{row.bio_id}_{row.primary_id}"
+    # Use the padded form for both the lookup and the canonical expected
+    # name, so an unpadded sheet entry like "M10" finds the existing
+    # "M010_T177..." folder and recognizes it as already correct rather
+    # than flagging it missing or trying to rename it backwards.
+    bio_id_padded = _pad_bio_id(row.bio_id)
+    expected_name = f"{bio_id_padded}_{row.primary_id}"
 
     # Search for the folder: prefer primary-id match (handles already-renamed
     # and bio-id-changed turtles), then fall back to bio-id match.
     folder = find_turtle_folder(data_root, state, location,
-                                bio_id=row.bio_id, primary_id=row.primary_id)
+                                bio_id=bio_id_padded, primary_id=row.primary_id)
 
     if folder is None:
         # Job B: maybe it landed in the state root as a primary-only folder.
