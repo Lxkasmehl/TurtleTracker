@@ -55,23 +55,42 @@ from ingest_common import (
 REFERENCE_SUBDIRS = ('plastron', 'ref_data', 'carapace')
 
 # Sheet bio_ids are mid-migration to canonical 3-digit zero-padded form
-# (M10 → M010, F89 → F089, etc.); the on-disk folders are already padded
-# but plenty of sheet rows still carry the unpadded spelling. Pad here so
-# the folder lookup matches without anyone having to touch the sheets.
-# Leaves anything that doesn't fit a clean letter+digits format unchanged
-# (annotated bio_ids like "F520 (UT50 5-21-2025)" or comma/slash combos
-# like "F46/F74" need separate cleanup — backfill correctly skips those).
-_BIO_ID_PAD_RE = re.compile(r'^([FMJUfmju])(\d+)$')
+# (M10 → M010, F89 → F089, etc.); on-disk folders are already padded but
+# plenty of sheet rows still carry the unpadded spelling. A chunk of rows
+# (mostly West Topeka / North Topeka new captures from May 2025+) also
+# carry parenthetical annotations or trailing notes in the bio_id column:
+#
+#   parenthetical UT/date:  "F520 (UT50 5-21-2025)"   -> F520
+#   trailing prose:         "M552 duplicate with M542" -> M552
+#   parenthetical alias:    "F67 (also F038)"          -> F067
+#
+# _extract_bio_id strips that cruft and pads to canonical 3-digit form.
+# Slash combos ("F46/F74") and AND combos ("J104 AND F401") are
+# DELIBERATELY NOT auto-resolved — those represent the same turtle being
+# re-tagged with two bio_ids, and which one is canonical needs a human
+# decision. They're returned as None so the row warns and gets manual
+# cleanup in the sheet.
+_BIO_ID_LEADING_RE = re.compile(r'^([FMJUfmju])(\d+)')
+_SLASH_COMBO_RE = re.compile(r'[FMJUfmju]\d+\s*/\s*[FMJUfmju]\d+')
+_AND_COMBO_RE = re.compile(r'[FMJUfmju]\d+\s+AND\s+[FMJUfmju]\d+', re.IGNORECASE)
 
 
-def _pad_bio_id(bio_id: str) -> str:
-    """Zero-pad the numeric portion of a bio_id to 3 digits when possible."""
+def _extract_bio_id(bio_id: str) -> Optional[str]:
+    """Extract a single clean padded bio_id from a sheet cell.
+
+    Returns None if the cell is empty, contains a slash or AND combo
+    (manual cleanup required), or has no parseable letter+digits prefix.
+    """
     if not bio_id:
-        return bio_id
-    m = _BIO_ID_PAD_RE.match(bio_id.strip())
+        return None
+    s = bio_id.strip()
+    if _SLASH_COMBO_RE.search(s) or _AND_COMBO_RE.search(s):
+        return None
+    m = _BIO_ID_LEADING_RE.match(s)
     if not m:
-        return bio_id
-    letter, digits = m.group(1).upper(), m.group(2)
+        return None
+    letter = m.group(1).upper()
+    digits = m.group(2)
     return f"{letter}{digits.zfill(3)}"
 
 
@@ -147,17 +166,23 @@ def _process_row(row: SheetRow, data_root: str,
         )
         return
     state, location = mapped
-    # Use the padded form for both the lookup and the canonical expected
-    # name, so an unpadded sheet entry like "M10" finds the existing
-    # "M010_T177..." folder and recognizes it as already correct rather
-    # than flagging it missing or trying to rename it backwards.
-    bio_id_padded = _pad_bio_id(row.bio_id)
-    expected_name = f"{bio_id_padded}_{row.primary_id}"
+    # Strip annotations + pad to canonical 3-digit form. None means the
+    # cell is a slash/AND combo (which we deliberately don't auto-resolve
+    # so a human picks the canonical bio_id) or has no parseable prefix.
+    bio_id_clean = _extract_bio_id(row.bio_id)
+    if bio_id_clean is None:
+        reporter.warn(
+            f"[{row.spreadsheet_label}/{row.tab} row {row.row_index}] "
+            f"bio_id {row.bio_id!r} needs manual cleanup (slash/AND combo "
+            f"or unparseable) — skipping"
+        )
+        return
+    expected_name = f"{bio_id_clean}_{row.primary_id}"
 
     # Search for the folder: prefer primary-id match (handles already-renamed
     # and bio-id-changed turtles), then fall back to bio-id match.
     folder = find_turtle_folder(data_root, state, location,
-                                bio_id=bio_id_padded, primary_id=row.primary_id)
+                                bio_id=bio_id_clean, primary_id=row.primary_id)
 
     if folder is None:
         # Job B: maybe it landed in the state root as a primary-only folder.
