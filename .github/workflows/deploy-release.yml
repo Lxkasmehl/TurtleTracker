@@ -24,7 +24,8 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_SSH_FINGERPRINT }}
-          command_timeout: 45m
+          # CUDA backend image: pip (torch, LightGlue, etc.) often exceeds 45m on a cold build.
+          command_timeout: 120m
           script: |
             set -euo pipefail
             TAG="${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.tag }}"
