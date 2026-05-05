@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Folder-name backfill quarantined from the daily chronodrop**: `scripts/daily-backup.sh` no longer invokes `backfill_folder_names.py --apply`. The backfill is now a manual operator command. Run it by hand with `docker compose exec backend python backfill_folder_names.py [--apply]`, followed by a manual `docker compose restart backend` if `--apply` reports changes. The wrapper's header documents the workflow; the backfill block is preserved in commented form for trivial revert.
+
 ## [2.0.0] - 2026-04-30 — SuperPoint + LightGlue matching, dual plastron/carapace references, per-turtle folder layout, admin photo workflow rewrite
 
 Major version bump. The Superpoint-Implementation branch reaches parity with
