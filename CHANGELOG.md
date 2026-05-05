@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-05-04 — Quarantine folder-name backfill from daily chronodrop
+
 ### Changed
 
 - **Folder-name backfill quarantined from the daily chronodrop**: `scripts/daily-backup.sh` no longer invokes `backfill_folder_names.py --apply`. The backfill is now a manual operator command. Run it by hand with `docker compose exec backend python backfill_folder_names.py [--apply]`, followed by a manual `docker compose restart backend` if `--apply` reports changes. The wrapper's header documents the workflow; the backfill block is preserved in commented form for trivial revert.
