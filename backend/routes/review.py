@@ -6,6 +6,8 @@ import os
 import json
 import time
 import traceback
+from typing import Optional, Tuple
+
 from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from auth import require_admin
@@ -13,8 +15,79 @@ from services import manager_service
 from services.manager_service import get_sheets_service, get_community_sheets_service
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 from image_utils import normalize_to_jpeg
-from general_locations_catalog import resolve_general_location_from_sheet_and_value
+from general_locations_catalog import (
+    get_sheet_default,
+    resolve_general_location_from_sheet_and_value,
+)
 from additional_image_labels import normalize_additional_type, normalize_label_list, parse_labels_from_form
+
+
+def normalize_new_turtle_location_for_disk(
+    new_location: str,
+    sheets_data,
+    *,
+    is_community_upload: bool,
+) -> Tuple[str, Optional[str]]:
+    """Return ``(normalized_new_location, resolved_general_location)``.
+
+    For research turtles, when ``sheets_data['sheet_name']`` is present it is
+    authoritative for resolving disk paths. This prevents the first segment of
+    ``new_location`` (often a *General Location* value like ``CPBS``) from being
+    mistaken for the spreadsheet tab name, which used to create ``data/CPBS/…``
+    instead of ``data/NebraskaCPBS/CPBS/…``.
+    """
+    parts = [p.strip() for p in str(new_location or '').split('/') if p.strip()]
+    if not parts:
+        return (str(new_location or ''), '')
+
+    if is_community_upload and len(parts) == 1:
+        # Single-segment community path stays ``Community_Uploads/<tab>``; do not
+        # rewrite ``sheets_data['general_location']`` from this tuple.
+        return (parts[0], None)
+
+    sheet_part = parts[0]
+    if not sheet_part:
+        return (str(new_location or ''), '')
+
+    auth_sheet = (isinstance(sheets_data, dict) and (sheets_data.get('sheet_name') or '').strip()) or ''
+    if auth_sheet and not is_community_upload:
+        provided_general_loc = (sheets_data.get('general_location') or '').strip() if isinstance(sheets_data, dict) else ''
+        sheet_default = get_sheet_default(auth_sheet)
+        if sheet_default:
+            gl = sheet_default['general_location']
+            if parts and parts[0].lower() == gl.lower() and parts[0].lower() != auth_sheet.lower():
+                # Client sent ``CPBS/<extra>`` but the real tab is e.g. NebraskaCPBS — never
+                # treat trap-site names under a mistaken top-level ``CPBS`` folder.
+                provided_general_loc = gl
+        if not provided_general_loc and parts:
+            if len(parts) > 1 and parts[0].lower() == auth_sheet.lower():
+                provided_general_loc = '/'.join(parts[1:]).strip()
+        try:
+            resolved_general_loc = resolve_general_location_from_sheet_and_value(
+                auth_sheet,
+                provided_general_loc,
+                state=auth_sheet,
+                allow_blank=is_community_upload,
+            )
+        except ValueError:
+            raise
+        out = f"{auth_sheet}/{resolved_general_loc}" if resolved_general_loc else auth_sheet
+        return (out, resolved_general_loc)
+
+    provided_general_loc = ''
+    if len(parts) > 1:
+        provided_general_loc = '/'.join(parts[1:]).strip()
+    elif isinstance(sheets_data, dict):
+        provided_general_loc = (sheets_data.get('general_location') or '').strip()
+    resolved_general_loc = resolve_general_location_from_sheet_and_value(
+        sheet_part,
+        provided_general_loc,
+        state=sheet_part,
+        allow_blank=is_community_upload,
+    )
+    out = f"{sheet_part}/{resolved_general_loc}" if resolved_general_loc else sheet_part
+    return (out, resolved_general_loc)
+
 
 def format_review_packet_item(packet_dir, request_id):
     """Build one queue item dict from packet_dir (used by get_review_queue and get_review_packet)."""
@@ -538,29 +611,16 @@ def register_review_routes(app):
                 print(f"📋 Community→Admin move: new_admin_location={new_admin_location!r}, community_sheet_name={community_sheet_name!r}")
 
         if new_location and new_turtle_id:
-            parts = [p.strip() for p in str(new_location).split('/') if p.strip()]
-            sheet_part = parts[0] if parts else ''
-            if sheet_part:
-                if is_community_upload and len(parts) == 1:
-                    new_location = sheet_part
-                else:
-                    provided_general_loc = ''
-                    if len(parts) > 1:
-                        provided_general_loc = '/'.join(parts[1:]).strip()
-                    elif isinstance(sheets_data, dict):
-                        provided_general_loc = (sheets_data.get('general_location') or '').strip()
-                    try:
-                        resolved_general_loc = resolve_general_location_from_sheet_and_value(
-                            sheet_part,
-                            provided_general_loc,
-                            state=sheet_part,
-                            allow_blank=is_community_upload,
-                        )
-                    except ValueError as exc:
-                        return jsonify({'error': str(exc)}), 400
-                    new_location = f"{sheet_part}/{resolved_general_loc}" if resolved_general_loc else sheet_part
-                    if isinstance(sheets_data, dict):
-                        sheets_data['general_location'] = resolved_general_loc
+            try:
+                new_location, resolved_for_sheet = normalize_new_turtle_location_for_disk(
+                    new_location,
+                    sheets_data,
+                    is_community_upload=is_community_upload,
+                )
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
+            if isinstance(sheets_data, dict) and resolved_for_sheet is not None:
+                sheets_data['general_location'] = resolved_for_sheet
 
         # For new turtle creation, defer packet deletion until Sheets sync succeeds.
         # This ensures the packet survives as a retry point if Sheets fails.

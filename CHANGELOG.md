@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-05-13 — Fix wrong on-disk paths for new research turtles (sheet vs General Location)
+
+### Fixed
+
+- **New-turtle folder paths under `data/`**: Creating a turtle from the review queue could write under a mistaken top-level folder (e.g. `data/CPBS/…` with trap-site subfolders) when `new_location` started with a **General Location** value such as `CPBS` instead of the spreadsheet tab (`NebraskaCPBS`). The approve handler now treats `sheets_data.sheet_name` as authoritative for research turtles, normalizes paths like `CPBS/…` to `NebraskaCPBS/CPBS`, and `TurtleManager` applies an extra guard that expands known flash-drive location keys (`CPBS`, `Lawrence`, …) to the canonical `State/Location` pair from `DRIVE_LOCATION_TO_BACKEND_PATH`. Regression tests in `backend/tests/test_review_new_location_paths.py`.
+
 ## [2.0.1] - 2026-05-04 — Quarantine folder-name backfill from daily chronodrop
 
 ### Changed
@@ -518,7 +524,10 @@ rather than the legacy VLAD index.
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v1.2.22...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.1...v2.0.2
+[2.0.1]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.0...v2.0.1
+[2.0.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v2.0.0
 [1.2.22]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.22
 [1.2.21]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.21
 [1.2.20]: https://github.com/Lxkasmehl/PicTur/releases/tag/v1.2.20

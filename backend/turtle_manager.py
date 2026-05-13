@@ -306,6 +306,25 @@ DRIVE_LOCATION_TO_BACKEND_PATH = {
 }
 
 
+def _expand_flat_drive_folder_prefix(parts):
+    """Rewrite path segments that start with a flash-drive folder key.
+
+    If ``new_location`` was mis-serialized as ``CPBS/<trap>/…`` or a lone ``Lawrence``,
+    expand to the canonical ``NebraskaCPBS/CPBS`` or ``Kansas/Lawrence`` segments so
+    turtles are never created under a mistaken top-level ``data/CPBS``.
+    """
+    if not parts:
+        return parts
+    head = parts[0]
+    if head in DRIVE_LOCATION_TO_BACKEND_PATH:
+        mapped = DRIVE_LOCATION_TO_BACKEND_PATH[head]
+        mapped_parts = [p for p in mapped.split('/') if str(p).strip()]
+        if len(parts) == 1:
+            return mapped_parts
+        return mapped_parts + parts[2:]
+    return parts
+
+
 # Flat structure: top-level folders that should be treated as State-level (not Location-level).
 # Images directly inside these folders ingest to data/<State>/<TurtleID>/...
 DRIVE_STATE_LEVEL_FOLDERS = {
@@ -1796,6 +1815,8 @@ class TurtleManager:
         elif new_location and new_turtle_id:
             print(f"🐢 Creating new turtle {new_turtle_id} at {new_location}...")
             parts = [p.strip() for p in new_location.split('/') if p.strip()]
+            if not is_community_upload:
+                parts = _expand_flat_drive_folder_prefix(parts)
             sheet_name = parts[0] if parts else new_location
             if is_community_upload:
                 location_dir = os.path.join(self.base_dir, 'Community_Uploads', sheet_name)
