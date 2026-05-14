@@ -20,6 +20,8 @@ def mgr(tmp_path, monkeypatch):
     monkeypatch.setattr(tm.brain, "process_and_save", _fake_process_and_save)
     if hasattr(tm.brain, "load_database_to_vram"):
         monkeypatch.setattr(tm.brain, "load_database_to_vram", MagicMock())
+    if hasattr(tm.brain, "add_single_to_vram"):
+        monkeypatch.setattr(tm.brain, "add_single_to_vram", MagicMock())
     return tm.TurtleManager(base_data_dir=str(tmp_path))
 
 
@@ -225,3 +227,72 @@ def test_resolve_upload_bare_general_location_stays_in_sheet(mgr):
     got = mgr.resolve_turtle_dir_for_sheet_upload("F298", "CPBS")
     assert os.path.normpath(got) == os.path.normpath(ne)
     assert not os.path.isdir(os.path.join(mgr.base_dir, "CPBS"))
+
+
+# --- Sheet-only ("Null") turtle: canonical folder creation on first upload ---
+
+
+def test_resolve_or_create_canonical_creates_modern_structure(mgr):
+    """No existing folder -> create data/<sheet>/<gl>/<bio_id>_<primary_id>/ with
+    the full modern subfolder layout; created flag is True."""
+    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+        "F500", "Kansas/North Topeka", primary_id="T1771234500", bio_id="F500",
+    )
+    assert created is True
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "North Topeka", "F500_T1771234500")
+    )
+    for sub in ("plastron", "plastron/Old References", "plastron/Other Plastrons",
+                "carapace", "carapace/Old References", "carapace/Other Carapaces"):
+        assert os.path.isdir(os.path.join(d, sub))
+
+
+def test_resolve_or_create_canonical_other_goes_to_kansas_other(mgr):
+    """An 'Other' turtle uses the normal routing -> data/Kansas/Other/<combined>/."""
+    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+        "F501", "Kansas/Other", primary_id="T1771234501", bio_id="F501",
+    )
+    assert created is True
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "Other", "F501_T1771234501")
+    )
+
+
+def test_resolve_or_create_canonical_returns_existing_without_duplicating(mgr):
+    """An existing folder is returned as-is (created=False); no second folder."""
+    existing = _make_turtle(mgr, "Kansas", "North Topeka", "F502_T1771234502")
+    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+        "F502", "Kansas/North Topeka", primary_id="T1771234502", bio_id="F502",
+    )
+    assert created is False
+    assert os.path.normpath(d) == os.path.normpath(existing)
+    loc = os.path.join(mgr.base_dir, "Kansas", "North Topeka")
+    assert sorted(os.listdir(loc)) == ["F502_T1771234502"]
+
+
+def test_replace_reference_create_if_missing_makes_canonical_folder(mgr, tmp_path):
+    """create_if_missing=True + no folder -> canonical folder created with the
+    plastron reference written under it."""
+    src = tmp_path / "new.jpg"
+    src.write_bytes(b"\xff\xd8\xff new")
+    ok, msg = mgr.replace_turtle_reference(
+        "F503", str(src), photo_type="plastron",
+        sheet_name="Kansas/North Topeka", primary_id="T1771234503",
+        create_if_missing=True, bio_id="F503",
+    )
+    assert ok is True, msg
+    turtle_dir = os.path.join(mgr.base_dir, "Kansas", "North Topeka", "F503_T1771234503")
+    assert os.path.isfile(os.path.join(turtle_dir, "plastron", "F503_T1771234503.jpg"))
+    assert os.path.isfile(os.path.join(turtle_dir, "plastron", "F503_T1771234503.pt"))
+
+
+def test_replace_reference_without_create_flag_still_errors_when_missing(mgr, tmp_path):
+    """Default behavior unchanged: no folder + create_if_missing=False -> error."""
+    src = tmp_path / "new.jpg"
+    src.write_bytes(b"\xff\xd8\xff new")
+    ok, msg = mgr.replace_turtle_reference(
+        "F504", str(src), photo_type="plastron",
+        sheet_name="Kansas/North Topeka", primary_id="T1771234504",
+    )
+    assert ok is False
+    assert "could not find folder" in (msg or "").lower()

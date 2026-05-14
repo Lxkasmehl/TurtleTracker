@@ -236,6 +236,25 @@ def _looks_like_primary_id(tid):
     return bool(tid) and bool(_PRIMARY_ID_RE.match(str(tid).strip()))
 
 
+def canonical_new_turtle_folder_id(bio_id, primary_id, fallback_id):
+    """On-disk folder name for a NEW turtle: ``<bio_id>_<primary_id>``.
+
+    Biology id alone collides across sheets and primary id alone is opaque, so
+    the canonical folder name carries both. Falls back to the legacy partial
+    combine (``<bio_id>_<fallback_id>``) or the bare id when an id could not be
+    resolved (e.g. Sheets unavailable) -- never raises, so a missing id degrades
+    the name instead of failing the caller.
+    """
+    bio_id = (bio_id or '').strip()
+    primary_id = (primary_id or '').strip()
+    fallback_id = (fallback_id or '').strip()
+    if bio_id and primary_id:
+        return f"{bio_id}_{primary_id}"
+    if bio_id and fallback_id and not fallback_id.startswith(f"{bio_id}_"):
+        return f"{bio_id}_{fallback_id}"
+    return fallback_id or primary_id or bio_id
+
+
 def _parse_bio_id(filename):
     """Extract biology ID from a filename like 'F002 Plastron.jpg' -> 'F002'.
 
@@ -956,6 +975,17 @@ class TurtleManager:
                 return False
         return False
 
+    def _create_modern_turtle_structure(self, turtle_dir):
+        """Create the full modern reference-folder layout under ``turtle_dir``.
+
+        ``plastron/`` and ``carapace/``, each with ``Old References/`` and
+        ``Other Plastrons``/``Other Carapaces``. Shared by ``_process_single_turtle``
+        and ``resolve_or_create_canonical_turtle_dir``.
+        """
+        for subdir in ('plastron', 'plastron/Old References', 'plastron/Other Plastrons',
+                       'carapace', 'carapace/Old References', 'carapace/Other Carapaces'):
+            os.makedirs(os.path.join(turtle_dir, subdir), exist_ok=True)
+
     def _process_single_turtle(self, source_path, location_dir, turtle_id, photo_type="plastron"):
         """Creates folders and generates .pt tensor file using SuperPoint.
 
@@ -971,9 +1001,7 @@ class TurtleManager:
 
         os.makedirs(data_dir, exist_ok=True)
         # Create the full folder structure for both photo types
-        for subdir in ('plastron', 'plastron/Old References', 'plastron/Other Plastrons',
-                       'carapace', 'carapace/Old References', 'carapace/Other Carapaces'):
-            os.makedirs(os.path.join(turtle_dir, subdir), exist_ok=True)
+        self._create_modern_turtle_structure(turtle_dir)
 
         ext = os.path.splitext(source_path)[1]
         dest_image_path = os.path.join(data_dir, f"{turtle_id}{ext}")
@@ -1104,7 +1132,7 @@ class TurtleManager:
                     queue_items.append({'request_id': req_id, 'path': req_path, 'status': 'pending'})
         return queue_items
 
-    def replace_turtle_reference(self, turtle_id, new_image_path, photo_type="plastron", sheet_name=None, primary_id=None):
+    def replace_turtle_reference(self, turtle_id, new_image_path, photo_type="plastron", sheet_name=None, primary_id=None, create_if_missing=False, bio_id=None):
         """Atomically replace the plastron or carapace reference image for an existing turtle.
 
         Archives the old .pt+image to {photo_type}/Old References/, stages the new
@@ -1119,6 +1147,12 @@ class TurtleManager:
             sheet_name: Optional location hint to disambiguate multi-location turtles.
             primary_id: Optional primary key tried FIRST during folder resolution.
                 Globally unique, so it sidesteps cross-state biology-ID collisions.
+            create_if_missing: When True and no folder is found, create a
+                canonically-named ``<bio_id>_<primary_id>`` folder (modern
+                structure) instead of failing -- for sheet-only ("Null") turtles
+                receiving their first reference photo.
+            bio_id: Sheet biology-ID column value, used only for canonical folder
+                naming when ``create_if_missing`` creates a new folder.
 
         Returns:
             (success: bool, message: str)
@@ -1134,6 +1168,13 @@ class TurtleManager:
                 target_dir = self._get_turtle_folder(primary_id, sheet_name)
             if not target_dir:
                 target_dir = self._get_turtle_folder(turtle_id, sheet_name)
+            created = False
+            if not target_dir and create_if_missing:
+                # Sheet-only ("Null") turtle getting its first reference photo:
+                # create a canonically-named folder with the modern structure.
+                target_dir, created = self.resolve_or_create_canonical_turtle_dir(
+                    turtle_id, sheet_name, primary_id=primary_id, bio_id=bio_id,
+                )
             if not target_dir:
                 return False, f"Could not find folder for {turtle_id}"
 
@@ -1282,6 +1323,10 @@ class TurtleManager:
             # manual copy. Keeps the ref dir self-healing.
             self._purge_orphan_refs_in_ref_dir(ref_dir, ref_stem)
             print(f"   ✅ {turtle_id} {photo_type} reference upgraded successfully.")
+            if created:
+                # New folder just created for a sheet-only turtle -- full reindex
+                # so db_index (not just the incremental VRAM add above) sees it.
+                self.refresh_database_index()
             return True, f"{photo_type.capitalize()} reference replaced for {turtle_id}"
 
     def replace_plastron_reference(self, turtle_id, new_image_path, sheet_name=None, primary_id=None):
@@ -2387,6 +2432,54 @@ class TurtleManager:
             return explicit
         return self._get_turtle_folder(tid, None)
 
+    def resolve_or_create_canonical_turtle_dir(self, turtle_id, sheet_name, primary_id=None, bio_id=None):
+        """Find an existing turtle folder, or create a canonical one if none exists.
+
+        Returns ``(turtle_dir | None, created: bool)``. Unlike
+        ``resolve_turtle_dir_for_sheet_upload`` (which creates a *bare*-named
+        ``turtle_id`` folder with only ``ref_data/`` + ``loose_images/``), a
+        folder created here is named ``<bio_id>_<primary_id>`` via
+        ``canonical_new_turtle_folder_id`` and gets the full modern structure.
+        Used by the Sheets-Browser upload paths so a sheet-only ("Null") turtle's
+        first reference photo lands in a correctly-named, correctly-located dir.
+        """
+        existing = None
+        if (primary_id and isinstance(primary_id, str) and primary_id.strip()
+                and primary_id.strip() != (turtle_id or '').strip()):
+            existing = self._get_turtle_folder(primary_id.strip(), sheet_name)
+        if (not existing or not os.path.isdir(existing)) and turtle_id:
+            existing = self._get_turtle_folder(turtle_id, sheet_name)
+        if existing and os.path.isdir(existing):
+            return existing, False
+
+        if not turtle_id or not isinstance(turtle_id, str):
+            return None, False
+        tid = turtle_id.strip()
+        if not tid or os.path.isabs(tid) or "/" in tid or "\\" in tid or tid in (".", ".."):
+            return None, False
+        rel = _location_dir_from_sheet_name(sheet_name) if sheet_name else None
+        if not rel:
+            return None, False
+        rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+        rel_parts = _expand_flat_drive_folder_prefix(rel_parts)
+        if not rel_parts:
+            return None, False
+        # Don't create a shallow data/<State>/<turtle>/ when the real layout is
+        # data/<State>/<Site>/<turtle>/ (mirrors resolve_turtle_dir_for_sheet_upload).
+        if len(rel_parts) == 1:
+            state_only = _resolved_path_under_base(self.base_dir, rel_parts[0])
+            if state_only and self._state_dir_has_site_subfolders(state_only):
+                return None, False
+        location_dir = _resolved_path_under_base(self.base_dir, *rel_parts)
+        if not location_dir:
+            return None, False
+        folder_name = canonical_new_turtle_folder_id(bio_id, primary_id, tid)
+        turtle_dir = _resolved_path_under_base(location_dir, folder_name)
+        if not turtle_dir:
+            return None, False
+        self._create_modern_turtle_structure(turtle_dir)
+        return turtle_dir, True
+
     def _create_identifier_plastron(self, turtle_id, query_image, ref_dir, loose_dir):
         """Write first ref_data/<turtle_id>.* + .pt from an image file (caller ensures no identifier)."""
         os.makedirs(ref_dir, exist_ok=True)
@@ -2664,8 +2757,15 @@ class TurtleManager:
         except Exception as e:
             return False, str(e)
 
-    def add_additional_images_to_turtle(self, turtle_id, files_with_types, sheet_name=None, primary_id=None):
-        turtle_dir = self.resolve_turtle_dir_for_sheet_upload(turtle_id, sheet_name, primary_id=primary_id)
+    def add_additional_images_to_turtle(self, turtle_id, files_with_types, sheet_name=None, primary_id=None, bio_id=None):
+        # Canonically create the folder if it doesn't exist yet, so a sheet-only
+        # ("Null") turtle whose first upload is a non-reference photo still gets a
+        # correctly-named <bio_id>_<primary_id> dir. No reindex here -- additional
+        # images produce no .pt; the index updates when a reference photo is later
+        # added via replace_turtle_reference.
+        turtle_dir, _created = self.resolve_or_create_canonical_turtle_dir(
+            turtle_id, sheet_name, primary_id=primary_id, bio_id=bio_id,
+        )
         if not turtle_dir or not os.path.isdir(turtle_dir):
             return (
                 False,
