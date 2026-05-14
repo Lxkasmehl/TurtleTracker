@@ -225,6 +225,15 @@ def _safe_folder_name(sheet_name):
 # --- FILENAME PARSING ---
 _BIO_ID_RE = re.compile(r'^([FMJUfmju]\d+)')
 _CARAPACE_RE = re.compile(r'carapac|carapce|carapae', re.IGNORECASE)
+# A globally-unique primary key is "T" + a long digit run. Only this shape is
+# safe to resolve via an unscoped whole-tree walk; a bare biology id (F298,
+# J308, ...) repeats across sheets and must stay scoped to one top-level folder.
+_PRIMARY_ID_RE = re.compile(r'^T\d{10,}$')
+
+
+def _looks_like_primary_id(tid):
+    """True if ``tid`` is a globally-unique primary key (``T`` + 10+ digits)."""
+    return bool(tid) and bool(_PRIMARY_ID_RE.match(str(tid).strip()))
 
 
 def _parse_bio_id(filename):
@@ -2148,25 +2157,30 @@ class TurtleManager:
         wrong one after scoring. When a sheet path hint is present, restrict the
         walk to that subtree (e.g. ``data/Kansas`` or ``data/NebraskaCPBS/CPBS``).
 
-        Falls back to ``[base_dir]`` only when no usable scoped directory exists
-        (unknown layout / typo) so admin tooling without a hint still works.
+        A leading flash-drive location key (``CPBS``, ``North Topeka``, ...) is
+        expanded to its canonical ``State/Location`` so a hint that omits the
+        top-level folder still scopes correctly. When a hint IS given but cannot
+        be resolved to any existing directory, this returns ``[]`` (fail closed)
+        so the lookup reports "not found" rather than silently broadening to a
+        same-bio_id turtle in another sheet. ``[base_dir]`` is returned only for
+        the genuine no-hint case.
         """
         if not location_hint or not str(location_hint).strip() or location_hint == "Unknown":
             return [self.base_dir]
         rel = _location_dir_from_sheet_name(location_hint)
         if not rel:
-            return [self.base_dir]
+            return []
         rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+        rel_parts = _expand_flat_drive_folder_prefix(rel_parts)
         if not rel_parts:
-            return [self.base_dir]
-        full = _resolved_path_under_base(self.base_dir, *rel_parts)
-        if full and os.path.isdir(full):
-            return [full]
-        if len(rel_parts) >= 2:
-            parent = _resolved_path_under_base(self.base_dir, *rel_parts[:-1])
-            if parent and os.path.isdir(parent):
-                return [parent]
-        return [self.base_dir]
+            return []
+        # Walk the deepest hinted prefix that exists; fall back to shorter
+        # prefixes but never below the top-level (sheet) folder.
+        for depth in range(len(rel_parts), 0, -1):
+            cand = _resolved_path_under_base(self.base_dir, *rel_parts[:depth])
+            if cand and os.path.isdir(cand):
+                return [cand]
+        return []
 
     def _get_turtle_folder(self, turtle_id, location_hint=None):
         """
@@ -2202,6 +2216,7 @@ class TurtleManager:
             rel = _location_dir_from_sheet_name(location_hint)
             if rel:
                 rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+                rel_parts = _expand_flat_drive_folder_prefix(rel_parts)
                 if rel_parts:
                     hinted_path = _resolved_path_under_base(self.base_dir, *rel_parts, tid)
             if not hinted_path:
@@ -2218,6 +2233,16 @@ class TurtleManager:
             pass
 
         if not candidates:
+            return None
+        # No usable hint + a bare biology id matching more than one folder is
+        # ambiguous (bio_ids repeat across top-level sheet folders). Refuse to
+        # guess; only a globally-unique primary_id may resolve unscoped.
+        no_usable_hint = (
+            not location_hint
+            or not str(location_hint).strip()
+            or location_hint == "Unknown"
+        )
+        if no_usable_hint and len(candidates) > 1 and not _looks_like_primary_id(tid):
             return None
         if len(candidates) == 1:
             return candidates[0]
@@ -2331,12 +2356,19 @@ class TurtleManager:
             return None
         rel = _location_dir_from_sheet_name(sheet_name) if sheet_name else None
         if rel:
-            explicit = _resolved_path_under_base(self.base_dir, rel, tid)
+            rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+            # Expand a leading flash-drive location key (e.g. "CPBS" ->
+            # "NebraskaCPBS/CPBS") so an upload hint that omits the top-level
+            # folder neither broadens across sheets nor creates a misplaced
+            # top-level folder.
+            rel_parts = _expand_flat_drive_folder_prefix(rel_parts)
+            if not rel_parts:
+                return None
+            explicit = _resolved_path_under_base(self.base_dir, *rel_parts, tid)
             if not explicit:
                 return None
             if os.path.isdir(explicit):
                 return explicit
-            rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
             if len(rel_parts) == 1:
                 nested = self._find_turtle_under_single_state_segment(rel_parts[0], tid)
                 if nested:

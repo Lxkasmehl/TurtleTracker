@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-05-14 — Fail-closed cross-sheet folder lookup + canonical new-turtle names
+
+### Fixed
+
+- **Cross-sheet biology-ID photo contamination**: turtles sharing a biology id across two sheets (e.g. `Kansas/North Topeka` and `NebraskaCPBS/CPBS`) could display the same plastron photos. The v2.0.4 scoped walk still fell back to walking the whole `data/` tree (`return [self.base_dir]`) whenever a hint could not be resolved -- and the Sheets Browser sends a hint without the top-level folder, so that fallback fired routinely. `_data_walk_roots_for_hint` now expands a leading flash-drive location key (`CPBS` -> `NebraskaCPBS/CPBS`) via `DRIVE_LOCATION_TO_BACKEND_PATH` and **fails closed** (`[]`, "not found") instead of broadening when a hint resolves to no existing directory. `_get_turtle_folder` additionally refuses to guess when there is no usable hint and a bare biology id matches more than one folder. `resolve_turtle_dir_for_sheet_upload` applies the same drive-key expansion so admin uploads cannot broaden or create a misplaced top-level folder. Regression tests in `backend/tests/test_turtle_plastron_upload.py`.
+- **Frontend image hint omitted the sheet**: `turtleDataFolderHint` (`frontend/src/services/api/sheets.ts`) returned only `general_location[/location]`, dropping the spreadsheet tab -- which IS the on-disk top-level folder. It now leads with `sheet_name`, so the backend reliably scopes the lookup to the correct sheet.
+- **New turtles were named bare `<bio_id>`**: the review-approve handler built the combined `<bio_id>_<primary_id>` folder name *before* the Sheets sync finalized `primary_id`, so backend-generated primary ids never reached the folder name. Both ids are now resolved up front (read-only next-id lookups) so the folder is born canonical; the same `primary_id` is reused by the Sheets sync. New helper `canonical_new_turtle_folder_id` with tests in `backend/tests/test_review_new_location_paths.py`.
+
 ## [2.0.4] - 2026-05-14 — Turtle folder lookup scoped by sheet path (duplicate biology IDs)
 
 ### Fixed
@@ -435,7 +443,8 @@ Major bump merging the SuperPoint implementation: **VLAD/FAISS → SuperPoint + 
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.4...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.5...HEAD
+[2.0.5]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.1...v2.0.2

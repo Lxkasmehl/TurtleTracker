@@ -89,6 +89,25 @@ def normalize_new_turtle_location_for_disk(
     return (out, resolved_general_loc)
 
 
+def canonical_new_turtle_folder_id(bio_id, primary_id, fallback_id):
+    """On-disk folder name for a NEW turtle: ``<bio_id>_<primary_id>``.
+
+    Biology id alone collides across sheets and primary id alone is opaque, so
+    the canonical folder name carries both. Falls back to the legacy partial
+    combine (``<bio_id>_<fallback_id>``) or the bare id when an id could not be
+    resolved (e.g. Sheets unavailable) -- never raises, so a missing id degrades
+    the name instead of failing the whole approve.
+    """
+    bio_id = (bio_id or '').strip()
+    primary_id = (primary_id or '').strip()
+    fallback_id = (fallback_id or '').strip()
+    if bio_id and primary_id:
+        return f"{bio_id}_{primary_id}"
+    if bio_id and fallback_id and not fallback_id.startswith(f"{bio_id}_"):
+        return f"{bio_id}_{fallback_id}"
+    return fallback_id or primary_id or bio_id
+
+
 def format_review_packet_item(packet_dir, request_id):
     """Build one queue item dict from packet_dir (used by get_review_queue and get_review_packet)."""
     metadata_path = os.path.join(packet_dir, 'metadata.json')
@@ -626,11 +645,45 @@ def register_review_routes(app):
         # This ensures the packet survives as a retry point if Sheets fails.
         is_new_turtle = bool(new_location and new_turtle_id and not match_turtle_id)
 
-        # Prepend biology ID to folder name: Biology_ID_PrimaryKey (e.g. F001_K14)
-        if is_new_turtle and isinstance(sheets_data, dict):
-            bio_id = (sheets_data.get('id') or '').strip()
-            if bio_id and new_turtle_id and not new_turtle_id.startswith(f"{bio_id}_"):
-                new_turtle_id = f"{bio_id}_{new_turtle_id}"
+        # Resolve BOTH the biology id and the primary id up front so the on-disk
+        # folder is born canonical (<bio_id>_<primary_id>). The Sheets sync below
+        # would otherwise finalize primary_id AFTER the folder is created, leaving
+        # it bare -- and bare <bio_id> folders collide across sheets. generate_*
+        # are read-only next-id lookups; the actual Sheets write still happens
+        # after disk success. canonical_primary_id is reused by the Sheets-sync
+        # block so the folder name and the sheet row carry the same primary id.
+        canonical_primary_id = None
+        if is_new_turtle:
+            sd = sheets_data if isinstance(sheets_data, dict) else {}
+            bio_id = (sd.get('id') or '').strip()
+            canonical_primary_id = (sd.get('primary_id') or '').strip() or None
+            id_sheet = (sd.get('sheet_name') or '').strip() or (new_location or '')
+            id_state = (sd.get('general_location') or '').strip()
+            id_location = (sd.get('location') or '').strip()
+            try:
+                id_service = (
+                    get_community_sheets_service() if is_community_upload
+                    else get_sheets_service()
+                )
+            except Exception as svc_err:
+                print(f"⚠️ Could not load Sheets service for id pre-resolution: {svc_err}")
+                id_service = None
+            if id_service:
+                if not canonical_primary_id:
+                    try:
+                        canonical_primary_id = id_service.generate_primary_id(id_state, id_location)
+                    except Exception as id_err:
+                        print(f"⚠️ Could not pre-generate primary_id for new turtle: {id_err}")
+                if not bio_id and id_sheet:
+                    try:
+                        sex = (sd.get('sex') or '').strip().upper()
+                        gender = sex if sex in ('M', 'F', 'J') else 'U'
+                        bio_id = id_service.generate_biology_id(gender, id_sheet)
+                        if isinstance(sheets_data, dict):
+                            sheets_data['id'] = bio_id
+                    except Exception as id_err:
+                        print(f"⚠️ Could not pre-generate biology id for new turtle: {id_err}")
+            new_turtle_id = canonical_new_turtle_folder_id(bio_id, canonical_primary_id, new_turtle_id)
 
         try:
             success, message = manager_service.manager.approve_review_packet(
@@ -672,7 +725,7 @@ def register_review_routes(app):
                                     if isinstance(sheets_data, dict) and sheets_data.get('primary_id'):
                                         primary_id = sheets_data.get('primary_id')
                                     else:
-                                        primary_id = comm.generate_primary_id(state, location)
+                                        primary_id = canonical_primary_id or comm.generate_primary_id(state, location)
                                     turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
                                     turtle_data.pop('sheet_name', None)
                                     turtle_data['primary_id'] = primary_id
@@ -696,7 +749,7 @@ def register_review_routes(app):
                                     print(f"✅ Google Sheets entry already created by frontend for new turtle {new_turtle_id} with Primary ID {primary_id}")
                                 elif isinstance(sheets_data, dict) and sheets_data.get('sheet_name') and not sheets_data.get('primary_id'):
                                     print(f"⚠️ Frontend createTurtleSheetsData failed (no primary_id in sheets_data), creating in fallback mode")
-                                    primary_id = service.generate_primary_id(state, location)
+                                    primary_id = canonical_primary_id or service.generate_primary_id(state, location)
                                     turtle_data = sheets_data.copy()
                                     turtle_data.pop('sheet_name', None)
                                     turtle_data['primary_id'] = primary_id
@@ -708,7 +761,7 @@ def register_review_routes(app):
                                     service.create_turtle_data(turtle_data, sheet_name, state, location)
                                     print(f"✅ Created Google Sheets entry for new turtle {new_turtle_id} with Primary ID {primary_id} (fallback)")
                                 else:
-                                    primary_id = service.generate_primary_id(state, location) if not (isinstance(sheets_data, dict) and sheets_data.get('primary_id')) else sheets_data.get('primary_id')
+                                    primary_id = canonical_primary_id or service.generate_primary_id(state, location)
                                     turtle_data = sheets_data.copy() if isinstance(sheets_data, dict) else {}
                                     turtle_data.pop('sheet_name', None)
                                     turtle_data['primary_id'] = primary_id

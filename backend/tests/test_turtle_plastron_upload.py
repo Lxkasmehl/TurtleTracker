@@ -151,3 +151,77 @@ def test_resolve_no_shallow_folder_when_state_has_site_layout(mgr):
     d = mgr.resolve_turtle_dir_for_sheet_upload("BRANDNEW99", "Kansas")
     assert d is None
     assert not os.path.isdir(os.path.join(mgr.base_dir, "Kansas", "BRANDNEW99"))
+
+
+# --- Cross-sheet biology-ID scoping (incident: same bio_id served wrong photos) ---
+
+
+def _make_turtle(mgr, *parts):
+    """Create data/<parts...>/plastron/<id>.{jpg,pt}; return the turtle dir."""
+    tid = parts[-1]
+    turtle_dir = os.path.join(mgr.base_dir, *parts)
+    ref = os.path.join(turtle_dir, "plastron")
+    os.makedirs(ref, exist_ok=True)
+    with open(os.path.join(ref, f"{tid}.jpg"), "wb") as f:
+        f.write(b"\xff\xd8\xff x")
+    with open(os.path.join(ref, f"{tid}.pt"), "wb") as f:
+        f.write(b"pt")
+    return turtle_dir
+
+
+def test_get_turtle_folder_bare_general_location_hint_stays_in_sheet(mgr):
+    """Real Sheets-Browser hint shape: a bare general_location (no top-level
+    folder) still scopes to the correct sheet via drive-key expansion."""
+    ks = _make_turtle(mgr, "Kansas", "North Topeka", "F298")
+    ne = _make_turtle(mgr, "NebraskaCPBS", "CPBS", "F298")
+    assert os.path.normpath(mgr._get_turtle_folder("F298", "North Topeka")) == os.path.normpath(ks)
+    assert os.path.normpath(mgr._get_turtle_folder("F298", "CPBS")) == os.path.normpath(ne)
+    assert os.path.normpath(mgr._get_turtle_folder("F298", "Kansas/North Topeka")) == os.path.normpath(ks)
+    assert os.path.normpath(mgr._get_turtle_folder("F298", "Kansas")) == os.path.normpath(ks)
+
+
+def test_get_turtle_folder_missing_sheet_folder_returns_none_not_other_sheet(mgr):
+    """The reported incident: the requested sheet has no such turtle -> None,
+    never the same-bio_id turtle from a different sheet."""
+    _make_turtle(mgr, "NebraskaCPBS", "CPBS", "F298")  # only NebraskaCPBS has F298
+    assert mgr._get_turtle_folder("F298", "North Topeka") is None
+    assert mgr._get_turtle_folder("F298", "Kansas/North Topeka") is None
+    assert mgr._get_turtle_folder("F298", "Kansas") is None
+
+
+def test_get_turtle_folder_unresolvable_hint_returns_none(mgr):
+    """A hint that maps to no existing top-level folder fails closed."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F298")
+    assert mgr._get_turtle_folder("F298", "Nonexistent Place") is None
+
+
+def test_get_turtle_folder_no_hint_ambiguous_bio_id_returns_none(mgr):
+    """No hint + a bare bio_id matching two sheets is ambiguous -> refuse to guess."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F298")
+    _make_turtle(mgr, "NebraskaCPBS", "CPBS", "F298")
+    assert mgr._get_turtle_folder("F298", None) is None
+
+
+def test_get_turtle_folder_no_hint_single_match_still_resolves(mgr):
+    """No hint + a bio_id that exists in exactly one place still resolves
+    (preserves review-approval Scenario A)."""
+    only = _make_turtle(mgr, "Kansas", "North Topeka", "F777")
+    assert os.path.normpath(mgr._get_turtle_folder("F777", None)) == os.path.normpath(only)
+
+
+def test_get_turtle_folder_no_hint_primary_id_resolves_across_tree(mgr):
+    """primary_id is globally unique -> an unscoped walk is safe even with
+    other turtles present."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F298")
+    pj = _make_turtle(mgr, "NebraskaCPBS", "CPBS", "T1771234567")
+    assert os.path.normpath(mgr._get_turtle_folder("T1771234567", None)) == os.path.normpath(pj)
+
+
+def test_resolve_upload_bare_general_location_stays_in_sheet(mgr):
+    """resolve_turtle_dir_for_sheet_upload must not cross sheets when the hint
+    is a bare general_location and the same bio_id exists in another sheet."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F298")
+    ne = _make_turtle(mgr, "NebraskaCPBS", "CPBS", "F298")
+    got = mgr.resolve_turtle_dir_for_sheet_upload("F298", "CPBS")
+    assert os.path.normpath(got) == os.path.normpath(ne)
+    assert not os.path.isdir(os.path.join(mgr.base_dir, "CPBS"))

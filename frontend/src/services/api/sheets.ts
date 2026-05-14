@@ -72,9 +72,12 @@ export function turtleDiskFolderId(
 }
 
 /**
- * Folder hint for turtle image APIs: matches `data/<…>/` on disk.
- * The spreadsheet tab (`sheet_name`) is often only the state (e.g. `Kansas`); real paths use
- * `general_location` + `location` (e.g. `Kansas/North Topeka`), same as review-queue `state/location`.
+ * Folder hint for turtle image APIs: matches `data/<...>/` on disk.
+ * The on-disk top-level folder IS the spreadsheet tab (`sheet_name`, e.g.
+ * `Kansas`, `NebraskaCPBS`); `general_location` / `location` are subpaths under
+ * it. Lead with the tab so the backend scopes the lookup to the correct sheet —
+ * biology IDs repeat across sheets, so a hint missing the tab can resolve to
+ * the wrong turtle's photos.
  */
 export function turtleDataFolderHint(
   t: Pick<TurtleSheetsData, 'sheet_name' | 'general_location' | 'location'>,
@@ -82,10 +85,11 @@ export function turtleDataFolderHint(
   const gl = (t.general_location || '').trim().replace(/\\/g, '/');
   const loc = (t.location || '').trim().replace(/\\/g, '/');
   const sheet = (t.sheet_name || '').trim();
-  if (gl && loc) return `${gl}/${loc}`;
-  if (gl && !loc) return gl;
-  if (!gl && loc) return loc;
-  return sheet || null;
+  const segs = [sheet, gl, loc].filter(Boolean);
+  // Drop consecutive duplicate segments (e.g. a sheet whose tab name equals its
+  // general_location) so the hint doesn't become `Kansas/Kansas/...`.
+  const deduped = segs.filter((s, i) => i === 0 || s !== segs[i - 1]);
+  return deduped.length ? deduped.join('/') : null;
 }
 
 export interface GetTurtleSheetsDataResponse {
