@@ -152,9 +152,9 @@ python clear_uploads.py --review-only
 
 ## Maintenance Scripts
 
-Two operational scripts live alongside the Flask app for one-off migrations and daily drift correction. Both default to **dry-run mode** — they print a full manifest of what they *would* do and exit without changing anything on disk. Pass `--apply` to actually execute the changes.
+Several operational scripts live alongside the Flask app for one-off migrations and daily drift correction. The folder maintenance scripts default to **dry-run mode** — they print a full manifest of what they *would* do and exit without changing anything on disk. Pass `--apply` to actually execute the changes.
 
-Both scripts treat Google Sheets as **read-only** — they never edit the production spreadsheets.
+Both folder sync scripts treat Google Sheets as **read-only** — they never edit the production spreadsheets.
 
 ### `backfill_folder_names.py` — sync folder names to Sheets
 
@@ -175,6 +175,25 @@ docker compose exec backend python backfill_folder_names.py --apply
 ```
 
 The `--apply` flag is what actually writes to disk. Without it, you see a manifest and no files are touched. Exit code is `1` if any errors were reported, `0` otherwise.
+
+### `migrate_misplaced_drive_prefix_folders.py` — fix turtles under mistaken drive-key folders
+
+Use this when turtles were created under a wrong top-level directory (for example ``data/CPBS/<trap-site>/F233`` instead of ``data/NebraskaCPBS/CPBS/F233``). The script walks each known flash-drive key from ``DRIVE_LOCATION_TO_BACKEND_PATH`` (same map as ``turtle_manager.py``), finds turtle-shaped folders (``plastron/``, ``carapace/``, or legacy ``ref_data/``), and moves them to the canonical ``data/<State>/<Location>/<turtle_id>/`` path. It **does not** overwrite an existing destination turtle folder (conflicts are printed; resolve manually). It does **not** import the SuperPoint stack.
+
+In Docker Compose, turtle data usually lives in the named volume mounted at **`/app/data`** inside the backend container (not necessarily as a plain folder next to your clone on the host). Run the script **inside the backend container** so it sees the same path as the running app. Optional explicit path: ``--data-root /app/data`` (defaults to ``DATA_DIR`` from the image or ``./data`` next to the script).
+
+```bash
+# Dry run (default)
+docker compose exec backend python migrate_misplaced_drive_prefix_folders.py
+
+# Only the CPBS mistake tree
+docker compose exec backend python migrate_misplaced_drive_prefix_folders.py --only CPBS
+
+# Execute
+docker compose exec backend python migrate_misplaced_drive_prefix_folders.py --only CPBS --apply
+```
+
+After ``--apply``, empty directories under the old prefix are removed (two prune passes). If **any** file or turtle-shaped folder remains under a wrong prefix (e.g. a stray ``README.txt``), the script prints ``LEFTOVER …`` lines and exits with code **1** — delete or move those paths, then re-run until exit **0**. Then ``docker compose restart backend`` so the matcher reloads paths.
 
 ### `ingest_rebuild_folder.py` — ingest carapaces + new turtles
 

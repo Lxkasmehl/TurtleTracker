@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-05-14 — Misplaced folder migration script + safer cleanup
+
+### Added
+
+- **`migrate_misplaced_drive_prefix_folders.py`**: Operator script (dry run by default) to move turtle folders from mistaken top-level paths such as ``data/CPBS/…`` into the canonical layout from ``DRIVE_LOCATION_TO_BACKEND_PATH`` (e.g. ``data/NebraskaCPBS/CPBS/``). Skips destinations that already contain a turtle (no overwrite); prunes empty dirs twice after ``--apply``; if any file or turtle remains under a wrong prefix, prints ``LEFTOVER`` lines and exits ``1``. Respects ``DATA_DIR`` when set. Does not import ``turtle_manager`` (no SuperPoint load). Tests in ``backend/tests/test_migrate_misplaced_drive_prefix_folders.py``.
+
+### Changed
+
+- **`backend/README.md`**: Document running the migration inside Docker (``/app/data`` / named volume), optional ``--data-root /app/data``, and post-run ``docker compose restart backend``.
+
 ## [2.0.2] - 2026-05-13 — Fix wrong on-disk paths for new research turtles (sheet vs General Location)
 
 ### Fixed
@@ -524,7 +534,8 @@ rather than the legacy VLAD index.
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Lxkasmehl/PicTur/releases/tag/v2.0.0
