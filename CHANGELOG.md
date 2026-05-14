@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-05-14 — Turtle folder lookup scoped by sheet path (duplicate biology IDs)
+
+### Fixed
+
+- **Cross-location / duplicate biology ID folder resolution**: `_get_turtle_folder` no longer walks the entire `data/` tree when a `sheet_name` / location hint is present. Search is limited to the corresponding subtree (e.g. `Kansas/…`, `NebraskaCPBS/CPBS/…`), so the same biology id in two states or programs cannot resolve to the wrong turtle’s photos after scoring ties. `resolve_turtle_dir_for_sheet_upload` uses the same scoped walk when resolving an existing folder by id instead of returning the first arbitrary global match. Regression test: `test_get_turtle_folder_scoped_hint_avoids_duplicate_bio_id_across_states` in `backend/tests/test_turtle_plastron_upload.py`.
+
+### Changed
+
+- **Admin Turtle Match (`AdminTurtleMatchPage`)**: `GET /api/turtles/images` now receives the full normalized match `location` path as `sheet_name` (not only the first segment), so the backend hint aligns with on-disk `state/location/…` layout.
+
 ## [2.0.3] - 2026-05-14 — Misplaced folder migration script + safer cleanup
 
 ### Added
@@ -534,7 +544,8 @@ rather than the legacy VLAD index.
 - **Documentation**: README with quick start (Docker and local), functionality overview, and versioning guide in `docs/VERSION_AND_RELEASES.md`.
 - Version control and release process: `CHANGELOG.md`, version in `frontend/package.json`, and guide in `docs/VERSION_AND_RELEASES.md`.
 
-[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Lxkasmehl/PicTur/compare/v2.0.0...v2.0.1

@@ -2140,6 +2140,34 @@ class TurtleManager:
 
     # --- PARTNER'S HELPER AND TRACKING FUNCTIONS (KEPT 100%) ---
 
+    def _data_walk_roots_for_hint(self, location_hint):
+        """Subtrees to search with os.walk when resolving a folder id.
+
+        Biology IDs repeat across state/location sheets; walking the entire
+        ``data/`` tree would collect multiple same-named turtles and pick the
+        wrong one after scoring. When a sheet path hint is present, restrict the
+        walk to that subtree (e.g. ``data/Kansas`` or ``data/NebraskaCPBS/CPBS``).
+
+        Falls back to ``[base_dir]`` only when no usable scoped directory exists
+        (unknown layout / typo) so admin tooling without a hint still works.
+        """
+        if not location_hint or not str(location_hint).strip() or location_hint == "Unknown":
+            return [self.base_dir]
+        rel = _location_dir_from_sheet_name(location_hint)
+        if not rel:
+            return [self.base_dir]
+        rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+        if not rel_parts:
+            return [self.base_dir]
+        full = _resolved_path_under_base(self.base_dir, *rel_parts)
+        if full and os.path.isdir(full):
+            return [full]
+        if len(rel_parts) >= 2:
+            parent = _resolved_path_under_base(self.base_dir, *rel_parts[:-1])
+            if parent and os.path.isdir(parent):
+                return [parent]
+        return [self.base_dir]
+
     def _get_turtle_folder(self, turtle_id, location_hint=None):
         """
         Resolve turtle folder path by turtle_id and optional location_hint.
@@ -2171,13 +2199,21 @@ class TurtleManager:
 
         hinted_path = None
         if location_hint and str(location_hint).strip() and location_hint != "Unknown":
-            hinted_path = os.path.join(self.base_dir, location_hint, tid)
+            rel = _location_dir_from_sheet_name(location_hint)
+            if rel:
+                rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+                if rel_parts:
+                    hinted_path = _resolved_path_under_base(self.base_dir, *rel_parts, tid)
+            if not hinted_path:
+                hinted_path = os.path.join(self.base_dir, location_hint, tid)
             add_candidate(hinted_path)
 
+        walk_roots = self._data_walk_roots_for_hint(location_hint)
         try:
-            for root, dirs, files in os.walk(self.base_dir):
-                if _basename_matches_turtle_id(os.path.basename(root), tid):
-                    add_candidate(root)
+            for walk_root in walk_roots:
+                for root, dirs, files in os.walk(walk_root):
+                    if _basename_matches_turtle_id(os.path.basename(root), tid):
+                        add_candidate(root)
         except OSError:
             pass
 
@@ -2305,9 +2341,11 @@ class TurtleManager:
                 nested = self._find_turtle_under_single_state_segment(rel_parts[0], tid)
                 if nested:
                     return nested
-            for root, dirs, files in os.walk(self.base_dir):
-                if _basename_matches_turtle_id(os.path.basename(root), tid):
-                    return root
+            search_under = _resolved_path_under_base(self.base_dir, *rel_parts)
+            if search_under and os.path.isdir(search_under):
+                for root, dirs, files in os.walk(search_under):
+                    if _basename_matches_turtle_id(os.path.basename(root), tid):
+                        return root
             if len(rel_parts) == 1:
                 state_only = _resolved_path_under_base(self.base_dir, rel_parts[0])
                 if state_only and self._state_dir_has_site_subfolders(state_only):

@@ -81,6 +81,12 @@ function lookupIdFromTurtleId(turtleId: string): string {
   return turtleId;
 }
 
+/** Normalized ``state/location/…`` hint for image APIs (matches disk under ``data/``). */
+function dataPathHintFromMatchLocation(location: string | undefined | null): string | null {
+  const v = (location || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  return v || null;
+}
+
 export default function AdminTurtleMatchPage() {
   const { role, authChecked } = useUser();
   const { imageId } = useParams<{ imageId: string }>();
@@ -131,7 +137,7 @@ export default function AdminTurtleMatchPage() {
       setSelectedMatchTurtleImages(null);
       return;
     }
-    const sheetNameHint = selectedMatchData.location?.split('/')[0]?.trim() || null;
+    const sheetNameHint = dataPathHintFromMatchLocation(selectedMatchData.location);
     getTurtleImages(selectedMatch, sheetNameHint)
       .then(setSelectedMatchTurtleImages)
       .catch(() => setSelectedMatchTurtleImages(null));
@@ -921,10 +927,10 @@ export default function AdminTurtleMatchPage() {
                         labels: a.labels,
                       }))}
                       turtleId={selectedMatch}
-                      sheetName={selectedMatchData?.location?.split('/')[0]?.trim() ?? null}
+                      sheetName={dataPathHintFromMatchLocation(selectedMatchData?.location)}
                       onRefresh={async () => {
                         if (!selectedMatch || !selectedMatchData) return;
-                        const sheetNameHint = selectedMatchData.location?.split('/')[0]?.trim() || null;
+                        const sheetNameHint = dataPathHintFromMatchLocation(selectedMatchData.location);
                         const res = await getTurtleImages(selectedMatch, sheetNameHint);
                         setSelectedMatchTurtleImages(res);
                       }}

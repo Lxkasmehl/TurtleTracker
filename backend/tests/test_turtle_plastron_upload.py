@@ -92,6 +92,26 @@ def test_add_additional_creates_folder_when_only_sheet(mgr, tmp_path):
     assert os.path.isdir(add_dir)
 
 
+def test_get_turtle_folder_scoped_hint_avoids_duplicate_bio_id_across_states(mgr):
+    """Same biology id in Kansas vs NebraskaCPBS must not pick the other state's folder."""
+    ks = os.path.join(mgr.base_dir, "Kansas", "North Topeka", "F285", "plastron")
+    ne = os.path.join(mgr.base_dir, "NebraskaCPBS", "CPBS", "F285", "plastron")
+    os.makedirs(ks, exist_ok=True)
+    os.makedirs(ne, exist_ok=True)
+    for p in (ks, ne):
+        with open(os.path.join(p, "F285.jpg"), "wb") as f:
+            f.write(b"\xff\xd8\xff x")
+        with open(os.path.join(p, "F285.pt"), "wb") as f:
+            f.write(b"pt")
+
+    ks_pick = mgr._get_turtle_folder("F285", "Kansas")
+    ne_pick = mgr._get_turtle_folder("F285", "NebraskaCPBS/CPBS")
+    assert "Kansas" in ks_pick.replace("\\", "/")
+    assert "North Topeka" in ks_pick.replace("\\", "/")
+    assert "NebraskaCPBS" in ne_pick.replace("\\", "/")
+    assert "CPBS" in ne_pick.replace("\\", "/")
+
+
 def test_get_turtle_folder_prefers_real_ref_data_over_empty_hint(mgr):
     """
     Partial sheet_name can make data/Kansas/T42 exist empty while real turtle is Kansas/Topeka/T42.
