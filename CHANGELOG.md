@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sheets Browser "Null" filter count**: the "X of Y turtles" line under the search panel was using the cheap eligibility pre-filter count, so toggling Null still showed `858 of 858 turtles`. It now reads from the actually-rendered list (`listForRecords`), so a Null search shows the real narrowed count (e.g. `15 of 858`).
+- **Sheets Browser turtle-card flash on selection**: clicking a turtle wiped every card's badge + thumbnail to a loading state for ~1s before populating the selected turtle's detail pane. Root cause: `filteredTurtles` in `useAdminTurtleRecords` was computed via plain `.filter()` (new array reference each render), so the primary-images batch effect in `SheetsBrowserTab` (deps `[filteredTurtles]`) re-fired on every parent re-render, calling `setPrimaryImages({})` + `setPrimaryImagesLoading(true)`. `filteredTurtles` is now memoized over `[allTurtles, searchQuery, nullFilterActive]` so the reference is stable when those don't change.
+
 ## [2.0.6] - 2026-05-15 — Sheets-Browser Null filter + canonical folder + General-Location relocate
 
 ### Added
