@@ -48,8 +48,11 @@ def _relocate_turtle_folder_after_sheet_write(primary_id, sheet_name, new_genera
     if (target_spreadsheet or '').strip().lower() == 'community':
         return None
     try:
-        from turtle_manager import brain
-        moved, msg = brain.relocate_turtle_folder(
+        from services import manager_service
+        if manager_service.manager is None:
+            print(f"⚠️ relocate {primary_id} skipped: TurtleManager not ready")
+            return None
+        moved, msg = manager_service.manager.relocate_turtle_folder(
             primary_id, sheet_name, new_general_location, bio_id=bio_id,
         )
         if moved:
