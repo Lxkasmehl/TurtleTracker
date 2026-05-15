@@ -324,3 +324,72 @@ def test_resolve_or_create_canonical_rejects_colliding_bio_id(mgr):
         os.path.join(mgr.base_dir, "Kansas", "North Topeka", "M999_T1771239999")
     )
     assert os.path.normpath(d) != os.path.normpath(other)
+
+
+# --- Folder relocate when a turtle's General Location changes in the sheet ---
+
+
+def test_relocate_moves_folder_to_new_general_location(mgr):
+    """Changing general_location moves data/Kansas/<old>/<folder>/ ->
+    data/Kansas/<new>/<folder>/ (and auto-creates the destination dir)."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F600_T1771230600")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230600", "Kansas", "Other", bio_id="F600",
+    )
+    assert moved is True, msg
+    assert not os.path.isdir(src)
+    new_dir = os.path.join(mgr.base_dir, "Kansas", "Other", "F600_T1771230600")
+    assert os.path.isdir(new_dir)
+    assert os.path.isfile(os.path.join(new_dir, "plastron", "F600_T1771230600.jpg"))
+
+
+def test_relocate_same_location_is_noop(mgr):
+    """Relocating to the location the folder is already in returns
+    (False, 'already at destination') and does not touch disk."""
+    existing = _make_turtle(mgr, "Kansas", "North Topeka", "F601_T1771230601")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230601", "Kansas", "North Topeka", bio_id="F601",
+    )
+    assert moved is False
+    assert msg == "already at destination"
+    assert os.path.isdir(existing)
+
+
+def test_relocate_no_folder_is_noop(mgr):
+    """A sheet-only ('Null') turtle has no on-disk folder; relocate returns
+    (False, 'no on-disk folder to move') and creates nothing."""
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230602", "Kansas", "Other", bio_id="F602",
+    )
+    assert moved is False
+    assert msg == "no on-disk folder to move"
+    assert not os.path.isdir(os.path.join(mgr.base_dir, "Kansas", "Other"))
+
+
+def test_relocate_destination_collision_fails_soft(mgr):
+    """If a folder of the same basename already exists at the destination,
+    relocate refuses to overwrite it and leaves both folders intact."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F603_T1771230603")
+    # A leftover (or unrelated) folder of the same basename at the destination.
+    collision = _make_turtle(mgr, "Kansas", "Other", "F603_T1771230603")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230603", "Kansas", "Other", bio_id="F603",
+    )
+    assert moved is False
+    assert "destination already exists" in msg
+    assert os.path.isdir(src)
+    assert os.path.isdir(collision)
+
+
+def test_relocate_cross_sheet_moves_into_new_sheet(mgr):
+    """A turtle whose folder lives under one sheet can be relocated under a
+    different sheet (e.g. Kansas -> NebraskaCPBS); the destination is computed
+    from the new sheet hint + general_location like any other resolution."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F604_T1771230604")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230604", "NebraskaCPBS", "CPBS", bio_id="F604",
+    )
+    assert moved is True, msg
+    assert not os.path.isdir(src)
+    new_dir = os.path.join(mgr.base_dir, "NebraskaCPBS", "CPBS", "F604_T1771230604")
+    assert os.path.isdir(new_dir)

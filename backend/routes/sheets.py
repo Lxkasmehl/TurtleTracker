@@ -36,6 +36,34 @@ def _refresh_general_location_validation_for_sheet(service, sheet_name: str) -> 
         print(f"⚠️ General Location validation sync skipped for '{sheet_name}': {e}")
 
 
+def _relocate_turtle_folder_after_sheet_write(primary_id, sheet_name, new_general_location,
+                                              *, bio_id=None, target_spreadsheet='research'):
+    """Move the turtle's on-disk folder to follow a sheet location change.
+
+    Best-effort: never raises, never blocks the request. Returns the relocate
+    message for inclusion in the response payload (or ``None`` when there was
+    nothing to do / the move was skipped). Community-spreadsheet writes don't
+    own backend folders, so this no-ops there.
+    """
+    if (target_spreadsheet or '').strip().lower() == 'community':
+        return None
+    try:
+        from turtle_manager import brain
+        moved, msg = brain.relocate_turtle_folder(
+            primary_id, sheet_name, new_general_location, bio_id=bio_id,
+        )
+        if moved:
+            print(f"📂 relocate {primary_id}: {msg}")
+            return msg
+        if msg in ("no on-disk folder to move", "already at destination"):
+            return None
+        print(f"⚠️ relocate {primary_id} skipped: {msg}")
+        return msg
+    except Exception as exc:
+        print(f"⚠️ relocate {primary_id} crashed: {exc}")
+        return None
+
+
 def _is_ssl_or_connection_error(e):
     """True if the exception looks like an SSL or connection flake (retry after reinit)."""
     msg = (str(e) or '').lower()
@@ -396,10 +424,17 @@ def register_sheets_routes(app):
 
             # Check if turtle exists in the new sheet
             existing_data = service.get_turtle_data(primary_id, sheet_name, state, location)
-            
+
             # Find which sheet currently contains this turtle (if any)
             current_sheet = service.find_turtle_sheet(primary_id)
-            
+
+            # Snapshot the pre-update general_location so we know whether to
+            # relocate the on-disk folder after the sheet write succeeds.
+            new_gl_for_relocate = (turtle_data.get('general_location') or '').strip()
+            old_gl_for_relocate = ''
+            if existing_data:
+                old_gl_for_relocate = (existing_data.get('general_location') or '').strip()
+
             # Check if turtle is being moved to a different sheet
             if current_sheet and current_sheet != sheet_name:
                 # Turtle exists in a different sheet - need to move it
@@ -420,29 +455,48 @@ def register_sheets_routes(app):
 
                 created_id = service.create_turtle_data(turtle_data_clean, sheet_name, state, location)
                 if created_id:
+                    relocate_msg = _relocate_turtle_folder_after_sheet_write(
+                        primary_id, sheet_name, new_gl_for_relocate,
+                        bio_id=(turtle_data_clean.get('id') or '').strip() or None,
+                        target_spreadsheet=target_spreadsheet,
+                    )
                     if target_spreadsheet != 'community':
                         _refresh_general_location_validation_for_sheet(service, sheet_name)
-                    return jsonify({
+                    payload = {
                         'success': True,
                         'message': f'Turtle moved from "{current_sheet}" to "{sheet_name}" successfully',
-                        'primary_id': created_id
-                    })
+                        'primary_id': created_id,
+                    }
+                    if relocate_msg:
+                        payload['folder_relocate'] = relocate_msg
+                    return jsonify(payload)
                 else:
                     return jsonify({'error': 'Failed to move turtle data'}), 500
-            
+
             elif existing_data:
                 # Update existing turtle in the same sheet
                 # Remove sheet_name from turtle_data if present (it's a metadata field, not data)
                 turtle_data_clean = {k: v for k, v in turtle_data.items() if k != 'sheet_name'}
                 success = service.update_turtle_data(primary_id, turtle_data_clean, sheet_name, state, location)
                 if success:
+                    relocate_msg = None
+                    if new_gl_for_relocate and new_gl_for_relocate != old_gl_for_relocate:
+                        relocate_msg = _relocate_turtle_folder_after_sheet_write(
+                            primary_id, sheet_name, new_gl_for_relocate,
+                            bio_id=(turtle_data_clean.get('id') or '').strip()
+                                or (existing_data.get('id') or '').strip() or None,
+                            target_spreadsheet=target_spreadsheet,
+                        )
                     if target_spreadsheet != 'community':
                         _refresh_general_location_validation_for_sheet(service, sheet_name)
-                    return jsonify({
+                    payload = {
                         'success': True,
                         'message': 'Turtle data updated successfully',
-                        'primary_id': primary_id
-                    })
+                        'primary_id': primary_id,
+                    }
+                    if relocate_msg:
+                        payload['folder_relocate'] = relocate_msg
+                    return jsonify(payload)
                 else:
                     return jsonify({'error': 'Failed to update turtle data'}), 500
             else:

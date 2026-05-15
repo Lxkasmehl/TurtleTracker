@@ -2503,6 +2503,98 @@ class TurtleManager:
         self._create_modern_turtle_structure(turtle_dir)
         return turtle_dir, True, None
 
+    def relocate_turtle_folder(self, primary_id, sheet_name, new_general_location, *, bio_id=None):
+        """Move a turtle's on-disk folder to match (sheet_name, new_general_location).
+
+        Returns ``(moved: bool, message: str)``. Idempotent and fail-soft:
+        - No on-disk folder for this turtle: ``(False, "no on-disk folder to move")``
+        - Already at destination: ``(False, "already at destination")``
+        - Destination occupied by a different folder: ``(False, "destination already exists: ...")``
+        - Successful move: ``(True, "moved <old_relpath> -> <new_relpath>")``
+
+        The current folder is located unscoped via primary_id (globally unique)
+        with a bio_id fallback, since the whole point of relocate is that the
+        folder is NOT where the new sheet hint says it should be. The
+        destination is computed from ``(sheet_name, new_general_location)`` the
+        same way ``resolve_or_create_canonical_turtle_dir`` does, so flat-drive
+        sheets and the shallow-state-with-sites guard behave consistently.
+
+        Refreshes the database index after a successful move so VRAM/db_index
+        point at the new path.
+        """
+        if not primary_id or not isinstance(primary_id, str) or not primary_id.strip():
+            return False, "primary_id required"
+        if not sheet_name or not str(sheet_name).strip():
+            return False, "sheet_name required"
+
+        pid = primary_id.strip()
+
+        current = self._get_turtle_folder(pid)
+        if not current and bio_id and isinstance(bio_id, str) and bio_id.strip():
+            current = self._get_turtle_folder(bio_id.strip(), sheet_name)
+        if not current or not os.path.isdir(current):
+            return False, "no on-disk folder to move"
+
+        folder_basename = os.path.basename(current)
+        if not folder_basename:
+            return False, "current folder has no basename"
+
+        new_gl_str = (new_general_location or "").strip() if isinstance(new_general_location, str) else ""
+        sheet_hint = f"{sheet_name}/{new_gl_str}" if new_gl_str else sheet_name
+        rel = _location_dir_from_sheet_name(sheet_hint)
+        if not rel:
+            return False, f"could not resolve destination from sheet hint '{sheet_hint}'"
+        rel_parts = [p for p in rel.replace("\\", "/").split("/") if str(p).strip()]
+        rel_parts = _expand_flat_drive_folder_prefix(rel_parts)
+        if not rel_parts:
+            return False, "destination resolved to an empty path"
+
+        if len(rel_parts) == 1:
+            state_only = _resolved_path_under_base(self.base_dir, rel_parts[0])
+            if state_only and self._state_dir_has_site_subfolders(state_only):
+                return False, (
+                    f"'{rel_parts[0]}' organizes turtles by site -- "
+                    f"set a General Location before relocating"
+                )
+
+        location_dir = _resolved_path_under_base(self.base_dir, *rel_parts)
+        if not location_dir:
+            return False, "could not resolve a safe destination path"
+        new_dir = _resolved_path_under_base(location_dir, folder_basename)
+        if not new_dir:
+            return False, "could not resolve a safe destination path"
+
+        try:
+            if os.path.realpath(current) == os.path.realpath(new_dir):
+                return False, "already at destination"
+        except OSError:
+            pass
+
+        if os.path.exists(new_dir):
+            try:
+                rel_existing = os.path.relpath(new_dir, self.base_dir)
+            except ValueError:
+                rel_existing = new_dir
+            return False, f"destination already exists: {rel_existing}"
+
+        try:
+            os.makedirs(location_dir, exist_ok=True)
+            shutil.move(current, new_dir)
+        except (OSError, shutil.Error) as exc:
+            return False, f"move failed: {exc}"
+
+        try:
+            self.refresh_database_index()
+        except Exception as exc:
+            print(f"⚠️ relocate: refresh_database_index failed after move: {exc}")
+
+        try:
+            rel_old = os.path.relpath(current, self.base_dir)
+            rel_new = os.path.relpath(new_dir, self.base_dir)
+        except ValueError:
+            rel_old, rel_new = current, new_dir
+        return True, f"moved {rel_old} -> {rel_new}"
+
     def _create_identifier_plastron(self, turtle_id, query_image, ref_dir, loose_dir):
         """Write first ref_data/<turtle_id>.* + .pt from an image file (caller ensures no identifier)."""
         os.makedirs(ref_dir, exist_ok=True)
