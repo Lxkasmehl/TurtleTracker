@@ -20,6 +20,8 @@ def mgr(tmp_path, monkeypatch):
     monkeypatch.setattr(tm.brain, "process_and_save", _fake_process_and_save)
     if hasattr(tm.brain, "load_database_to_vram"):
         monkeypatch.setattr(tm.brain, "load_database_to_vram", MagicMock())
+    if hasattr(tm.brain, "add_single_to_vram"):
+        monkeypatch.setattr(tm.brain, "add_single_to_vram", MagicMock())
     return tm.TurtleManager(base_data_dir=str(tmp_path))
 
 
@@ -225,3 +227,169 @@ def test_resolve_upload_bare_general_location_stays_in_sheet(mgr):
     got = mgr.resolve_turtle_dir_for_sheet_upload("F298", "CPBS")
     assert os.path.normpath(got) == os.path.normpath(ne)
     assert not os.path.isdir(os.path.join(mgr.base_dir, "CPBS"))
+
+
+# --- Sheet-only ("Null") turtle: canonical folder creation on first upload ---
+
+
+def test_resolve_or_create_canonical_creates_modern_structure(mgr):
+    """No existing folder -> create data/<sheet>/<gl>/<bio_id>_<primary_id>/ with
+    the full modern subfolder layout; created flag is True."""
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "F500", "Kansas/North Topeka", primary_id="T1771234500", bio_id="F500",
+    )
+    assert created is True
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "North Topeka", "F500_T1771234500")
+    )
+    for sub in ("plastron", "plastron/Old References", "plastron/Other Plastrons",
+                "carapace", "carapace/Old References", "carapace/Other Carapaces"):
+        assert os.path.isdir(os.path.join(d, sub))
+
+
+def test_resolve_or_create_canonical_other_goes_to_kansas_other(mgr):
+    """An 'Other' turtle uses the normal routing -> data/Kansas/Other/<combined>/."""
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "F501", "Kansas/Other", primary_id="T1771234501", bio_id="F501",
+    )
+    assert created is True
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "Other", "F501_T1771234501")
+    )
+
+
+def test_resolve_or_create_canonical_returns_existing_without_duplicating(mgr):
+    """An existing folder is returned as-is (created=False); no second folder."""
+    existing = _make_turtle(mgr, "Kansas", "North Topeka", "F502_T1771234502")
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "F502", "Kansas/North Topeka", primary_id="T1771234502", bio_id="F502",
+    )
+    assert created is False
+    assert os.path.normpath(d) == os.path.normpath(existing)
+    loc = os.path.join(mgr.base_dir, "Kansas", "North Topeka")
+    assert sorted(os.listdir(loc)) == ["F502_T1771234502"]
+
+
+def test_replace_reference_create_if_missing_makes_canonical_folder(mgr, tmp_path):
+    """create_if_missing=True + no folder -> canonical folder created with the
+    plastron reference written under it."""
+    src = tmp_path / "new.jpg"
+    src.write_bytes(b"\xff\xd8\xff new")
+    ok, msg = mgr.replace_turtle_reference(
+        "F503", str(src), photo_type="plastron",
+        sheet_name="Kansas/North Topeka", primary_id="T1771234503",
+        create_if_missing=True, bio_id="F503",
+    )
+    assert ok is True, msg
+    turtle_dir = os.path.join(mgr.base_dir, "Kansas", "North Topeka", "F503_T1771234503")
+    assert os.path.isfile(os.path.join(turtle_dir, "plastron", "F503_T1771234503.jpg"))
+    assert os.path.isfile(os.path.join(turtle_dir, "plastron", "F503_T1771234503.pt"))
+
+
+def test_replace_reference_without_create_flag_still_errors_when_missing(mgr, tmp_path):
+    """Default behavior unchanged: no folder + create_if_missing=False -> error."""
+    src = tmp_path / "new.jpg"
+    src.write_bytes(b"\xff\xd8\xff new")
+    ok, msg = mgr.replace_turtle_reference(
+        "F504", str(src), photo_type="plastron",
+        sheet_name="Kansas/North Topeka", primary_id="T1771234504",
+    )
+    assert ok is False
+    assert "could not find folder" in (msg or "").lower()
+
+
+def test_resolve_or_create_canonical_no_general_location_gives_clear_reason(mgr):
+    """A site-organized sheet (Kansas, with existing site subfolders) and no
+    General Location cannot place a folder -- the failure reason must say so,
+    not just report a bare 'not found'."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F001_T1771230001")  # Kansas now has a site
+    d, created, reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "M999", "Kansas", primary_id="T1771239990", bio_id="M999",
+    )
+    assert d is None and created is False
+    assert reason and "general location" in reason.lower()
+
+
+def test_resolve_or_create_canonical_rejects_colliding_bio_id(mgr):
+    """A bare bio_id can collide with a different turtle that shares it. When a
+    primary_id is given, a bio_id match carrying a DIFFERENT primary_id must be
+    rejected and this turtle's own canonical folder created instead."""
+    other = _make_turtle(mgr, "Kansas", "North Topeka", "M999_T1771230000")
+    d, created, reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "M999", "Kansas/North Topeka", primary_id="T1771239999", bio_id="M999",
+    )
+    assert created is True
+    assert reason is None
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "North Topeka", "M999_T1771239999")
+    )
+    assert os.path.normpath(d) != os.path.normpath(other)
+
+
+# --- Folder relocate when a turtle's General Location changes in the sheet ---
+
+
+def test_relocate_moves_folder_to_new_general_location(mgr):
+    """Changing general_location moves data/Kansas/<old>/<folder>/ ->
+    data/Kansas/<new>/<folder>/ (and auto-creates the destination dir)."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F600_T1771230600")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230600", "Kansas", "Other", bio_id="F600",
+    )
+    assert moved is True, msg
+    assert not os.path.isdir(src)
+    new_dir = os.path.join(mgr.base_dir, "Kansas", "Other", "F600_T1771230600")
+    assert os.path.isdir(new_dir)
+    assert os.path.isfile(os.path.join(new_dir, "plastron", "F600_T1771230600.jpg"))
+
+
+def test_relocate_same_location_is_noop(mgr):
+    """Relocating to the location the folder is already in returns
+    (False, 'already at destination') and does not touch disk."""
+    existing = _make_turtle(mgr, "Kansas", "North Topeka", "F601_T1771230601")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230601", "Kansas", "North Topeka", bio_id="F601",
+    )
+    assert moved is False
+    assert msg == "already at destination"
+    assert os.path.isdir(existing)
+
+
+def test_relocate_no_folder_is_noop(mgr):
+    """A sheet-only ('Null') turtle has no on-disk folder; relocate returns
+    (False, 'no on-disk folder to move') and creates nothing."""
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230602", "Kansas", "Other", bio_id="F602",
+    )
+    assert moved is False
+    assert msg == "no on-disk folder to move"
+    assert not os.path.isdir(os.path.join(mgr.base_dir, "Kansas", "Other"))
+
+
+def test_relocate_destination_collision_fails_soft(mgr):
+    """If a folder of the same basename already exists at the destination,
+    relocate refuses to overwrite it and leaves both folders intact."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F603_T1771230603")
+    # A leftover (or unrelated) folder of the same basename at the destination.
+    collision = _make_turtle(mgr, "Kansas", "Other", "F603_T1771230603")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230603", "Kansas", "Other", bio_id="F603",
+    )
+    assert moved is False
+    assert "destination already exists" in msg
+    assert os.path.isdir(src)
+    assert os.path.isdir(collision)
+
+
+def test_relocate_cross_sheet_moves_into_new_sheet(mgr):
+    """A turtle whose folder lives under one sheet can be relocated under a
+    different sheet (e.g. Kansas -> NebraskaCPBS); the destination is computed
+    from the new sheet hint + general_location like any other resolution."""
+    src = _make_turtle(mgr, "Kansas", "North Topeka", "F604_T1771230604")
+    moved, msg = mgr.relocate_turtle_folder(
+        "T1771230604", "NebraskaCPBS", "CPBS", bio_id="F604",
+    )
+    assert moved is True, msg
+    assert not os.path.isdir(src)
+    new_dir = os.path.join(mgr.base_dir, "NebraskaCPBS", "CPBS", "F604_T1771230604")
+    assert os.path.isdir(new_dir)

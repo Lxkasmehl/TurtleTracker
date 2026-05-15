@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sheets Browser "Null" filter + reference-gap badges**: a "Null" chip in the Sheets Browser search/filter section surfaces turtles that exist in the Google Sheets (with both a Primary ID and a Bio ID) but are missing reference photos. An always-on card badge distinguishes three states: "No photos on disk" (no backend folder, or an empty one), "No plastron or carapace" (a folder with other photos but no reference), and "No plastron ref" (a carapace reference but no plastron). Powered by two new fields on `POST /api/turtles/images/primaries` -- `has_carapace` and `folder_status`.
+
+### Changed
+
+- **First reference upload creates a canonical folder**: adding the first plastron/carapace reference to a sheet-only turtle from the Sheets Browser now creates its backend folder canonically named `<bio_id>_<primary_id>` with the full modern structure (`plastron/`, `carapace/`, each with `Old References/` and `Other Plastrons`/`Other Carapaces`), instead of a bare-`turtle_id` folder. `replace_turtle_reference` gained `create_if_missing` + `bio_id`; new `TurtleManager.resolve_or_create_canonical_turtle_dir`; `canonical_new_turtle_folder_id` moved into `turtle_manager.py` (re-exported from `routes/review.py`). "Other" turtles keep routing to `data/<State>/Other/` via normal resolution. Regression tests in `backend/tests/test_turtle_plastron_upload.py`.
+- **Folder follows General Location changes from the sheet**: editing a turtle's `general_location` (or moving it to a different sheet tab) via the Sheets Browser now relocates the on-disk folder to match -- `data/<sheet>/<old_gl>/<bio_id>_<primary_id>/` is moved to `data/<sheet>/<new_gl>/<bio_id>_<primary_id>/` with `shutil.move`, the destination dir auto-created and the database index refreshed so VRAM/match lookups point at the new path. Idempotent and fail-soft: a no-folder turtle, an already-at-destination turtle, or a destination collision are all skipped without failing the sheet write. `update_turtle_sheets_data` (`PUT /api/sheets/turtle/<id>`) now returns an optional `folder_relocate` field describing the move. New `TurtleManager.relocate_turtle_folder`; tests in `backend/tests/test_turtle_plastron_upload.py`.
+
 ## [2.0.5] - 2026-05-14 — Fail-closed cross-sheet folder lookup + canonical new-turtle names
 
 ### Fixed

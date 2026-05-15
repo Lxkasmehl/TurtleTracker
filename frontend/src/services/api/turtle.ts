@@ -721,7 +721,18 @@ export const setTurtleImageLabels = async (
  */
 export const getTurtlePrimariesBatch = async (
   turtles: Array<{ turtle_id: string; sheet_name?: string | null; primary_id?: string | null }>,
-): Promise<{ images: Array<{ turtle_id: string; sheet_name: string | null; primary: string | null; primary_ts?: number | null }> }> => {
+): Promise<{
+  images: Array<{
+    turtle_id: string;
+    sheet_name: string | null;
+    primary: string | null;
+    primary_ts?: number | null;
+    /** A carapace reference image is present in the turtle's carapace/ folder. */
+    has_carapace?: boolean;
+    /** Whether the turtle has a backend folder, and whether it holds any images. */
+    folder_status?: 'has_images' | 'empty_folder' | 'no_folder';
+  }>;
+}> => {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -737,13 +748,17 @@ export const getTurtlePrimariesBatch = async (
   return await response.json();
 };
 
-/** Replace a turtle's plastron or carapace reference image atomically (Admin only). */
+/** Replace a turtle's plastron or carapace reference image atomically (Admin only).
+ *  When `opts.createIfMissing` is set, a sheet-only ("Null") turtle with no backend
+ *  folder yet has one created, canonically named `<bioId>_<primaryId>`.
+ */
 export const uploadTurtleReplaceReference = async (
   turtleId: string,
   file: File,
   photoType: 'plastron' | 'carapace',
   sheetName?: string | null,
   primaryId?: string | null,
+  opts?: { createIfMissing?: boolean; bioId?: string | null },
 ): Promise<{ success: boolean; message?: string }> => {
   const token = getToken();
   const headers: Record<string, string> = {};
@@ -754,6 +769,8 @@ export const uploadTurtleReplaceReference = async (
   formData.append('file', file);
   if (sheetName) formData.append('sheet_name', sheetName);
   if (primaryId) formData.append('primary_id', primaryId);
+  if (opts?.createIfMissing) formData.append('create_if_missing', 'true');
+  if (opts?.bioId) formData.append('bio_id', opts.bioId);
   const response = await fetch(`${TURTLE_API_BASE_URL}/turtles/replace-reference`, {
     method: 'POST',
     headers,
@@ -795,7 +812,10 @@ export const uploadTurtleIdentifierPlastron = async (
   return await response.json();
 };
 
-/** Add microhabitat/condition/carapace/plastron (additional) images to a turtle folder (Admin only). */
+/** Add microhabitat/condition/carapace/plastron (additional) images to a turtle folder (Admin only).
+ *  `opts.bioId` is used for canonical `<bioId>_<primaryId>` naming if this upload
+ *  has to create the folder for a sheet-only turtle.
+ */
 export const uploadTurtleAdditionalImages = async (
   turtleId: string,
   files: Array<{
@@ -806,6 +826,7 @@ export const uploadTurtleAdditionalImages = async (
   }>,
   sheetName?: string | null,
   primaryId?: string | null,
+  opts?: { bioId?: string | null },
 ): Promise<{ success: boolean; message?: string }> => {
   const token = getToken();
   const headers: Record<string, string> = {};
@@ -814,6 +835,7 @@ export const uploadTurtleAdditionalImages = async (
   formData.append('turtle_id', turtleId);
   if (sheetName) formData.append('sheet_name', sheetName);
   if (primaryId) formData.append('primary_id', primaryId);
+  if (opts?.bioId) formData.append('bio_id', opts.bioId);
   files.forEach((f, i) => {
     formData.append(`file_${i}`, f.file);
     formData.append(`type_${i}`, f.type);

@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Center,
+  Chip,
   Divider,
   Grid,
   Group,
@@ -91,6 +92,46 @@ function turtleKey(turtle: TurtleSheetsData) {
   return `${id}|${hint}${row}`;
 }
 
+type FolderStatus = 'has_images' | 'empty_folder' | 'no_folder';
+
+/** Batch-loaded image status for one turtle (from getTurtlePrimariesBatch). */
+interface PrimaryImageEntry {
+  /** Active plastron reference path, or null when there is none. */
+  path: string | null;
+  /** Epoch-ms cache-bust version for the plastron path. */
+  ts: number | null;
+  /** A carapace reference image is present. */
+  hasCarapace: boolean;
+  /** Backend folder existence + whether it holds any images at all. */
+  folderStatus: FolderStatus;
+}
+
+/** "Null" sub-state: which kind of reference gap a sheet turtle has, or null
+ *  when it is not Null (has a plastron ref, or lacks the Primary ID + Bio ID
+ *  that make it eligible). */
+type NullSubState = 'no-disk' | 'no-plastron-no-carapace' | 'no-plastron' | null;
+
+function computeNullSubState(
+  turtle: TurtleSheetsData,
+  entry: PrimaryImageEntry | undefined,
+): NullSubState {
+  const hasPrimaryId = (turtle.primary_id || '').trim().length > 0;
+  const hasBioId = (turtle.id || '').trim().length > 0;
+  if (!hasPrimaryId || !hasBioId) return null;
+  if (!entry) return null; // not loaded yet — callers guard on primaryImagesLoading
+  if (entry.folderStatus === 'no_folder' || entry.folderStatus === 'empty_folder') {
+    return 'no-disk';
+  }
+  if (entry.path) return null; // has a plastron reference — not Null
+  return entry.hasCarapace ? 'no-plastron' : 'no-plastron-no-carapace';
+}
+
+const NULL_BADGE = {
+  'no-disk': { color: 'red', label: 'No photos on disk' },
+  'no-plastron-no-carapace': { color: 'orange', label: 'No plastron or carapace' },
+  'no-plastron': { color: 'yellow', label: 'No plastron ref' },
+} as const;
+
 function sheetRowsSame(a: TurtleSheetsData | null, b: TurtleSheetsData): boolean {
   if (!a) return false;
   if (
@@ -137,7 +178,7 @@ export function SheetsBrowserTab() {
   // path + epoch-ms ts so the sidebar thumbnail can cache-bust on replace —
   // active reference paths are stable across uploads, so without ts the
   // browser keeps serving the previously-cached bytes.
-  const [primaryImages, setPrimaryImages] = useState<Record<string, { path: string; ts: number | null } | null>>({});
+  const [primaryImages, setPrimaryImages] = useState<Record<string, PrimaryImageEntry>>({});
   /** True while `getTurtlePrimariesBatch` is in flight for the current filter list (distinct from "no plastron"). */
   const [primaryImagesLoading, setPrimaryImagesLoading] = useState(false);
   // Staged photos awaiting commit on "Update Turtle" save — any type.
@@ -166,6 +207,8 @@ export function SheetsBrowserTab() {
     allTurtles,
     selectedTurtle,
     setSelectedTurtle,
+    nullFilterActive,
+    setNullFilterActive,
     handleSaveTurtleFromBrowser: onSaveTurtle,
     setSelectedSheetFilterAndLoad: onSheetFilterChange,
   } = ctx;
@@ -252,8 +295,23 @@ export function SheetsBrowserTab() {
     });
   };
 
-  const commitStagedPhotos = async (): Promise<boolean> => {
-    if (!diskTurtleId || stagedPhotos.length === 0) return true;
+  const commitStagedPhotos = async (ctx?: {
+    turtleId?: string;
+    sheetHint?: string | null;
+    primaryId?: string | null;
+    bioId?: string | null;
+  }): Promise<boolean> => {
+    // The form may carry edits not yet on `selectedTurtle` -- most importantly a
+    // General Location the user just set on a sheet-only turtle. Callers pass
+    // `ctx` derived from the form so the upload targets the turtle's CURRENT
+    // location, not its stale one (otherwise the backend gets a location-less
+    // hint and can't create the folder for a site-organized sheet).
+    const uTurtleId = ctx?.turtleId || diskTurtleId;
+    const uSheetHint = ctx?.sheetHint !== undefined ? ctx.sheetHint : dataPathHint;
+    const uPrimaryId = ctx?.primaryId !== undefined ? ctx.primaryId : selectedPrimaryId;
+    const uBioId =
+      ctx?.bioId !== undefined ? ctx.bioId : (selectedTurtle?.id || '').trim() || null;
+    if (!uTurtleId || stagedPhotos.length === 0) return true;
     setCommitting(true);
     try {
       // Winners: plastron/carapace flagged replaceReference AND the last such staged of their type.
@@ -268,21 +326,24 @@ export function SheetsBrowserTab() {
 
       if (nonReplace.length > 0) {
         await uploadTurtleAdditionalImages(
-          diskTurtleId,
+          uTurtleId,
           nonReplace.map((s) => ({ type: s.photoType, file: s.file })),
-          dataPathHint,
-          selectedPrimaryId,
+          uSheetHint,
+          uPrimaryId,
+          { bioId: uBioId },
         );
       }
 
       // Replace-reference calls are sequential: each archives the current reference first.
+      // createIfMissing lets a Null turtle's first reference photo create its folder.
       for (const s of replaceWinners) {
         await uploadTurtleReplaceReference(
-          diskTurtleId,
+          uTurtleId,
           s.file,
           s.photoType as ReferenceType,
-          dataPathHint,
-          selectedPrimaryId,
+          uSheetHint,
+          uPrimaryId,
+          { createIfMissing: true, bioId: uBioId },
         );
       }
 
@@ -298,13 +359,17 @@ export function SheetsBrowserTab() {
       if (selectedTurtle) {
         try {
           const pr = await getTurtlePrimariesBatch([
-            { turtle_id: diskTurtleId, sheet_name: dataPathHint, primary_id: selectedPrimaryId },
+            { turtle_id: uTurtleId, sheet_name: uSheetHint, primary_id: uPrimaryId },
           ]);
-          const p = pr.images[0]?.primary ?? null;
-          const ts = pr.images[0]?.primary_ts ?? null;
+          const img0 = pr.images[0];
           setPrimaryImages((prev) => ({
             ...prev,
-            [turtleKey(selectedTurtle)]: p ? { path: p, ts } : null,
+            [turtleKey(selectedTurtle)]: {
+              path: img0?.primary ?? null,
+              ts: img0?.primary_ts ?? null,
+              hasCarapace: img0?.has_carapace ?? false,
+              folderStatus: img0?.folder_status ?? 'no_folder',
+            },
           }));
         } catch {
           /* sidebar refresh is cosmetic — don't fail the whole commit if it errors */
@@ -325,14 +390,33 @@ export function SheetsBrowserTab() {
   };
 
   const handleSaveWithStagedPhotos: typeof onSaveTurtle = async (...args) => {
-    const committed = await commitStagedPhotos();
+    const [formData, formSheetName] = args as Parameters<typeof onSaveTurtle>;
+    // The form holds edits not yet on `selectedTurtle` -- most importantly a
+    // General Location the user just set on a sheet-only turtle. Commit the
+    // staged photos against the form's CURRENT values so the backend creates
+    // the folder under the right location instead of failing "folder not found".
+    const uploadCtx = {
+      turtleId: turtleDiskFolderId(formData),
+      sheetHint: turtleDataFolderHint({
+        sheet_name: formSheetName,
+        general_location: formData.general_location,
+        location: formData.location,
+      }),
+      primaryId: (formData.primary_id || '').trim() || null,
+      bioId: (formData.id || '').trim() || null,
+    };
+    const committed = await commitStagedPhotos(uploadCtx);
     if (!committed) throw new Error('Photo commit failed — aborting sheet save');
     // Run the original sheet save
-    const result = await onSaveTurtle(...(args as Parameters<typeof onSaveTurtle>));
+    const result = await onSaveTurtle(formData, formSheetName);
     // Refetch images so UI reflects new references/loose/history
-    if (diskTurtleId) {
+    if (uploadCtx.turtleId) {
       try {
-        const res = await getTurtleImages(diskTurtleId, dataPathHint, selectedPrimaryId);
+        const res = await getTurtleImages(
+          uploadCtx.turtleId,
+          uploadCtx.sheetHint,
+          uploadCtx.primaryId,
+        );
         setTurtleImages(res);
       } catch {
         /* ignore */
@@ -514,10 +598,17 @@ export function SheetsBrowserTab() {
     })))
       .then((res) => {
         if (cancelled) return;
-        const map: Record<string, { path: string; ts: number | null } | null> = {};
+        const map: Record<string, PrimaryImageEntry> = {};
         res.images.forEach((img, i) => {
           const key = rows[i]?.key;
-          if (key) map[key] = img.primary ? { path: img.primary, ts: img.primary_ts ?? null } : null;
+          if (key) {
+            map[key] = {
+              path: img.primary ?? null,
+              ts: img.primary_ts ?? null,
+              hasCarapace: img.has_carapace ?? false,
+              folderStatus: img.folder_status ?? 'no_folder',
+            };
+          }
         });
         setPrimaryImages(map);
       })
@@ -643,7 +734,16 @@ export function SheetsBrowserTab() {
     }
   };
 
-  const listForRecords = filteredTurtles;
+  // When the "Null" filter is on, narrow to turtles that actually have a
+  // reference gap once the disk-status batch has loaded. While it's still
+  // loading, show all eligible rows (filteredTurtles is already pre-filtered to
+  // Primary-ID + Bio-ID holders) so the list doesn't flicker empty.
+  const listForRecords =
+    nullFilterActive && !primaryImagesLoading
+      ? filteredTurtles.filter(
+          (t) => computeNullSubState(t, primaryImages[turtleKey(t)]) !== null,
+        )
+      : filteredTurtles;
 
   return (
     <Grid gutter='lg'>
@@ -692,6 +792,20 @@ export function SheetsBrowserTab() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
+                <Group gap='xs' wrap='nowrap'>
+                  <Chip
+                    checked={nullFilterActive}
+                    onChange={setNullFilterActive}
+                    color='orange'
+                    variant='outline'
+                    size='sm'
+                  >
+                    Null — missing reference photos
+                  </Chip>
+                  {nullFilterActive && primaryImagesLoading && (
+                    <Loader size='xs' aria-label='Checking on-disk photo status' />
+                  )}
+                </Group>
                 <Button onClick={() => loadAllTurtles()} loading={turtlesLoading} fullWidth>
                   Refresh
                 </Button>
@@ -821,6 +935,23 @@ export function SheetsBrowserTab() {
                                   Deceased
                                 </Badge>
                               )}
+                              {!primaryImagesLoading && (() => {
+                                const sub = computeNullSubState(
+                                  turtle, primaryImages[turtleKey(turtle)],
+                                );
+                                if (!sub) return null;
+                                const cfg = NULL_BADGE[sub];
+                                return (
+                                  <Badge
+                                    size='sm'
+                                    color={cfg.color}
+                                    variant='filled'
+                                    leftSection={<IconAlertTriangle size={12} />}
+                                  >
+                                    {cfg.label}
+                                  </Badge>
+                                );
+                              })()}
                             </Group>
                             {!turtle.name ? (
                               <Text fw={500} size='sm' c='dimmed' fs='italic'>
@@ -873,10 +1004,10 @@ export function SheetsBrowserTab() {
                               <Center w='100%' h='100%' style={{ minHeight: 84 }}>
                                 <Loader size='sm' color='gray' aria-label='Loading plastron preview' />
                               </Center>
-                            ) : primaryImages[turtleKey(turtle)] ? (
+                            ) : primaryImages[turtleKey(turtle)]?.path ? (
                               <Image
                                 src={getImageUrl(
-                                  primaryImages[turtleKey(turtle)]!.path,
+                                  primaryImages[turtleKey(turtle)]!.path!,
                                   { version: primaryImages[turtleKey(turtle)]!.ts, maxDim: 240 },
                                 )}
                                 alt='Plastron'
