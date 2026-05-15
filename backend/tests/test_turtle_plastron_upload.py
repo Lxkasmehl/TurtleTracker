@@ -235,7 +235,7 @@ def test_resolve_upload_bare_general_location_stays_in_sheet(mgr):
 def test_resolve_or_create_canonical_creates_modern_structure(mgr):
     """No existing folder -> create data/<sheet>/<gl>/<bio_id>_<primary_id>/ with
     the full modern subfolder layout; created flag is True."""
-    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
         "F500", "Kansas/North Topeka", primary_id="T1771234500", bio_id="F500",
     )
     assert created is True
@@ -249,7 +249,7 @@ def test_resolve_or_create_canonical_creates_modern_structure(mgr):
 
 def test_resolve_or_create_canonical_other_goes_to_kansas_other(mgr):
     """An 'Other' turtle uses the normal routing -> data/Kansas/Other/<combined>/."""
-    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
         "F501", "Kansas/Other", primary_id="T1771234501", bio_id="F501",
     )
     assert created is True
@@ -261,7 +261,7 @@ def test_resolve_or_create_canonical_other_goes_to_kansas_other(mgr):
 def test_resolve_or_create_canonical_returns_existing_without_duplicating(mgr):
     """An existing folder is returned as-is (created=False); no second folder."""
     existing = _make_turtle(mgr, "Kansas", "North Topeka", "F502_T1771234502")
-    d, created = mgr.resolve_or_create_canonical_turtle_dir(
+    d, created, _reason = mgr.resolve_or_create_canonical_turtle_dir(
         "F502", "Kansas/North Topeka", primary_id="T1771234502", bio_id="F502",
     )
     assert created is False
@@ -296,3 +296,31 @@ def test_replace_reference_without_create_flag_still_errors_when_missing(mgr, tm
     )
     assert ok is False
     assert "could not find folder" in (msg or "").lower()
+
+
+def test_resolve_or_create_canonical_no_general_location_gives_clear_reason(mgr):
+    """A site-organized sheet (Kansas, with existing site subfolders) and no
+    General Location cannot place a folder -- the failure reason must say so,
+    not just report a bare 'not found'."""
+    _make_turtle(mgr, "Kansas", "North Topeka", "F001_T1771230001")  # Kansas now has a site
+    d, created, reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "M999", "Kansas", primary_id="T1771239990", bio_id="M999",
+    )
+    assert d is None and created is False
+    assert reason and "general location" in reason.lower()
+
+
+def test_resolve_or_create_canonical_rejects_colliding_bio_id(mgr):
+    """A bare bio_id can collide with a different turtle that shares it. When a
+    primary_id is given, a bio_id match carrying a DIFFERENT primary_id must be
+    rejected and this turtle's own canonical folder created instead."""
+    other = _make_turtle(mgr, "Kansas", "North Topeka", "M999_T1771230000")
+    d, created, reason = mgr.resolve_or_create_canonical_turtle_dir(
+        "M999", "Kansas/North Topeka", primary_id="T1771239999", bio_id="M999",
+    )
+    assert created is True
+    assert reason is None
+    assert os.path.normpath(d) == os.path.normpath(
+        os.path.join(mgr.base_dir, "Kansas", "North Topeka", "M999_T1771239999")
+    )
+    assert os.path.normpath(d) != os.path.normpath(other)

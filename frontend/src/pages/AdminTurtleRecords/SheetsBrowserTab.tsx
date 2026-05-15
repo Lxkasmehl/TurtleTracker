@@ -295,8 +295,23 @@ export function SheetsBrowserTab() {
     });
   };
 
-  const commitStagedPhotos = async (): Promise<boolean> => {
-    if (!diskTurtleId || stagedPhotos.length === 0) return true;
+  const commitStagedPhotos = async (ctx?: {
+    turtleId?: string;
+    sheetHint?: string | null;
+    primaryId?: string | null;
+    bioId?: string | null;
+  }): Promise<boolean> => {
+    // The form may carry edits not yet on `selectedTurtle` -- most importantly a
+    // General Location the user just set on a sheet-only turtle. Callers pass
+    // `ctx` derived from the form so the upload targets the turtle's CURRENT
+    // location, not its stale one (otherwise the backend gets a location-less
+    // hint and can't create the folder for a site-organized sheet).
+    const uTurtleId = ctx?.turtleId || diskTurtleId;
+    const uSheetHint = ctx?.sheetHint !== undefined ? ctx.sheetHint : dataPathHint;
+    const uPrimaryId = ctx?.primaryId !== undefined ? ctx.primaryId : selectedPrimaryId;
+    const uBioId =
+      ctx?.bioId !== undefined ? ctx.bioId : (selectedTurtle?.id || '').trim() || null;
+    if (!uTurtleId || stagedPhotos.length === 0) return true;
     setCommitting(true);
     try {
       // Winners: plastron/carapace flagged replaceReference AND the last such staged of their type.
@@ -309,16 +324,13 @@ export function SheetsBrowserTab() {
       );
       const nonReplace = stagedPhotos.filter((s) => !replaceWinners.includes(s));
 
-      // bioId lets the backend create a canonically-named <bio_id>_<primary_id>
-      // folder when this is a sheet-only ("Null") turtle's first upload.
-      const bioId = (selectedTurtle?.id || '').trim() || null;
       if (nonReplace.length > 0) {
         await uploadTurtleAdditionalImages(
-          diskTurtleId,
+          uTurtleId,
           nonReplace.map((s) => ({ type: s.photoType, file: s.file })),
-          dataPathHint,
-          selectedPrimaryId,
-          { bioId },
+          uSheetHint,
+          uPrimaryId,
+          { bioId: uBioId },
         );
       }
 
@@ -326,12 +338,12 @@ export function SheetsBrowserTab() {
       // createIfMissing lets a Null turtle's first reference photo create its folder.
       for (const s of replaceWinners) {
         await uploadTurtleReplaceReference(
-          diskTurtleId,
+          uTurtleId,
           s.file,
           s.photoType as ReferenceType,
-          dataPathHint,
-          selectedPrimaryId,
-          { createIfMissing: true, bioId },
+          uSheetHint,
+          uPrimaryId,
+          { createIfMissing: true, bioId: uBioId },
         );
       }
 
@@ -347,7 +359,7 @@ export function SheetsBrowserTab() {
       if (selectedTurtle) {
         try {
           const pr = await getTurtlePrimariesBatch([
-            { turtle_id: diskTurtleId, sheet_name: dataPathHint, primary_id: selectedPrimaryId },
+            { turtle_id: uTurtleId, sheet_name: uSheetHint, primary_id: uPrimaryId },
           ]);
           const img0 = pr.images[0];
           setPrimaryImages((prev) => ({
@@ -378,14 +390,33 @@ export function SheetsBrowserTab() {
   };
 
   const handleSaveWithStagedPhotos: typeof onSaveTurtle = async (...args) => {
-    const committed = await commitStagedPhotos();
+    const [formData, formSheetName] = args as Parameters<typeof onSaveTurtle>;
+    // The form holds edits not yet on `selectedTurtle` -- most importantly a
+    // General Location the user just set on a sheet-only turtle. Commit the
+    // staged photos against the form's CURRENT values so the backend creates
+    // the folder under the right location instead of failing "folder not found".
+    const uploadCtx = {
+      turtleId: turtleDiskFolderId(formData),
+      sheetHint: turtleDataFolderHint({
+        sheet_name: formSheetName,
+        general_location: formData.general_location,
+        location: formData.location,
+      }),
+      primaryId: (formData.primary_id || '').trim() || null,
+      bioId: (formData.id || '').trim() || null,
+    };
+    const committed = await commitStagedPhotos(uploadCtx);
     if (!committed) throw new Error('Photo commit failed — aborting sheet save');
     // Run the original sheet save
-    const result = await onSaveTurtle(...(args as Parameters<typeof onSaveTurtle>));
+    const result = await onSaveTurtle(formData, formSheetName);
     // Refetch images so UI reflects new references/loose/history
-    if (diskTurtleId) {
+    if (uploadCtx.turtleId) {
       try {
-        const res = await getTurtleImages(diskTurtleId, dataPathHint, selectedPrimaryId);
+        const res = await getTurtleImages(
+          uploadCtx.turtleId,
+          uploadCtx.sheetHint,
+          uploadCtx.primaryId,
+        );
         setTurtleImages(res);
       } catch {
         /* ignore */
