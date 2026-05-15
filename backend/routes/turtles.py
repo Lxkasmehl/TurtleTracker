@@ -31,6 +31,22 @@ _ARCHIVED_TS_RE = re.compile(r'^Archived_(?:Master|Carapace)_(\d{10,13})')
 _OBS_TS_RE = re.compile(r'^Obs_(\d{10,13})_')
 # Embedded YYYY-MM-DD anywhere in filename (the upload-date stamp added by the manager)
 _FILENAME_DATE_RE = re.compile(r'(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)')
+_IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+
+
+def _dir_has_image(dir_path):
+    """True if ``dir_path`` or any descendant contains an image file. Scoped to a
+    single turtle folder (shallow), so the walk is cheap -- used to tell an
+    'empty' turtle folder apart from one that has only non-reference photos."""
+    if not dir_path or not os.path.isdir(dir_path):
+        return False
+    try:
+        for _root, _dirs, files in os.walk(dir_path):
+            if any(f.lower().endswith(_IMAGE_EXTS) for f in files):
+                return True
+    except OSError:
+        return False
+    return False
 
 
 def _extract_upload_date_from_filename(filename, fallback_path=None):
@@ -444,7 +460,9 @@ def register_turtle_routes(app):
         """
         Get primary (plastron) image path for multiple turtles in one request.
         Body: { "turtles": [ { "turtle_id": "...", "sheet_name": "..." | null }, ... ] }
-        Returns: { "images": [ { "turtle_id", "sheet_name", "primary": path | null }, ... ] }
+        Returns: { "images": [ { "turtle_id", "sheet_name", "primary": path | null,
+                                 "primary_ts", "has_carapace": bool,
+                                 "folder_status": "has_images"|"empty_folder"|"no_folder" }, ... ] }
         """
         if not manager_service.manager_ready.wait(timeout=5):
             return jsonify({'error': 'TurtleManager is still initializing'}), 503
@@ -461,7 +479,8 @@ def register_turtle_routes(app):
             sheet = (item.get('sheet_name') or '').strip() or None
             pid = (item.get('primary_id') or '').strip() or None
             if not tid:
-                results.append({'turtle_id': tid, 'sheet_name': sheet, 'primary': None})
+                results.append({'turtle_id': tid, 'sheet_name': sheet, 'primary': None,
+                                'has_carapace': False, 'folder_status': 'no_folder'})
                 continue
             # Same primary-first lookup order as the single-image endpoint:
             # globally-unique primary_id avoids cross-state bio_id collisions.
@@ -487,11 +506,32 @@ def register_turtle_routes(app):
                 )
                 if primary_path else None
             )
+            # Carapace-reference presence + folder status, so the frontend can
+            # tell apart "no plastron ref" / "no references at all" / "no folder".
+            folder_status = 'no_folder'
+            has_carapace = False
+            if turtle_dir and os.path.isdir(turtle_dir):
+                car_dir = os.path.join(turtle_dir, 'carapace')
+                if os.path.isdir(car_dir):
+                    try:
+                        has_carapace = any(
+                            f.lower().endswith(_IMAGE_EXTS) for f in os.listdir(car_dir)
+                        )
+                    except OSError:
+                        has_carapace = False
+                if primary_path or has_carapace:
+                    folder_status = 'has_images'
+                else:
+                    # No plastron + no carapace reference -- only now pay for a
+                    # (cheap, single-turtle) scan to tell empty from has-other-photos.
+                    folder_status = 'has_images' if _dir_has_image(turtle_dir) else 'empty_folder'
             results.append({
                 'turtle_id': tid,
                 'sheet_name': sheet,
                 'primary': primary_path,
                 'primary_ts': primary_ts,
+                'has_carapace': has_carapace,
+                'folder_status': folder_status,
             })
         return jsonify({'images': results})
 
@@ -605,6 +645,9 @@ def register_turtle_routes(app):
         # bare bio_id like F004 doesn't accidentally find a same-bio_id turtle
         # in a different US state.
         primary_id = (request.form.get('primary_id') or request.args.get('primary_id') or '').strip() or None
+        # Bio ID is used only for canonical <bio_id>_<primary_id> naming when this
+        # upload creates the folder for a sheet-only turtle.
+        bio_id = (request.form.get('bio_id') or request.args.get('bio_id') or '').strip() or None
         if not turtle_id:
             return jsonify({'error': 'turtle_id required'}), 400
         files_with_types = []
@@ -647,7 +690,7 @@ def register_turtle_routes(app):
             if not files_with_types:
                 return jsonify({'error': 'No valid image files provided'}), 400
             success, msg = manager_service.manager.add_additional_images_to_turtle(
-                turtle_id, files_with_types, sheet_name, primary_id=primary_id,
+                turtle_id, files_with_types, sheet_name, primary_id=primary_id, bio_id=bio_id,
             )
             for item in files_with_types:
                 p = item.get('path')
@@ -686,6 +729,10 @@ def register_turtle_routes(app):
         # Optional primary_id is tried first to avoid cross-state biology-id
         # collisions (see resolve_turtle_dir_for_sheet_upload for details).
         primary_id = (request.form.get('primary_id') or '').strip() or None
+        # Bio ID + create_if_missing let a sheet-only ("Null") turtle's first
+        # reference photo create its canonical <bio_id>_<primary_id> folder.
+        bio_id = (request.form.get('bio_id') or '').strip() or None
+        create_if_missing = (request.form.get('create_if_missing') or '').strip().lower() in ('1', 'true', 'yes')
         photo_type = (request.form.get('photo_type') or 'plastron').strip().lower()
         if not turtle_id:
             return jsonify({'error': 'turtle_id required'}), 400
@@ -708,7 +755,7 @@ def register_turtle_routes(app):
         try:
             success, msg = manager_service.manager.replace_turtle_reference(
                 turtle_id, temp_path, photo_type=photo_type, sheet_name=sheet_name,
-                primary_id=primary_id,
+                primary_id=primary_id, create_if_missing=create_if_missing, bio_id=bio_id,
             )
             if not success:
                 return jsonify({'error': msg or 'Failed to replace reference'}), 400

@@ -56,6 +56,8 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
   const [selectedTurtle, setSelectedTurtle] = useState<TurtleSheetsData | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSheetFilter, setSelectedSheetFilter] = useState<string>('');
+  // "Null" filter: show only sheet turtles that are missing reference photos.
+  const [nullFilterActive, setNullFilterActive] = useState(false);
   const queueInitialLoadDone = useRef(false);
 
   useEffect(() => {
@@ -610,6 +612,14 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
   };
 
   const filteredTurtles = allTurtles.filter((turtle) => {
+    // "Null" filter eligibility — cheap, sheet-data only (no disk/batch lookup):
+    // a turtle can only be "Null" if it has both a Primary ID and a Bio ID. The
+    // SheetsBrowser narrows further by on-disk status once the batch resolves.
+    if (nullFilterActive) {
+      const hasPrimaryId = (turtle.primary_id || '').trim().length > 0;
+      const hasBioId = (turtle.id || '').trim().length > 0;
+      if (!hasPrimaryId || !hasBioId) return false;
+    }
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -654,6 +664,8 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
     searchQuery,
     setSearchQuery,
     selectedSheetFilter,
+    nullFilterActive,
+    setNullFilterActive,
     availableSheets,
     sheetsListLoading,
     filteredTurtles,

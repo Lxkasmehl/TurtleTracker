@@ -15,6 +15,7 @@ from services import manager_service
 from services.manager_service import get_sheets_service, get_community_sheets_service
 from config import UPLOAD_FOLDER, MAX_FILE_SIZE, allowed_file
 from image_utils import normalize_to_jpeg
+from turtle_manager import canonical_new_turtle_folder_id  # re-exported for callers/tests
 from general_locations_catalog import (
     get_sheet_default,
     resolve_general_location_from_sheet_and_value,
@@ -87,25 +88,6 @@ def normalize_new_turtle_location_for_disk(
     )
     out = f"{sheet_part}/{resolved_general_loc}" if resolved_general_loc else sheet_part
     return (out, resolved_general_loc)
-
-
-def canonical_new_turtle_folder_id(bio_id, primary_id, fallback_id):
-    """On-disk folder name for a NEW turtle: ``<bio_id>_<primary_id>``.
-
-    Biology id alone collides across sheets and primary id alone is opaque, so
-    the canonical folder name carries both. Falls back to the legacy partial
-    combine (``<bio_id>_<fallback_id>``) or the bare id when an id could not be
-    resolved (e.g. Sheets unavailable) -- never raises, so a missing id degrades
-    the name instead of failing the whole approve.
-    """
-    bio_id = (bio_id or '').strip()
-    primary_id = (primary_id or '').strip()
-    fallback_id = (fallback_id or '').strip()
-    if bio_id and primary_id:
-        return f"{bio_id}_{primary_id}"
-    if bio_id and fallback_id and not fallback_id.startswith(f"{bio_id}_"):
-        return f"{bio_id}_{fallback_id}"
-    return fallback_id or primary_id or bio_id
 
 
 def format_review_packet_item(packet_dir, request_id):
