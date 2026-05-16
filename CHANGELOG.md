@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-05-16 — Sheets-Browser Null filter count + list-flash fix
+
 ### Fixed
 
 - **Sheets Browser "Null" filter count**: the "X of Y turtles" line under the search panel was using the cheap eligibility pre-filter count, so toggling Null still showed `858 of 858 turtles`. It now reads from the actually-rendered list (`listForRecords`), so a Null search shows the real narrowed count (e.g. `15 of 858`).
