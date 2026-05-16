@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getReviewQueue,
@@ -611,26 +611,34 @@ export function useAdminTurtleRecords(role: string | undefined, authChecked: boo
     loadAllTurtles(value || undefined);
   };
 
-  const filteredTurtles = allTurtles.filter((turtle) => {
-    // "Null" filter eligibility — cheap, sheet-data only (no disk/batch lookup):
-    // a turtle can only be "Null" if it has both a Primary ID and a Bio ID. The
-    // SheetsBrowser narrows further by on-disk status once the batch resolves.
-    if (nullFilterActive) {
-      const hasPrimaryId = (turtle.primary_id || '').trim().length > 0;
-      const hasBioId = (turtle.id || '').trim().length > 0;
-      if (!hasPrimaryId || !hasBioId) return false;
-    }
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      turtle.id?.toLowerCase().includes(query) ||
-      turtle.primary_id?.toLowerCase().includes(query) ||
-      turtle.name?.toLowerCase().includes(query) ||
-      turtle.species?.toLowerCase().includes(query) ||
-      turtle.location?.toLowerCase().includes(query) ||
-      turtle.general_location?.toLowerCase().includes(query)
-    );
-  });
+  // Memoized so the array identity is stable when none of the inputs change.
+  // SheetsBrowserTab's primary-images batch effect depends on this and would
+  // otherwise re-fire on every parent render (e.g. selecting a turtle), wiping
+  // the thumbnail/badge map and flashing the whole list back to a loading state.
+  const filteredTurtles = useMemo(
+    () =>
+      allTurtles.filter((turtle) => {
+        // "Null" filter eligibility — cheap, sheet-data only (no disk/batch lookup):
+        // a turtle can only be "Null" if it has both a Primary ID and a Bio ID. The
+        // SheetsBrowser narrows further by on-disk status once the batch resolves.
+        if (nullFilterActive) {
+          const hasPrimaryId = (turtle.primary_id || '').trim().length > 0;
+          const hasBioId = (turtle.id || '').trim().length > 0;
+          if (!hasPrimaryId || !hasBioId) return false;
+        }
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return (
+          turtle.id?.toLowerCase().includes(query) ||
+          turtle.primary_id?.toLowerCase().includes(query) ||
+          turtle.name?.toLowerCase().includes(query) ||
+          turtle.species?.toLowerCase().includes(query) ||
+          turtle.location?.toLowerCase().includes(query) ||
+          turtle.general_location?.toLowerCase().includes(query)
+        );
+      }),
+    [allTurtles, searchQuery, nullFilterActive],
+  );
 
   return {
     activeTab,

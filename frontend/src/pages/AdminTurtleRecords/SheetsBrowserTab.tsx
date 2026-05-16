@@ -886,7 +886,7 @@ export function SheetsBrowserTab() {
                 )}
                 <Divider />
                 <Text size='sm' c='dimmed'>
-                  {filteredTurtles.length} of {allTurtles.length} turtles
+                  {listForRecords.length} of {allTurtles.length} turtles
                 </Text>
                 <ScrollArea h={560}>
                   <Stack gap='xs'>
