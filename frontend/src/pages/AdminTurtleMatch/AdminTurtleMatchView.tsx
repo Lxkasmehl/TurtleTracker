@@ -20,6 +20,12 @@ import { IconPhoto, IconCheck, IconArrowLeft, IconPlus } from '@tabler/icons-rea
 import { useMediaQuery } from '@mantine/hooks';
 import { getImageUrl } from '../../services/api';
 import { TurtleSheetsDataForm } from '../../components/TurtleSheetsDataForm';
+import {
+  SideBySideCompareCol,
+  SideBySideCompareGrid,
+  SideBySideCompareLabel,
+} from '../../components/SideBySideCompare';
+import { sideBySideCompareImageClass } from '../../components/sideBySideCompareConstants';
 import { useAdminTurtleMatchContext } from './AdminTurtleMatchContext';
 
 export function AdminTurtleMatchView() {
@@ -156,11 +162,9 @@ export function AdminTurtleMatchView() {
                 <Divider />
 
                 {/* Side-by-side: uploaded photo vs match photo */}
-                <Grid gutter='md'>
-                  <Grid.Col span={{ base: 12, sm: 6 }}>
-                    <Text size='sm' c='dimmed' mb={4}>
-                      Uploaded Photo
-                    </Text>
+                <SideBySideCompareGrid>
+                  <SideBySideCompareCol>
+                    <SideBySideCompareLabel>Uploaded Photo</SideBySideCompareLabel>
                     <Image
                       src={
                         matchData.uploaded_image_path
@@ -169,31 +173,21 @@ export function AdminTurtleMatchView() {
                       }
                       alt='Uploaded photo'
                       radius='md'
-                      style={{
-                        maxHeight: 'min(400px, 50vh)',
-                        objectFit: 'contain',
-                        width: '100%',
-                      }}
+                      className={sideBySideCompareImageClass}
                     />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, sm: 6 }}>
-                    <Text size='sm' c='dimmed' mb={4}>
-                      Match: {selectedMatch}
-                    </Text>
+                  </SideBySideCompareCol>
+                  <SideBySideCompareCol>
+                    <SideBySideCompareLabel>Match: {selectedMatch}</SideBySideCompareLabel>
                     {selectedMatchData.file_path && (
                       <Image
                         src={getImageUrl(selectedMatchData.file_path)}
                         alt={`Match ${selectedMatch}`}
                         radius='md'
-                        style={{
-                          maxHeight: 'min(400px, 50vh)',
-                          objectFit: 'contain',
-                          width: '100%',
-                        }}
+                        className={sideBySideCompareImageClass}
                       />
                     )}
-                  </Grid.Col>
-                </Grid>
+                  </SideBySideCompareCol>
+                </SideBySideCompareGrid>
 
                 {/* Match metadata */}
                 <Grid mt='xs'>
